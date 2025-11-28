@@ -41,16 +41,16 @@ iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocola
 
 ※Chocolateyがない場合、フォントは手動インストールになります（スクリプトは正常動作します）
 
-##### クイックスタート（依存関係も含めて一括インストール）
+##### クイックスタート（すべて一括インストール）
 
 ```powershell
 # 1. リポジトリをクローン
 cd D:\git
 git clone git@github.com:aya-215/dotfiles.git
 
-# 2. インストールスクリプトを実行（依存関係も含む）
+# 2. インストールスクリプトを実行（依存関係・フォント含む）
 cd dotfiles
-.\scripts\install.ps1 -InstallDependencies
+.\scripts\install.ps1 -InstallAll
 ```
 
 ##### dotfilesのみインストール（依存関係は手動）
@@ -64,15 +64,16 @@ git clone git@github.com:aya-215/dotfiles.git
 cd dotfiles
 .\scripts\install.ps1
 
-# 3. 後から依存関係をインストール
-.\scripts\install-dependencies.ps1
+# 3. 後から依存関係とフォントをインストール
+.\scripts\install-dependencies.ps1  # ツール・モジュール
+.\scripts\install-fonts.ps1         # フォント
 ```
 
 **インストーラーが自動的に実行すること:**
 - 環境変数 `XDG_CONFIG_HOME` の設定
 - シンボリックリンクの作成（WezTerm、Neovim、PowerShell）
 - 既存ファイルのバックアップ（`~/.dotfiles_backup`に保存）
-- 依存関係のインストール（`-InstallDependencies`指定時）
+- 依存関係のインストール（`-InstallAll`指定時）
   - fzf、Neovim
   - PowerShellモジュール（PSFzf、ZLocation、BurntToast）
   - フォント（HackGen Nerd Font）※Chocolateyが必要
@@ -81,16 +82,18 @@ cd dotfiles
 ```powershell
 # 実行内容を確認（実際の変更は行わない）
 .\scripts\install.ps1 -DryRun
-.\scripts\install-dependencies.ps1 -DryRun
 
 # 確認なしで実行
 .\scripts\install.ps1 -Force
+```
 
+**個別スクリプトのオプション:**
+```powershell
 # PowerShellモジュールのみスキップ
 .\scripts\install-dependencies.ps1 -SkipModules
 
-# フォントのみスキップ
-.\scripts\install-dependencies.ps1 -SkipFonts
+# CLIツールのみスキップ
+.\scripts\install-dependencies.ps1 -SkipTools
 ```
 
 #### 方法2: 手動セットアップ
