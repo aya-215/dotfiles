@@ -7,15 +7,18 @@
 ```
 dotfiles/
 ├── .config/
-│   ├── wezterm/    # WezTerm設定
-│   └── nvim/       # Neovim設定
-├── PowerShell/     # PowerShell設定
+│   ├── wezterm/           # WezTerm設定
+│   └── nvim/              # Neovim設定
+├── PowerShell/            # PowerShell設定
 │   ├── Microsoft.PowerShell_profile.ps1  # プロファイル
 │   ├── kubectl_completion.ps1            # kubectl補完
 │   ├── Modules/                          # モジュール
 │   └── Scripts/                          # スクリプト
-├── scripts/        # インストールスクリプト
-│   └── install.ps1                       # Windows用インストーラー
+├── scripts/               # インストールスクリプト
+│   ├── common.ps1                        # 共通関数
+│   ├── install.ps1                       # メインインストーラー
+│   ├── install-dependencies.ps1          # ツール・モジュールインストーラー
+│   └── install-fonts.ps1                 # フォントインストーラー
 ├── .gitignore
 └── README.md
 ```
@@ -24,77 +27,80 @@ dotfiles/
 
 ### Windows
 
-#### 方法1: 自動インストール（推奨）
-
-**前提条件**:
-- 管理者権限でPowerShellを実行
-- Chocolatey（フォントインストールに必要、オプション）
-
-##### 事前準備: Chocolateyのインストール（フォント自動インストールに必要）
+#### 🚀 クイックスタート（推奨）
 
 ```powershell
 # 管理者権限のPowerShellで実行
+
+# 1. Chocolateyをインストール（フォント用、オプション）
 Set-ExecutionPolicy Bypass -Scope Process -Force
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
 iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
-```
 
-※Chocolateyがない場合、フォントは手動インストールになります（スクリプトは正常動作します）
-
-##### クイックスタート（すべて一括インストール）
-
-```powershell
-# 1. リポジトリをクローン
+# 2. dotfilesをクローン
 cd D:\git
 git clone git@github.com:aya-215/dotfiles.git
-
-# 2. インストールスクリプトを実行（依存関係・フォント含む）
 cd dotfiles
+
+# 3. すべて一括インストール
 .\scripts\install.ps1 -InstallAll
 ```
 
-##### dotfilesのみインストール（依存関係は手動）
+**このコマンドで自動的にインストールされるもの:**
+- ✅ 環境変数 `XDG_CONFIG_HOME` の設定
+- ✅ シンボリックリンク（WezTerm、Neovim、PowerShell）
+- ✅ fzf、Neovim
+- ✅ PowerShellモジュール（PSFzf、ZLocation、BurntToast）
+- ✅ HackGen Nerd Font（Chocolatey必須）
+
+---
+
+#### 📦 個別インストール
+
+dotfilesと依存関係を別々にインストールする場合:
 
 ```powershell
-# 1. リポジトリをクローン
+# 管理者権限のPowerShellで実行
+
+# 1. dotfilesのみインストール
 cd D:\git
 git clone git@github.com:aya-215/dotfiles.git
-
-# 2. dotfilesのみインストール
 cd dotfiles
 .\scripts\install.ps1
 
-# 3. 後から依存関係とフォントをインストール
+# 2. 依存関係を個別にインストール
 .\scripts\install-dependencies.ps1  # ツール・モジュール
-.\scripts\install-fonts.ps1         # フォント
+.\scripts\install-fonts.ps1         # フォント（Chocolatey必須）
 ```
 
-**インストーラーが自動的に実行すること:**
-- 環境変数 `XDG_CONFIG_HOME` の設定
-- シンボリックリンクの作成（WezTerm、Neovim、PowerShell）
-- 既存ファイルのバックアップ（`~/.dotfiles_backup`に保存）
-- 依存関係のインストール（`-InstallAll`指定時）
-  - fzf、Neovim
-  - PowerShellモジュール（PSFzf、ZLocation、BurntToast）
-  - フォント（HackGen Nerd Font）※Chocolateyが必要
+**各スクリプトの役割:**
 
-**その他のオプション:**
+| スクリプト | 内容 | 必須 |
+|-----------|------|------|
+| `install.ps1` | シンボリックリンク作成、環境変数設定 | ✅ 必須 |
+| `install-dependencies.ps1` | fzf、Neovim、PowerShellモジュール | 推奨 |
+| `install-fonts.ps1` | HackGen Nerd Font | オプション |
+
+---
+
+#### ⚙️ オプション
+
+**メインインストーラー:**
 ```powershell
-# 実行内容を確認（実際の変更は行わない）
-.\scripts\install.ps1 -DryRun
-
-# 確認なしで実行
-.\scripts\install.ps1 -Force
+.\scripts\install.ps1 -DryRun      # 実行内容を確認（変更なし）
+.\scripts\install.ps1 -Force       # 確認なしで実行
+.\scripts\install.ps1 -InstallAll  # すべて一括インストール
 ```
 
-**個別スクリプトのオプション:**
+**個別スクリプト:**
 ```powershell
-# PowerShellモジュールのみスキップ
-.\scripts\install-dependencies.ps1 -SkipModules
-
-# CLIツールのみスキップ
-.\scripts\install-dependencies.ps1 -SkipTools
+.\scripts\install-dependencies.ps1 -SkipTools    # CLIツールをスキップ
+.\scripts\install-dependencies.ps1 -SkipModules  # PowerShellモジュールをスキップ
+.\scripts\install-dependencies.ps1 -DryRun       # 実行内容を確認
+.\scripts\install-fonts.ps1 -DryRun              # 実行内容を確認
 ```
+
+---
 
 #### 方法2: 手動セットアップ
 
