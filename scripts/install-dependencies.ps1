@@ -61,67 +61,86 @@ Write-Info "===================================="
 Write-Info ""
 
 # インストールカウンター
-$installedCount = 0
-$skippedCount = 0
-$errorCount = 0
+$script:installedCount = 0
+$script:skippedCount = 0
+$script:errorCount = 0
+
+# wingetでツールをインストールする関数
+function Install-CliTool {
+    param(
+        [string]$Name,
+        [string]$WingetId,
+        [string]$CommandName,
+        [switch]$Optional
+    )
+
+    Write-Info "[$Name] チェック中..."
+
+    if (Get-Command $CommandName -ErrorAction SilentlyContinue) {
+        Write-Success "  既にインストール済み"
+        $script:skippedCount++
+        return
+    }
+
+    if ($Optional) {
+        Write-Info "  未インストール（オプション）"
+        Write-Info "  必要な場合は手動でインストールしてください:"
+        Write-Info "    winget install $WingetId"
+        return
+    }
+
+    if ($DryRun) {
+        Write-Info "  [DryRun] インストール: winget install $WingetId"
+        $script:installedCount++
+    } else {
+        try {
+            winget install --id $WingetId --silent --accept-source-agreements --accept-package-agreements
+            Write-Success "  インストール完了"
+            $script:installedCount++
+        } catch {
+            Write-Error "  インストール失敗: $_"
+            $script:errorCount++
+        }
+    }
+}
+
+# PowerShellモジュールをインストールする関数
+function Install-PSModule {
+    param(
+        [string]$ModuleName
+    )
+
+    Write-Info "[$ModuleName] チェック中..."
+
+    if (Get-Module -ListAvailable -Name $ModuleName) {
+        Write-Success "  既にインストール済み"
+        $script:skippedCount++
+        return
+    }
+
+    if ($DryRun) {
+        Write-Info "  [DryRun] インストール: Install-Module $ModuleName -Scope CurrentUser"
+        $script:installedCount++
+    } else {
+        try {
+            Install-Module $ModuleName -Scope CurrentUser -Force -AllowClobber
+            Write-Success "  インストール完了"
+            $script:installedCount++
+        } catch {
+            Write-Error "  インストール失敗: $_"
+            $script:errorCount++
+        }
+    }
+}
 
 # コマンドラインツールのインストール
 if (-not $SkipTools) {
     Write-Info "コマンドラインツールをチェック中..."
     Write-Info ""
 
-    # fzf
-    Write-Info "[fzf] チェック中..."
-    if (Get-Command fzf -ErrorAction SilentlyContinue) {
-        Write-Success "  既にインストール済み"
-        $skippedCount++
-    } else {
-        if ($DryRun) {
-            Write-Info "  [DryRun] インストール: winget install fzf"
-            $installedCount++
-        } else {
-            try {
-                winget install --id junegunn.fzf --silent --accept-source-agreements --accept-package-agreements
-                Write-Success "  インストール完了"
-                $installedCount++
-            } catch {
-                Write-Error "  インストール失敗: $_"
-                $errorCount++
-            }
-        }
-    }
-
-    # Neovim
-    Write-Info "[Neovim] チェック中..."
-    if (Get-Command nvim -ErrorAction SilentlyContinue) {
-        Write-Success "  既にインストール済み"
-        $skippedCount++
-    } else {
-        if ($DryRun) {
-            Write-Info "  [DryRun] インストール: winget install neovim"
-            $installedCount++
-        } else {
-            try {
-                winget install --id Neovim.Neovim --silent --accept-source-agreements --accept-package-agreements
-                Write-Success "  インストール完了"
-                $installedCount++
-            } catch {
-                Write-Error "  インストール失敗: $_"
-                $errorCount++
-            }
-        }
-    }
-
-    # kubectl (オプション)
-    Write-Info "[kubectl] チェック中..."
-    if (Get-Command kubectl -ErrorAction SilentlyContinue) {
-        Write-Success "  既にインストール済み"
-        $skippedCount++
-    } else {
-        Write-Info "  未インストール（オプション）"
-        Write-Info "  Kubernetesを使用する場合は手動でインストールしてください:"
-        Write-Info "    winget install Kubernetes.kubectl"
-    }
+    Install-CliTool -Name "fzf" -WingetId "junegunn.fzf" -CommandName "fzf"
+    Install-CliTool -Name "Neovim" -WingetId "Neovim.Neovim" -CommandName "nvim"
+    Install-CliTool -Name "kubectl" -WingetId "Kubernetes.kubectl" -CommandName "kubectl" -Optional
 
     Write-Info ""
 }
@@ -131,68 +150,9 @@ if (-not $SkipModules) {
     Write-Info "PowerShellモジュールをチェック中..."
     Write-Info ""
 
-    # PSFzf
-    Write-Info "[PSFzf] チェック中..."
-    if (Get-Module -ListAvailable -Name PSFzf) {
-        Write-Success "  既にインストール済み"
-        $skippedCount++
-    } else {
-        if ($DryRun) {
-            Write-Info "  [DryRun] インストール: Install-Module PSFzf -Scope CurrentUser"
-            $installedCount++
-        } else {
-            try {
-                Install-Module PSFzf -Scope CurrentUser -Force -AllowClobber
-                Write-Success "  インストール完了"
-                $installedCount++
-            } catch {
-                Write-Error "  インストール失敗: $_"
-                $errorCount++
-            }
-        }
-    }
-
-    # ZLocation
-    Write-Info "[ZLocation] チェック中..."
-    if (Get-Module -ListAvailable -Name ZLocation) {
-        Write-Success "  既にインストール済み"
-        $skippedCount++
-    } else {
-        if ($DryRun) {
-            Write-Info "  [DryRun] インストール: Install-Module ZLocation -Scope CurrentUser"
-            $installedCount++
-        } else {
-            try {
-                Install-Module ZLocation -Scope CurrentUser -Force -AllowClobber
-                Write-Success "  インストール完了"
-                $installedCount++
-            } catch {
-                Write-Error "  インストール失敗: $_"
-                $errorCount++
-            }
-        }
-    }
-
-    # BurntToast
-    Write-Info "[BurntToast] チェック中..."
-    if (Get-Module -ListAvailable -Name BurntToast) {
-        Write-Success "  既にインストール済み"
-        $skippedCount++
-    } else {
-        if ($DryRun) {
-            Write-Info "  [DryRun] インストール: Install-Module BurntToast -Scope CurrentUser"
-            $installedCount++
-        } else {
-            try {
-                Install-Module BurntToast -Scope CurrentUser -Force -AllowClobber
-                Write-Success "  インストール完了"
-                $installedCount++
-            } catch {
-                Write-Error "  インストール失敗: $_"
-                $errorCount++
-            }
-        }
-    }
+    Install-PSModule -ModuleName "PSFzf"
+    Install-PSModule -ModuleName "ZLocation"
+    Install-PSModule -ModuleName "BurntToast"
 
     Write-Info ""
 }
