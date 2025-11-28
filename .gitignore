@@ -1,2 +1,5 @@
 # Claude Code local settings
 .claude/settings.local.json
+
+# PowerShell secrets
+.config/powershell/secrets.ps1
