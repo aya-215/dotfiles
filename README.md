@@ -19,13 +19,26 @@ dotfiles/
 
 **前提条件**: 開発者モードを有効化（シンボリックリンクに管理者権限不要にするため）
 
-1. リポジトリをクローン
+#### 1. 環境変数の設定（Neovim用）
+
+Windowsではデフォルトで`.config`ディレクトリを使用しないため、環境変数の設定が必要です。
+
+1. `Win + R` → `sysdm.cpl` → `Enter`
+2. 「詳細設定」タブ → 「環境変数」
+3. ユーザー環境変数で「新規」
+   - 変数名: `XDG_CONFIG_HOME`
+   - 変数値: `C:\Users\<ユーザー名>\.config`（例: `C:\Users\368\.config`）
+4. `OK` → PowerShellを再起動
+
+#### 2. リポジトリをクローン
+
 ```powershell
 cd D:\git
 git clone git@github.com:aya-215/dotfiles.git
 ```
 
-2. シンボリックリンクを作成
+#### 3. シンボリックリンクを作成
+
 ```powershell
 # WezTerm
 New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\wezterm" -Target "D:\git\dotfiles\.config\wezterm"
@@ -36,13 +49,15 @@ New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\nvim" -Target "D
 
 ### macOS / Linux
 
-1. リポジトリをクローン
+#### 1. リポジトリをクローン
+
 ```bash
 cd ~
 git clone git@github.com:aya-215/dotfiles.git
 ```
 
-2. シンボリックリンクを作成
+#### 2. シンボリックリンクを作成
+
 ```bash
 # WezTerm
 ln -s ~/dotfiles/.config/wezterm ~/.config/wezterm
@@ -79,3 +94,4 @@ git push
 - `.claude/settings.local.json`は`.gitignore`で除外しています
 - シンボリックリンクは双方向で動作します（どちらから編集しても同じファイル）
 - シンボリックリンク削除時は`Remove-Item`（Windows）または`rm`（Mac/Linux）で安全に削除できます
+- Windows環境では`XDG_CONFIG_HOME`環境変数の設定が必須です
