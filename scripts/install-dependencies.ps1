@@ -34,26 +34,9 @@ param(
     [switch]$DryRun
 )
 
-# エラー時に停止
-$ErrorActionPreference = "Stop"
-
-# 出力エンコーディングをUTF-8に設定
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$OutputEncoding = [System.Text.Encoding]::UTF8
-
-# カラー出力関数
-function Write-ColorOutput {
-    param(
-        [string]$Message,
-        [string]$Color = "White"
-    )
-    Write-Host $Message -ForegroundColor $Color
-}
-
-function Write-Success { Write-ColorOutput $args[0] "Green" }
-function Write-Info { Write-ColorOutput $args[0] "Cyan" }
-function Write-Warning { Write-ColorOutput $args[0] "Yellow" }
-function Write-Error { Write-ColorOutput $args[0] "Red" }
+# 共通関数を読み込み
+$SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
+. (Join-Path $SCRIPT_DIR "common.ps1")
 
 Write-Info "===================================="
 Write-Info "  依存関係インストーラー (Windows)"
@@ -158,19 +141,7 @@ if (-not $SkipModules) {
 }
 
 # 結果サマリー
-Write-Info "===================================="
-Write-Info "  インストール完了"
-Write-Info "===================================="
-if ($installedCount -gt 0) {
-    Write-Success "インストール: $installedCount"
-}
-if ($skippedCount -gt 0) {
-    Write-Info "スキップ: $skippedCount"
-}
-if ($errorCount -gt 0) {
-    Write-Error "エラー: $errorCount"
-}
-Write-Info ""
+Show-ResultSummary -SuccessCount $installedCount -SkipCount $skippedCount -ErrorCount $errorCount
 
 if ($DryRun) {
     Write-Info "[DryRun] 実際の変更は行われていません"
