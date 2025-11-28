@@ -14,6 +14,9 @@
 .PARAMETER DryRun
     実際の変更を行わず、実行内容のみ表示します
 
+.PARAMETER InstallDependencies
+    依存関係（fzf、neovim、PowerShellモジュール等）も自動インストールします
+
 .EXAMPLE
     .\install.ps1
     対話形式でインストール
@@ -25,11 +28,16 @@
 .EXAMPLE
     .\install.ps1 -DryRun
     実行内容のみ表示
+
+.EXAMPLE
+    .\install.ps1 -InstallDependencies
+    依存関係も一緒にインストール
 #>
 
 param(
     [switch]$Force,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [switch]$InstallDependencies
 )
 
 # エラー時に停止
@@ -230,9 +238,27 @@ if ($DryRun) {
     Write-Info "実際にインストールするには、-DryRun オプションを外して実行してください"
 } else {
     Write-Success "dotfilesのインストールが完了しました！"
-    Write-Info ""
-    Write-Info "次のステップ:"
-    Write-Info "  1. ターミナルを再起動してください"
-    Write-Info "  2. Neovimを起動してプラグインをインストール: nvim"
-    Write-Info "  3. WeZTermの設定が反映されているか確認してください"
+
+    # 依存関係のインストール
+    if ($InstallDependencies) {
+        Write-Info ""
+        Write-Info "===================================="
+        Write-Info "  依存関係をインストール中..."
+        Write-Info "===================================="
+        Write-Info ""
+
+        $dependenciesScript = Join-Path $SCRIPT_DIR "install-dependencies.ps1"
+        if (Test-Path $dependenciesScript) {
+            & $dependenciesScript
+        } else {
+            Write-Error "依存関係インストールスクリプトが見つかりません: $dependenciesScript"
+        }
+    } else {
+        Write-Info ""
+        Write-Info "次のステップ:"
+        Write-Info "  1. ターミナルを再起動してください"
+        Write-Info "  2. 依存関係をインストール: .\scripts\install-dependencies.ps1"
+        Write-Info "  3. Neovimを起動してプラグインをインストール: nvim"
+        Write-Info "  4. WeZTermの設定が反映されているか確認してください"
+    }
 }
