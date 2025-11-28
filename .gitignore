@@ -2,4 +2,4 @@
 .claude/settings.local.json
 
 # PowerShell secrets
-.config/powershell/secrets.ps1
+PowerShell/secrets.ps1
