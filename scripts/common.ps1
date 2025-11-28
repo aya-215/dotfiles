@@ -202,3 +202,54 @@ function Show-ResultSummary {
 
     Write-Info ""
 }
+
+# ========================================
+# Chocolateyパッケージ管理
+# ========================================
+
+function Install-ChocoPackage {
+    param(
+        [string]$PackageName,
+        [string]$DisplayName,
+        [string]$CheckCommand,
+        [switch]$Optional
+    )
+
+    Write-Info "[$DisplayName] チェック中..."
+
+    # インストール済みチェック（コマンドで確認）
+    if ($CheckCommand -and (Get-Command $CheckCommand -ErrorAction SilentlyContinue)) {
+        Write-Success "  既にインストール済み"
+        $script:skippedCount++
+        return
+    }
+
+    # Chocolateyパッケージとしてインストール済みチェック
+    $chocoList = choco list --local-only $PackageName --exact --limit-output 2>$null
+    if ($chocoList) {
+        Write-Success "  既にインストール済み"
+        $script:skippedCount++
+        return
+    }
+
+    if ($Optional) {
+        Write-Info "  未インストール（オプション）"
+        Write-Info "  必要な場合は手動でインストールしてください:"
+        Write-Info "    choco install $PackageName"
+        return
+    }
+
+    if ($DryRun) {
+        Write-Info "  [DryRun] インストール: choco install $PackageName"
+        $script:installedCount++
+    } else {
+        try {
+            choco install $PackageName -y --no-progress
+            Write-Success "  インストール完了"
+            $script:installedCount++
+        } catch {
+            Write-Error "  インストール失敗: $_"
+            $script:errorCount++
+        }
+    }
+}

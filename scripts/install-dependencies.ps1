@@ -12,6 +12,9 @@
 .PARAMETER SkipModules
     PowerShellモジュールのインストールをスキップ
 
+.PARAMETER SkipFonts
+    フォントのインストールをスキップ
+
 .PARAMETER DryRun
     実際の変更を行わず、実行内容のみ表示
 
@@ -21,7 +24,11 @@
 
 .EXAMPLE
     .\install-dependencies.ps1 -SkipModules
-    コマンドラインツールのみインストール
+    コマンドラインツールとフォントのみインストール
+
+.EXAMPLE
+    .\install-dependencies.ps1 -SkipFonts
+    フォント以外をインストール
 
 .EXAMPLE
     .\install-dependencies.ps1 -DryRun
@@ -31,6 +38,7 @@
 param(
     [switch]$SkipTools,
     [switch]$SkipModules,
+    [switch]$SkipFonts,
     [switch]$DryRun
 )
 
@@ -138,6 +146,23 @@ if (-not $SkipModules) {
     Install-PSModule -ModuleName "BurntToast"
 
     Write-Info ""
+}
+
+# フォントのインストール
+if (-not $SkipFonts) {
+    Write-Info "フォントをチェック中..."
+    Write-Info ""
+
+    # Chocolateyがインストールされているか確認
+    if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+        Write-Warning "Chocolateyがインストールされていません"
+        Write-Info "フォントのインストールにはChocolateyが必要です:"
+        Write-Info "  https://chocolatey.org/install"
+        Write-Info ""
+    } else {
+        Install-ChocoPackage -PackageName "font-hackgen-nerd" -DisplayName "HackGen Nerd Font"
+        Write-Info ""
+    }
 }
 
 # 結果サマリー

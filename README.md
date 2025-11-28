@@ -62,6 +62,7 @@ cd dotfiles
 - 依存関係のインストール（`-InstallDependencies`指定時）
   - fzf、Neovim
   - PowerShellモジュール（PSFzf、ZLocation、BurntToast）
+  - フォント（HackGen Nerd Font）※Chocolateyが必要
 
 **その他のオプション:**
 ```powershell
@@ -74,6 +75,9 @@ cd dotfiles
 
 # PowerShellモジュールのみスキップ
 .\scripts\install-dependencies.ps1 -SkipModules
+
+# フォントのみスキップ
+.\scripts\install-dependencies.ps1 -SkipFonts
 ```
 
 #### 方法2: 手動セットアップ
@@ -208,8 +212,17 @@ Install-Module PSFzf -Scope CurrentUser
 Install-Module ZLocation -Scope CurrentUser
 Install-Module BurntToast -Scope CurrentUser
 
+# 推奨（フォント）
+choco install font-hackgen-nerd  # WezTerm/Neovim用
+
 # オプション
 winget install kubectl  # Kubernetes使用時のみ
+```
+
+**一括インストール:**
+```powershell
+# すべて自動インストール（推奨）
+.\scripts\install-dependencies.ps1
 ```
 
 ### 遅延読み込み機構
