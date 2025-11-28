@@ -9,6 +9,11 @@ dotfiles/
 ├── .config/
 │   ├── wezterm/    # WezTerm設定
 │   └── nvim/       # Neovim設定
+├── PowerShell/     # PowerShell設定
+│   ├── Microsoft.PowerShell_profile.ps1  # プロファイル
+│   ├── kubectl_completion.ps1            # kubectl補完
+│   ├── Modules/                          # モジュール
+│   └── Scripts/                          # スクリプト
 ├── .gitignore
 └── README.md
 ```
@@ -45,6 +50,9 @@ New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\wezterm" -Target
 
 # Neovim
 New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\nvim" -Target "D:\git\dotfiles\.config\nvim"
+
+# PowerShell
+New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\Documents\PowerShell" -Target "D:\git\dotfiles\PowerShell"
 ```
 
 ### macOS / Linux
@@ -64,6 +72,9 @@ ln -s ~/dotfiles/.config/wezterm ~/.config/wezterm
 
 # Neovim
 ln -s ~/dotfiles/.config/nvim ~/.config/nvim
+
+# PowerShell（macOSの場合）
+ln -s ~/dotfiles/PowerShell ~/.config/powershell
 ```
 
 ## 日常の使い方
@@ -89,9 +100,76 @@ git commit -m "設定を更新"
 git push
 ```
 
+## PowerShell設定の詳細
+
+### 主な機能
+
+- **超高速起動**: 遅延読み込み機構により、起動時間を最小化
+- **fzf統合**: ファイル、ディレクトリ、Gitブランチなどの検索をfzfで実行
+- **ZLocation**: ディレクトリジャンプ機能（`zf`または`Ctrl+D`）
+- **kubectl補完**: Kubernetes操作の補完（初回使用時に自動読み込み）
+- **WezTerm統合**: OSC 7シーケンスによるカレントディレクトリ通知
+
+### 便利なエイリアス
+
+```powershell
+vim/vi/v → nvim    # Neovim起動
+c        → claude  # Claude Code起動
+cc       → claude -c  # Claude Code（会話モード）
+cr       → claude -r  # Claude Code（リソース指定）
+```
+
+### fzf機能
+
+| コマンド | 説明 | キーバインド |
+|---------|------|-------------|
+| `zf` / `zi` | ZLocation履歴からディレクトリ選択 | `Ctrl+D` |
+| `gb` | Gitブランチを選択してチェックアウト | - |
+| `fn` | ファイルを選択してnvimで開く | - |
+| `fd` | ディレクトリを選択して移動 | - |
+| `fe` | ファイルを選択してVS Codeで開く | - |
+| `ga` | Gitステージングファイルを選択 | - |
+| `gl` | Gitログを選択 | - |
+| `gco` | コミットを選択してチェックアウト | - |
+| `gs` | Gitスタッシュを選択して適用 | - |
+| `pk` | プロセスを選択して終了 | - |
+| `fenv` | 環境変数を検索 | - |
+| `falias` | エイリアスを検索 | - |
+| - | ファイル検索（パスを挿入） | `Ctrl+F` |
+| - | コマンド履歴検索 | `Ctrl+R` |
+
+### 必要な依存関係
+
+プロファイルは以下のツールに依存していますが、遅延読み込みにより存在しなくてもエラーになりません:
+
+```powershell
+# 必須
+winget install fzf
+winget install neovim
+
+# 推奨（PowerShellモジュール）
+Install-Module PSFzf -Scope CurrentUser
+Install-Module ZLocation -Scope CurrentUser
+Install-Module BurntToast -Scope CurrentUser
+
+# オプション
+winget install kubectl  # Kubernetes使用時のみ
+```
+
+### 遅延読み込み機構
+
+プロファイルは以下のモジュールを初回使用時のみ読み込むことで、起動時間を最小化しています:
+
+- **PSFzf**: fzf関連機能を最初に使用した時
+- **ZLocation**: `zf`コマンドまたは`Ctrl+D`を初めて押した時
+- **kubectl補完**: `kubectl`コマンドを初めて実行した時
+
+この仕組みにより、PowerShellの起動は通常0.5秒以下で完了します。
+
 ## 注意事項
 
 - `.claude/settings.local.json`は`.gitignore`で除外しています
 - シンボリックリンクは双方向で動作します（どちらから編集しても同じファイル）
 - シンボリックリンク削除時は`Remove-Item`（Windows）または`rm`（Mac/Linux）で安全に削除できます
 - Windows環境では`XDG_CONFIG_HOME`環境変数の設定が必須です
+- PowerShellモジュールは必須ではありませんが、インストールすることで全機能が使えます
