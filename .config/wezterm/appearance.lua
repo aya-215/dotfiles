@@ -41,10 +41,22 @@ function M.setup(config)
 
   -- フォント（フォールバック対応、太字で見やすく）
   config.font = wezterm.font_with_fallback({
-    {family = "HackGen Console NF", weight = "Medium"},
-    {family = "Cascadia Code NF", weight = "Medium"},
-    {family = "JetBrains Mono", weight = "Medium"},
+    {family = "HackGen Console NF", weight = "Regular"},
+    {family = "Cascadia Code NF", weight = "Regular"},
+    {family = "JetBrains Mono", weight = "Regular"},
   })
+
+  -- イタリック体を無効化（日本語フォント対応）
+  config.font_rules = {
+    {
+      italic = true,
+      font = wezterm.font_with_fallback({
+        {family = "HackGen Console NF", weight = "Regular", italic = false},
+        {family = "Cascadia Code NF", weight = "Regular", italic = false},
+        {family = "JetBrains Mono", weight = "Regular", italic = false},
+      }),
+    },
+  }
 
   -- 行間設定
   config.line_height = 1.2
