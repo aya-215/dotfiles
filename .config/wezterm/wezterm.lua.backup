@@ -1,0 +1,147 @@
+local wezterm = require 'wezterm'
+
+local config = wezterm.config_builder()
+config.automatically_reload_config = true
+config.font_size = 10.5
+config.use_ime = true
+
+--透けさせるやつ
+config.window_background_opacity = 0.80
+config.macos_window_background_blur = 20
+
+--上部のタイトルバー削除
+config.window_decorations = "RESIZE"
+
+config.hide_tab_bar_if_only_one_tab = true
+
+config.window_frame = {
+  inactive_titlebar_bg = "none",
+  active_titlebar_bg = "none",
+}
+ config.window_background_gradient = {
+   colors = { "#000000" },
+ }
+
+config.show_new_tab_button_in_tab_bar = false
+config.show_close_tab_button_in_tabs = false
+
+-- タブバーのスタイル設定
+config.use_fancy_tab_bar = false
+config.tab_bar_at_bottom = false
+
+-- タブの色設定（青系のかっこいい配色）
+config.colors = {
+  tab_bar = {
+    -- タブバーの背景
+    background = '#0b0022',
+
+    -- アクティブなタブ（明るい青）
+    active_tab = {
+      bg_color = '#2b7de9',
+      fg_color = '#ffffff',
+      intensity = 'Bold',
+    },
+
+    -- 非アクティブなタブ（暗い青系）
+    inactive_tab = {
+      bg_color = '#1a1b26',
+      fg_color = '#7aa2f7',
+    },
+
+    -- ホバー時
+    inactive_tab_hover = {
+      bg_color = '#3b4261',
+      fg_color = '#c0caf5',
+    },
+
+    -- 新規タブボタン
+    new_tab = {
+      bg_color = '#1a1b26',
+      fg_color = '#7aa2f7',
+    },
+
+    inactive_tab_edge = "none",
+  },
+}
+
+--フォント
+config.font = wezterm.font("HackGen Console NF", {weight="Regular", stretch="Normal", style="Normal"}) -- C:\USERS\368\APPDATA\LOCAL\MICROSOFT\WINDOWS\FONTS\HACKGENCONSOLENF-REGULAR.TTF, DirectWrite
+
+--カラースキーム
+config.color_scheme = "catppuccin-mocha"
+
+config.default_prog = { 'pwsh.exe' }
+
+--起動時全画面
+wezterm.on('gui-startup', function()
+    local _, _, window = wezterm.mux.spawn_window({})
+    window:gui_window():maximize()
+end)
+
+-- タブタイトルのカスタマイズ（PowerLine風の矢印デザイン）
+wezterm.on('format-tab-title', function(tab, tabs, panes, config, hover, max_width)
+  -- カレントディレクトリのパスを取得
+  local cwd_uri = tab.active_pane.current_working_dir
+  local cwd = ''
+
+  if cwd_uri then
+    if type(cwd_uri) == "userdata" then
+      -- Windowsの場合、file_pathプロパティを使用
+      cwd = cwd_uri.file_path
+    else
+      -- 文字列の場合はそのまま使用
+      cwd = cwd_uri
+    end
+  end
+
+  -- cwdが取得できない場合はタイトルを使用
+  if not cwd or cwd == '' then
+    cwd = tab.active_pane.title
+  end
+
+  -- 最後のディレクトリ名を抽出（Windows/Unix両対応）
+  -- パスの末尾のスラッシュを除去してから、最後の要素を取得
+  local dir_name = cwd:gsub('[/\\]$', ''):match("([^/\\]+)$") or cwd
+
+  -- タブ番号（1から始まる）
+  local index = tab.tab_index + 1
+
+  -- 表示テキスト: "1: Documents" 形式
+  local title = string.format(' %d: %s ', index, dir_name)
+
+  -- PowerLine矢印記号
+  local SOLID_LEFT_ARROW = wezterm.nerdfonts.pl_right_hard_divider  --
+  local SOLID_RIGHT_ARROW = wezterm.nerdfonts.pl_left_hard_divider  --
+
+  local edge_background = '#0b0022'  -- タブバーの背景色
+
+  -- アクティブなタブの場合
+  if tab.is_active then
+    return {
+      { Background = { Color = edge_background } },
+      { Foreground = { Color = '#2b7de9' } },
+      { Text = SOLID_LEFT_ARROW },
+      { Background = { Color = '#2b7de9' } },
+      { Foreground = { Color = '#ffffff' } },
+      { Text = title },
+      { Background = { Color = edge_background } },
+      { Foreground = { Color = '#2b7de9' } },
+      { Text = SOLID_RIGHT_ARROW },
+    }
+  end
+
+  -- 非アクティブなタブの場合
+  return {
+    { Background = { Color = edge_background } },
+    { Foreground = { Color = '#1a1b26' } },
+    { Text = SOLID_LEFT_ARROW },
+    { Background = { Color = '#1a1b26' } },
+    { Foreground = { Color = '#7aa2f7' } },
+    { Text = title },
+    { Background = { Color = edge_background } },
+    { Foreground = { Color = '#1a1b26' } },
+    { Text = SOLID_RIGHT_ARROW },
+  }
+end)
+
+return config

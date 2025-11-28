@@ -1,0 +1,11 @@
+    -- Ctrl+Vでも貼り付け可能にする（通常のアプリと同じ）
+    {
+      key = 'v',
+      mods = 'CTRL',
+      action = wezterm.action.PasteFrom 'Clipboard'
+    },
+    {
+      key = 'c',
+      mods = 'CTRL',
+      action = wezterm.action.CopyTo 'Clipboard'
+    },
