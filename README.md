@@ -26,7 +26,20 @@ dotfiles/
 
 #### 方法1: 自動インストール（推奨）
 
-**前提条件**: 管理者権限でPowerShellを実行
+**前提条件**:
+- 管理者権限でPowerShellを実行
+- Chocolatey（フォントインストールに必要、オプション）
+
+##### 事前準備: Chocolateyのインストール（フォント自動インストールに必要）
+
+```powershell
+# 管理者権限のPowerShellで実行
+Set-ExecutionPolicy Bypass -Scope Process -Force
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+```
+
+※Chocolateyがない場合、フォントは手動インストールになります（スクリプトは正常動作します）
 
 ##### クイックスタート（依存関係も含めて一括インストール）
 
