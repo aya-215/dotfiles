@@ -14,6 +14,8 @@ dotfiles/
 │   ├── kubectl_completion.ps1            # kubectl補完
 │   ├── Modules/                          # モジュール
 │   └── Scripts/                          # スクリプト
+├── scripts/        # インストールスクリプト
+│   └── install.ps1                       # Windows用インストーラー
 ├── .gitignore
 └── README.md
 ```
@@ -22,9 +24,39 @@ dotfiles/
 
 ### Windows
 
+#### 方法1: 自動インストール（推奨）
+
+**前提条件**: 管理者権限でPowerShellを実行
+
+```powershell
+# 1. リポジトリをクローン
+cd D:\git
+git clone git@github.com:aya-215/dotfiles.git
+
+# 2. インストールスクリプトを実行（管理者権限で実行）
+cd dotfiles
+.\scripts\install.ps1
+```
+
+インストーラーが自動的に以下を実行します:
+- 環境変数 `XDG_CONFIG_HOME` の設定
+- シンボリックリンクの作成（WezTerm、Neovim、PowerShell）
+- 既存ファイルのバックアップ（`~/.dotfiles_backup`に保存）
+
+**オプション:**
+```powershell
+# 実行内容を確認（実際の変更は行わない）
+.\scripts\install.ps1 -DryRun
+
+# 確認なしで実行
+.\scripts\install.ps1 -Force
+```
+
+#### 方法2: 手動セットアップ
+
 **前提条件**: 開発者モードを有効化（シンボリックリンクに管理者権限不要にするため）
 
-#### 1. 環境変数の設定（Neovim用）
+##### 1. 環境変数の設定（Neovim用）
 
 Windowsではデフォルトで`.config`ディレクトリを使用しないため、環境変数の設定が必要です。
 
@@ -35,14 +67,14 @@ Windowsではデフォルトで`.config`ディレクトリを使用しないた�
    - 変数値: `C:\Users\<ユーザー名>\.config`（例: `C:\Users\368\.config`）
 4. `OK` → PowerShellを再起動
 
-#### 2. リポジトリをクローン
+##### 2. リポジトリをクローン
 
 ```powershell
 cd D:\git
 git clone git@github.com:aya-215/dotfiles.git
 ```
 
-#### 3. シンボリックリンクを作成
+##### 3. シンボリックリンクを作成
 
 ```powershell
 # WezTerm
