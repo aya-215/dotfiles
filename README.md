@@ -28,28 +28,52 @@ dotfiles/
 
 **前提条件**: 管理者権限でPowerShellを実行
 
+##### クイックスタート（依存関係も含めて一括インストール）
+
 ```powershell
 # 1. リポジトリをクローン
 cd D:\git
 git clone git@github.com:aya-215/dotfiles.git
 
-# 2. インストールスクリプトを実行（管理者権限で実行）
+# 2. インストールスクリプトを実行（依存関係も含む）
 cd dotfiles
-.\scripts\install.ps1
+.\scripts\install.ps1 -InstallDependencies
 ```
 
-インストーラーが自動的に以下を実行します:
+##### dotfilesのみインストール（依存関係は手動）
+
+```powershell
+# 1. リポジトリをクローン
+cd D:\git
+git clone git@github.com:aya-215/dotfiles.git
+
+# 2. dotfilesのみインストール
+cd dotfiles
+.\scripts\install.ps1
+
+# 3. 後から依存関係をインストール
+.\scripts\install-dependencies.ps1
+```
+
+**インストーラーが自動的に実行すること:**
 - 環境変数 `XDG_CONFIG_HOME` の設定
 - シンボリックリンクの作成（WezTerm、Neovim、PowerShell）
 - 既存ファイルのバックアップ（`~/.dotfiles_backup`に保存）
+- 依存関係のインストール（`-InstallDependencies`指定時）
+  - fzf、Neovim
+  - PowerShellモジュール（PSFzf、ZLocation、BurntToast）
 
-**オプション:**
+**その他のオプション:**
 ```powershell
 # 実行内容を確認（実際の変更は行わない）
 .\scripts\install.ps1 -DryRun
+.\scripts\install-dependencies.ps1 -DryRun
 
 # 確認なしで実行
 .\scripts\install.ps1 -Force
+
+# PowerShellモジュールのみスキップ
+.\scripts\install-dependencies.ps1 -SkipModules
 ```
 
 #### 方法2: 手動セットアップ
