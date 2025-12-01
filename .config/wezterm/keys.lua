@@ -1,122 +1,151 @@
 -- ========================================
--- キーバインディング設定
+-- キーバインディング設定 (Vim風)
 -- ========================================
 
 local wezterm = require 'wezterm'
+local act = wezterm.action
 
 local M = {}
 
 function M.setup(config)
+  -- ========================================
+  -- Leaderキー設定 (tmux/Vim風)
+  -- ========================================
+  config.leader = { key = 's', mods = 'CTRL', timeout_milliseconds = 2000 }
+
   config.keys = {
     -- ========================================
-    -- タブ操作
+    -- タブ操作 (Leader経由)
     -- ========================================
     {
-      key = 't',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.SpawnTab 'CurrentPaneDomain'
+      key = 'c',
+      mods = 'LEADER',
+      action = act.SpawnTab 'CurrentPaneDomain'
     },
     {
-      key = 'w',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.CloseCurrentTab { confirm = true }
+      key = 'n',
+      mods = 'LEADER',
+      action = act.ActivateTabRelative(1)
+    },
+    {
+      key = 'p',
+      mods = 'LEADER',
+      action = act.ActivateTabRelative(-1)
+    },
+    {
+      key = '&',
+      mods = 'LEADER|SHIFT',
+      action = act.CloseCurrentTab { confirm = true }
     },
 
     -- ========================================
-    -- タブ移動
+    -- ペイン分割 (Vim風: s=split, v=vsplit)
     -- ========================================
     {
-      key = 'Tab',
-      mods = 'CTRL',
-      action = wezterm.action.ActivateTabRelative(1)
+      key = 's',
+      mods = 'LEADER',
+      action = act.SplitVertical { domain = 'CurrentPaneDomain' }
     },
     {
-      key = 'Tab',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.ActivateTabRelative(-1)
-    },
-
-    -- 数字キーで直接タブ移動
-    { key = '1', mods = 'ALT', action = wezterm.action.ActivateTab(0) },
-    { key = '2', mods = 'ALT', action = wezterm.action.ActivateTab(1) },
-    { key = '3', mods = 'ALT', action = wezterm.action.ActivateTab(2) },
-    { key = '4', mods = 'ALT', action = wezterm.action.ActivateTab(3) },
-    { key = '5', mods = 'ALT', action = wezterm.action.ActivateTab(4) },
-    { key = '6', mods = 'ALT', action = wezterm.action.ActivateTab(5) },
-    { key = '7', mods = 'ALT', action = wezterm.action.ActivateTab(6) },
-    { key = '8', mods = 'ALT', action = wezterm.action.ActivateTab(7) },
-    { key = '9', mods = 'ALT', action = wezterm.action.ActivateTab(8) },
-
-    -- ========================================
-    -- ペイン分割
-    -- ========================================
-    {
-      key = '|',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.SplitHorizontal { domain = 'CurrentPaneDomain' }
-    },
-    {
-      key = '_',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.SplitVertical { domain = 'CurrentPaneDomain' }
+      key = 'v',
+      mods = 'LEADER',
+      action = act.SplitHorizontal { domain = 'CurrentPaneDomain' }
     },
 
     -- ========================================
-    -- ペイン移動
+    -- ペイン移動 (Vim風: h/j/k/l)
     -- ========================================
     {
-      key = 'LeftArrow',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.ActivatePaneDirection 'Left'
+      key = 'h',
+      mods = 'LEADER',
+      action = act.ActivatePaneDirection 'Left'
     },
     {
-      key = 'RightArrow',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.ActivatePaneDirection 'Right'
+      key = 'j',
+      mods = 'LEADER',
+      action = act.ActivatePaneDirection 'Down'
     },
     {
-      key = 'UpArrow',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.ActivatePaneDirection 'Up'
+      key = 'k',
+      mods = 'LEADER',
+      action = act.ActivatePaneDirection 'Up'
     },
     {
-      key = 'DownArrow',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.ActivatePaneDirection 'Down'
+      key = 'l',
+      mods = 'LEADER',
+      action = act.ActivatePaneDirection 'Right'
     },
 
     -- ========================================
-    -- ペインサイズ調整
+    -- ペインサイズ調整 (Vim風: Shift+H/J/K/L)
     -- ========================================
     {
-      key = 'LeftArrow',
-      mods = 'CTRL|ALT',
-      action = wezterm.action.AdjustPaneSize { 'Left', 5 }
+      key = 'H',
+      mods = 'LEADER|SHIFT',
+      action = act.AdjustPaneSize { 'Left', 5 }
     },
     {
-      key = 'RightArrow',
-      mods = 'CTRL|ALT',
-      action = wezterm.action.AdjustPaneSize { 'Right', 5 }
+      key = 'J',
+      mods = 'LEADER|SHIFT',
+      action = act.AdjustPaneSize { 'Down', 5 }
     },
     {
-      key = 'UpArrow',
-      mods = 'CTRL|ALT',
-      action = wezterm.action.AdjustPaneSize { 'Up', 5 }
+      key = 'K',
+      mods = 'LEADER|SHIFT',
+      action = act.AdjustPaneSize { 'Up', 5 }
     },
     {
-      key = 'DownArrow',
-      mods = 'CTRL|ALT',
-      action = wezterm.action.AdjustPaneSize { 'Down', 5 }
+      key = 'L',
+      mods = 'LEADER|SHIFT',
+      action = act.AdjustPaneSize { 'Right', 5 }
     },
 
     -- ========================================
-    -- ペインクローズ
+    -- ペイン操作
     -- ========================================
     {
       key = 'x',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.CloseCurrentPane { confirm = true }
+      mods = 'LEADER',
+      action = act.CloseCurrentPane { confirm = true }
     },
+    {
+      key = 'z',
+      mods = 'LEADER',
+      action = act.TogglePaneZoomState
+    },
+
+    -- ========================================
+    -- コピーモード (Vim風スクロール)
+    -- ========================================
+    {
+      key = '[',
+      mods = 'LEADER',
+      action = act.ActivateCopyMode
+    },
+
+    -- ========================================
+    -- タブ直接移動 (Alt+数字)
+    -- ========================================
+    { key = '1', mods = 'ALT', action = act.ActivateTab(0) },
+    { key = '2', mods = 'ALT', action = act.ActivateTab(1) },
+    { key = '3', mods = 'ALT', action = act.ActivateTab(2) },
+    { key = '4', mods = 'ALT', action = act.ActivateTab(3) },
+    { key = '5', mods = 'ALT', action = act.ActivateTab(4) },
+    { key = '6', mods = 'ALT', action = act.ActivateTab(5) },
+    { key = '7', mods = 'ALT', action = act.ActivateTab(6) },
+    { key = '8', mods = 'ALT', action = act.ActivateTab(7) },
+    { key = '9', mods = 'ALT', action = act.ActivateTab(8) },
+
+    -- Leader経由でもタブ番号移動可能
+    { key = '1', mods = 'LEADER', action = act.ActivateTab(0) },
+    { key = '2', mods = 'LEADER', action = act.ActivateTab(1) },
+    { key = '3', mods = 'LEADER', action = act.ActivateTab(2) },
+    { key = '4', mods = 'LEADER', action = act.ActivateTab(3) },
+    { key = '5', mods = 'LEADER', action = act.ActivateTab(4) },
+    { key = '6', mods = 'LEADER', action = act.ActivateTab(5) },
+    { key = '7', mods = 'LEADER', action = act.ActivateTab(6) },
+    { key = '8', mods = 'LEADER', action = act.ActivateTab(7) },
+    { key = '9', mods = 'LEADER', action = act.ActivateTab(8) },
 
     -- ========================================
     -- フォントサイズ調整
@@ -124,26 +153,17 @@ function M.setup(config)
     {
       key = '+',
       mods = 'CTRL',
-      action = wezterm.action.IncreaseFontSize
+      action = act.IncreaseFontSize
     },
     {
       key = '-',
       mods = 'CTRL',
-      action = wezterm.action.DecreaseFontSize
+      action = act.DecreaseFontSize
     },
     {
       key = '0',
       mods = 'CTRL',
-      action = wezterm.action.ResetFontSize
-    },
-
-    -- ========================================
-    -- 設定リロード
-    -- ========================================
-    {
-      key = 'r',
-      mods = 'CTRL|SHIFT',
-      action = wezterm.action.ReloadConfiguration
+      action = act.ResetFontSize
     },
 
     -- ========================================
@@ -152,12 +172,17 @@ function M.setup(config)
     {
       key = 'c',
       mods = 'CTRL|SHIFT',
-      action = wezterm.action.CopyTo 'Clipboard'
+      action = act.CopyTo 'Clipboard'
     },
     {
       key = 'v',
       mods = 'CTRL|SHIFT',
-      action = wezterm.action.PasteFrom 'Clipboard'
+      action = act.PasteFrom 'Clipboard'
+    },
+    {
+      key = 'v',
+      mods = 'CTRL',
+      action = act.PasteFrom 'Clipboard'
     },
 
     -- ========================================
@@ -166,7 +191,7 @@ function M.setup(config)
     {
       key = 'f',
       mods = 'CTRL|SHIFT',
-      action = wezterm.action.Search 'CurrentSelectionOrEmptyString'
+      action = act.Search 'CurrentSelectionOrEmptyString'
     },
 
     -- ========================================
@@ -175,21 +200,88 @@ function M.setup(config)
     {
       key = 'PageUp',
       mods = 'SHIFT',
-      action = wezterm.action.ScrollByPage(-1)
+      action = act.ScrollByPage(-1)
     },
     {
       key = 'PageDown',
       mods = 'SHIFT',
-      action = wezterm.action.ScrollByPage(1)
+      action = act.ScrollByPage(1)
     },
 
     -- ========================================
-    -- 透明度調整
+    -- ユーティリティ
     -- ========================================
     {
-      key = 'u',
+      key = 'r',
       mods = 'CTRL|SHIFT',
-      action = wezterm.action.DecreaseFontSize,
+      action = act.ReloadConfiguration
+    },
+    {
+      key = 'p',
+      mods = 'CTRL|SHIFT',
+      action = act.ActivateCommandPalette
+    },
+    {
+      key = 'l',
+      mods = 'CTRL|SHIFT',
+      action = act.ShowDebugOverlay
+    },
+  }
+
+  -- ========================================
+  -- コピーモード内のキーバインディング (Vim風)
+  -- ========================================
+  config.key_tables = {
+    copy_mode = {
+      -- 移動 (Vim風)
+      { key = 'h', mods = 'NONE', action = act.CopyMode 'MoveLeft' },
+      { key = 'j', mods = 'NONE', action = act.CopyMode 'MoveDown' },
+      { key = 'k', mods = 'NONE', action = act.CopyMode 'MoveUp' },
+      { key = 'l', mods = 'NONE', action = act.CopyMode 'MoveRight' },
+
+      -- 単語移動
+      { key = 'w', mods = 'NONE', action = act.CopyMode 'MoveForwardWord' },
+      { key = 'b', mods = 'NONE', action = act.CopyMode 'MoveBackwardWord' },
+      { key = 'e', mods = 'NONE', action = act.CopyMode 'MoveForwardWordEnd' },
+
+      -- 行移動
+      { key = '0', mods = 'NONE', action = act.CopyMode 'MoveToStartOfLine' },
+      { key = '$', mods = 'SHIFT', action = act.CopyMode 'MoveToEndOfLineContent' },
+      { key = '^', mods = 'SHIFT', action = act.CopyMode 'MoveToStartOfLineContent' },
+
+      -- ページ移動
+      { key = 'g', mods = 'NONE', action = act.CopyMode 'MoveToScrollbackTop' },
+      { key = 'G', mods = 'SHIFT', action = act.CopyMode 'MoveToScrollbackBottom' },
+      { key = 'u', mods = 'CTRL', action = act.CopyMode 'PageUp' },
+      { key = 'd', mods = 'CTRL', action = act.CopyMode 'PageDown' },
+
+      -- 選択開始
+      { key = 'v', mods = 'NONE', action = act.CopyMode { SetSelectionMode = 'Cell' } },
+      { key = 'V', mods = 'SHIFT', action = act.CopyMode { SetSelectionMode = 'Line' } },
+      -- 注意: Ctrl+Vは通常のペーストに割り当てられているため、矩形選択は別のキーを使用してください
+
+      -- ヤンク (コピーしてモード終了)
+      { key = 'y', mods = 'NONE', action = act.Multiple {
+        { CopyTo = 'ClipboardAndPrimarySelection' },
+        { CopyMode = 'Close' },
+      }},
+
+      -- 検索
+      { key = '/', mods = 'NONE', action = act.Search 'CurrentSelectionOrEmptyString' },
+      { key = 'n', mods = 'NONE', action = act.CopyMode 'NextMatch' },
+      { key = 'N', mods = 'SHIFT', action = act.CopyMode 'PriorMatch' },
+
+      -- モード終了
+      { key = 'q', mods = 'NONE', action = act.CopyMode 'Close' },
+      { key = 'Escape', mods = 'NONE', action = act.CopyMode 'Close' },
+    },
+
+    search_mode = {
+      { key = 'Enter', mods = 'NONE', action = act.CopyMode 'PriorMatch' },
+      { key = 'Escape', mods = 'NONE', action = act.CopyMode 'Close' },
+      { key = 'n', mods = 'CTRL', action = act.CopyMode 'NextMatch' },
+      { key = 'p', mods = 'CTRL', action = act.CopyMode 'PriorMatch' },
+      { key = 'u', mods = 'CTRL', action = act.CopyMode 'ClearPattern' },
     },
   }
 
@@ -201,13 +293,13 @@ function M.setup(config)
     {
       event = { Up = { streak = 1, button = 'Left' } },
       mods = 'CTRL',
-      action = wezterm.action.OpenLinkAtMouseCursor,
+      action = act.OpenLinkAtMouseCursor,
     },
     -- 右クリックでペースト
     {
       event = { Down = { streak = 1, button = 'Right' } },
       mods = 'NONE',
-      action = wezterm.action.PasteFrom 'Clipboard',
+      action = act.PasteFrom 'Clipboard',
     },
   }
 end
