@@ -31,7 +31,7 @@ function M.setup(config)
   -- その他のパフォーマンス設定
   -- ========================================
   -- 設定の自動リロード
-  config.automatically_reload_config = true
+  config.automatically_reload_config = false
 
   -- IME設定（日本語入力）
   config.use_ime = true
