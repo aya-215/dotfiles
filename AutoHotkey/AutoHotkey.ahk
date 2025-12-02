@@ -42,7 +42,16 @@ IME_SET(isOn := 0, WinTitle := "A") {
 }
 
 ~Ctrl:: {
-    if (A_PriorHotkey = A_ThisHotkey and A_TimeSincePriorHotkey < 300) {
+    ; Ctrlが離されるまで待機（タイムアウト2秒）
+    result := KeyWait("Ctrl", "T2")
+
+    ; タイムアウトした（= 長押しされた）場合は何もしない
+    ; KeyWaitはタイムアウト時に0を返す
+    if (!result)
+        return
+
+    ; 2回押し判定（間隔を200msに短縮して誤検出を防ぐ）
+    if (A_PriorHotkey = A_ThisHotkey and A_TimeSincePriorHotkey < 200) {
         if WinExist("ahk_exe wezterm-gui.exe") {
             if WinActive("ahk_exe wezterm-gui.exe") {
                 ; 最小化前に前のウィンドウIDを取得
