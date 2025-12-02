@@ -15,6 +15,7 @@ local wezterm = require 'wezterm'
 local performance = require 'performance'
 local appearance = require 'appearance'
 local keys = require 'keys'
+local env_loader = require 'env'
 
 -- 設定オブジェクトの作成
 local config = wezterm.config_builder()
@@ -39,10 +40,31 @@ appearance.setup_startup()
 keys.setup(config)
 
 -- ========================================
+-- 環境変数の読み込み
+-- ========================================
+local config_dir = wezterm.config_dir
+local env_file = config_dir .. '\\.env'
+local env = env_loader.load_env_file(env_file)
+
+-- ========================================
 -- デフォルトシェル設定
 -- ========================================
 config.default_prog = { 'pwsh.exe' }
-config.default_cwd = 'D:\\'
+
+-- ワークスペースタイプに応じて起動ディレクトリを設定
+local workspace_type = env_loader.get_env(env, 'WORKSPACE_TYPE', 'home')
+local start_dir = env_loader.get_env(env, 'START_DIR', nil)
+
+if start_dir then
+  -- START_DIR が明示的に指定されている場合はそれを使用
+  config.default_cwd = start_dir
+elseif workspace_type == 'work' then
+  -- 会社PC: D:\ で起動
+  config.default_cwd = 'D:\\'
+else
+  -- 自宅PC: ホームディレクトリで起動
+  config.default_cwd = wezterm.home_dir
+end
 
 -- ========================================
 -- 設定を返す
