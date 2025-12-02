@@ -301,12 +301,6 @@ function M.setup(config)
       mods = 'CTRL',
       action = act.OpenLinkAtMouseCursor,
     },
-    -- 右クリックでペースト
-    {
-      event = { Down = { streak = 1, button = 'Right' } },
-      mods = 'NONE',
-      action = act.PasteFrom 'Clipboard',
-    },
   }
 end
 
