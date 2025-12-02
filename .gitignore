@@ -3,3 +3,6 @@
 
 # PowerShell secrets
 PowerShell/secrets.ps1
+
+# WezTerm environment-specific settings
+.config/wezterm/.env
