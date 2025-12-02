@@ -44,12 +44,18 @@ function M.setup(config)
     {
       key = 's',
       mods = 'LEADER',
-      action = act.SplitVertical { domain = 'CurrentPaneDomain' }
+      action = act.SplitPane {
+        direction = 'Down',
+        size = { Percent = 50 },
+      }
     },
     {
       key = 'v',
       mods = 'LEADER',
-      action = act.SplitHorizontal { domain = 'CurrentPaneDomain' }
+      action = act.SplitPane {
+        direction = 'Right',
+        size = { Percent = 50 },
+      }
     },
 
     -- ========================================
