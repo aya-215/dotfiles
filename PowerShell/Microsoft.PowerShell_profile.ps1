@@ -3,7 +3,6 @@
 # ======================
 
 # 基本設定のみ（即座に実行）
-if (-not $env:NVIM) { Set-Location "D:\" }
 $env:FORCE_COLOR = "1"
 $env:COLORTERM = "truecolor"
 $env:FZF_DEFAULT_OPTS = '--height 40% --reverse --border --margin=1 --padding=1'
@@ -39,6 +38,10 @@ Set-Alias -Name v -Value nvim
 Set-Alias -Name c -Value claude
 function cc { claude -c @args }
 function cr { claude -r @args }
+
+# 勤怠打刻
+function checkin { python "D:\個人用\script\kintai\kintai_auto_checkin.py" }
+function checkout { python "D:\個人用\script\kintai\kintai_auto_checkout.py" }
 
 # ======================
 # モジュール遅延読み込み
