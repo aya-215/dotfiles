@@ -2,11 +2,6 @@
 # 超高速プロファイル
 # ======================
 
-# 基本設定のみ（即座に実行）
-$env:FORCE_COLOR = "1"
-$env:COLORTERM = "truecolor"
-$env:FZF_DEFAULT_OPTS = '--height 40% --reverse --border --margin=1 --padding=1'
-
 # ======================
 # Wezterm用OSC 7シーケンス（カレントディレクトリ通知）
 # ======================

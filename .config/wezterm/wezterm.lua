@@ -47,6 +47,15 @@ local env_file = config_dir .. '\\.env'
 local env = env_loader.load_env_file(env_file)
 
 -- ========================================
+-- 環境変数設定
+-- ========================================
+config.set_environment_variables = {
+  FORCE_COLOR = "1",
+  COLORTERM = "truecolor",
+  FZF_DEFAULT_OPTS = "--height 40% --reverse --border --margin=1 --padding=1",
+}
+
+-- ========================================
 -- デフォルトシェル設定
 -- ========================================
 config.default_prog = { 'pwsh.exe' }
