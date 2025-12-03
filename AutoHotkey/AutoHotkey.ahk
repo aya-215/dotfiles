@@ -41,31 +41,20 @@ IME_SET(isOn := 0, WinTitle := "A") {
                            , "Ptr",  isOn)
 }
 
-~Ctrl:: {
-    ; Ctrlが離されるまで待機（タイムアウト2秒）
-    result := KeyWait("Ctrl", "T2")
+; Ctrl + \ でWeztermをトグル
+^\::ToggleWezterm()
 
-    ; タイムアウトした（= 長押しされた）場合は何もしない
-    ; KeyWaitはタイムアウト時に0を返す
-    if (!result)
-        return
-
-    ; 2回押し判定（間隔を200msに短縮して誤検出を防ぐ）
-    if (A_PriorHotkey = A_ThisHotkey and A_TimeSincePriorHotkey < 200) {
-        if WinExist("ahk_exe wezterm-gui.exe") {
-            if WinActive("ahk_exe wezterm-gui.exe") {
-                ; 最小化前に前のウィンドウIDを取得
-                WinMinimize
-                ; 最小化後、次のウィンドウをアクティブにする
-                Send "!{Esc}"  ; Alt+Escで次のウィンドウに切り替え
-            } else {
-                ; 先に最大化してから表示
-                WinMaximize
-                WinShow
-                WinActivate
-            }
+ToggleWezterm() {
+    if WinExist("ahk_exe wezterm-gui.exe") {
+        if WinActive("ahk_exe wezterm-gui.exe") {
+            WinMinimize
+            Send "!{Esc}"
         } else {
-            Run "wezterm-gui.exe"
+            WinMaximize
+            WinShow
+            WinActivate
         }
+    } else {
+        Run "wezterm-gui.exe"
     }
 }
