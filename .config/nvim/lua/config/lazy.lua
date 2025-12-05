@@ -16,25 +16,18 @@ vim.opt.rtp:prepend(lazypath)
 
 require("lazy").setup({
   spec = {
-    -- LazyVimとそのプラグインを追加
-    { "LazyVim/LazyVim", import = "lazyvim.plugins" },
-    -- カスタムプラグインをインポート/上書き
+    -- カスタムプラグインをインポート
     { import = "plugins" },
   },
   defaults = {
-    -- デフォルトではLazyVimプラグインのみ遅延読み込み。カスタムプラグインは起動時に読み込まれる
-    -- すべてのカスタムプラグインをデフォルトで遅延読み込みにする場合は true に設定
     lazy = true, -- 起動時間最適化: すべてのプラグインをデフォルトで遅延読み込み
-    -- バージョン管理対応プラグインの多くは古いリリースを使っており、Neovimが壊れる可能性があるため
-    -- 現時点では version=false のままにしておくことを推奨
     version = false, -- 常に最新のgit commitを使用
-    -- version = "*", -- semverをサポートするプラグインの最新安定版をインストール
   },
   install = { colorscheme = { "tokyonight", "habamax" } },
   checker = {
     enabled = true, -- プラグイン更新を定期的にチェック
     notify = false, -- 更新時に通知しない
-  }, -- プラグイン更新を自動チェック
+  },
   performance = {
     rtp = {
       -- 一部のrtpプラグインを無効化
