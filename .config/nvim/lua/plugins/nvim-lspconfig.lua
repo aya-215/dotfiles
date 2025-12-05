@@ -196,9 +196,9 @@ return {
             return
           end
         end
-        -- Neovim 0.11以降でも従来のlspconfigを使用
-        -- (nvim-lspconfigプラグインが0.11対応版を提供)
-        require("lspconfig")[server].setup(server_opts)
+        -- Neovim 0.11の新API
+        vim.lsp.config(server, server_opts)
+        vim.lsp.enable(server)
       end
 
       local have_mason, mlsp = pcall(require, "mason-lspconfig")

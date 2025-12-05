@@ -100,20 +100,8 @@ return {
       local mlsp = require("mason-lspconfig")
       mlsp.setup(opts)
 
-      if vim.fn.has("nvim-0.11") == 1 then
-        mlsp.setup({
-          automatic_enable = true,
-        })
-      else
-        mlsp.setup_handlers({
-          function(server_name)
-            local has_lspconfig, lspconfig = pcall(require, "lspconfig")
-            if has_lspconfig then
-              lspconfig[server_name].setup({})
-            end
-          end,
-        })
-      end
+      -- Neovim 0.11以降は nvim-lspconfig.lua のhandlersで制御
+      -- automatic_enableは使用しない（nvim-lspconfig.luaで統一管理）
     end,
   },
   {
