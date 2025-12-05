@@ -98,55 +98,68 @@ return {
       return ret
     end,
     config = function(_, opts)
-      local Util = require("lazyvim.util")
-
-      if LazyVim.has("neoconf.nvim") then
-        local plugin = require("lazy.core.config").spec.plugins["neoconf.nvim"]
-        require("neoconf").setup(require("lazy.core.plugin").values(plugin, "opts", false))
-      end
-
-      LazyVim.format.register(LazyVim.lsp.formatter())
-      
+      -- Document highlight機能（LSP単語ハイライト）
       if opts.document_highlight and opts.document_highlight.enabled then
-        local ok, snacks = pcall(require, "snacks")
-        if ok and snacks.words and type(snacks.words.setup) == "function" then
-          snacks.words.setup(opts.document_highlight)
-        elseif ok and snacks.words then
-          -- Snacks.words exists but might have different API
-          pcall(function()
-            if snacks.words.enable then
-              snacks.words.enable()
+        vim.api.nvim_create_autocmd("LspAttach", {
+          callback = function(args)
+            local client = vim.lsp.get_client_by_id(args.data.client_id)
+            if client and client.server_capabilities.documentHighlightProvider then
+              vim.api.nvim_create_autocmd({ "CursorHold", "CursorHoldI" }, {
+                buffer = args.buf,
+                callback = vim.lsp.buf.document_highlight,
+              })
+              vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+                buffer = args.buf,
+                callback = vim.lsp.buf.clear_references,
+              })
             end
-          end)
-        end
+          end,
+        })
       end
-      
+
+      -- Inlay hints機能（型ヒント表示）
       if opts.inlay_hints.enabled then
-        Snacks.util.lsp.on({ method = "textDocument/inlayHint" }, function(buffer)
-          if
-            vim.api.nvim_buf_is_valid(buffer)
-            and vim.bo[buffer].buftype == ""
-            and not vim.tbl_contains(opts.inlay_hints.exclude, vim.bo[buffer].filetype)
-          then
-            vim.lsp.inlay_hint.enable(true, { bufnr = buffer })
-          end
-        end)
+        vim.api.nvim_create_autocmd("LspAttach", {
+          callback = function(args)
+            local client = vim.lsp.get_client_by_id(args.data.client_id)
+            if client and client.server_capabilities.inlayHintProvider then
+              local buftype = vim.bo[args.buf].buftype
+              local filetype = vim.bo[args.buf].filetype
+              if buftype == "" and not vim.tbl_contains(opts.inlay_hints.exclude, filetype) then
+                vim.lsp.inlay_hint.enable(true, { bufnr = args.buf })
+              end
+            end
+          end,
+        })
       end
-      
+
+      -- Code lens機能（コードレンズ表示）
       if opts.codelens.enabled and vim.lsp.codelens then
-        Snacks.util.lsp.on({ method = "textDocument/codeLens" }, function(buffer)
-          vim.lsp.codelens.refresh()
-          vim.api.nvim_create_autocmd({ "BufEnter", "CursorHold", "InsertLeave" }, {
-            buffer = buffer,
-            callback = vim.lsp.codelens.refresh,
-          })
-        end)
+        vim.api.nvim_create_autocmd("LspAttach", {
+          callback = function(args)
+            local client = vim.lsp.get_client_by_id(args.data.client_id)
+            if client and client.server_capabilities.codeLensProvider then
+              vim.lsp.codelens.refresh()
+              vim.api.nvim_create_autocmd({ "BufEnter", "CursorHold", "InsertLeave" }, {
+                buffer = args.buf,
+                callback = vim.lsp.codelens.refresh,
+              })
+            end
+          end,
+        })
       end
-      
+
+      -- 診断アイコン設定
       if type(opts.diagnostics.virtual_text) == "table" and opts.diagnostics.virtual_text.prefix == "icons" then
+        -- カスタムアイコン定義
+        local icons = {
+          Error = " ",
+          Warn = " ",
+          Hint = " ",
+          Info = " ",
+        }
         opts.diagnostics.virtual_text.prefix = vim.fn.has("nvim-0.10.0") == 0 and "●"
           or function(diagnostic)
-            local icons = require("lazyvim.config").icons.diagnostics
             for d, icon in pairs(icons) do
               if diagnostic.severity == vim.diagnostic.severity[d:upper()] then
                 return icon
@@ -212,11 +225,7 @@ return {
       
       if have_mason then
         mlsp.setup({
-          ensure_installed = vim.tbl_deep_extend(
-            "force",
-            ensure_installed,
-            LazyVim.opts("mason-lspconfig.nvim").ensure_installed or {}
-          ),
+          ensure_installed = ensure_installed,
           handlers = { setup },
         })
       end
