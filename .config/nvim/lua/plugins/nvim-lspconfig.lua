@@ -151,7 +151,6 @@ return {
 
       -- 診断アイコン設定
       if type(opts.diagnostics.virtual_text) == "table" and opts.diagnostics.virtual_text.prefix == "icons" then
-        -- カスタムアイコン定義
         local icons = {
           Error = " ",
           Warn = " ",
@@ -167,9 +166,9 @@ return {
             end
           end
       end
-      
+
       vim.diagnostic.config(vim.deepcopy(opts.diagnostics))
-      
+
       local servers = opts.servers
       local has_blink, blink = pcall(require, "blink.cmp")
       local capabilities = vim.tbl_deep_extend(
@@ -179,7 +178,7 @@ return {
         has_blink and blink.get_lsp_capabilities() or {},
         opts.capabilities or {}
       )
-      
+
       local function setup(server)
         local server_opts = vim.tbl_deep_extend("force", {
           capabilities = vim.deepcopy(capabilities),
@@ -187,7 +186,7 @@ return {
         if server_opts.enabled == false then
           return
         end
-        
+
         if opts.setup[server] then
           if opts.setup[server](server, server_opts) then
             return
@@ -197,9 +196,11 @@ return {
             return
           end
         end
+        -- Neovim 0.11以降でも従来のlspconfigを使用
+        -- (nvim-lspconfigプラグインが0.11対応版を提供)
         require("lspconfig")[server].setup(server_opts)
       end
-      
+
       local have_mason, mlsp = pcall(require, "mason-lspconfig")
       local all_mslp_servers = {}
       if have_mason then
@@ -208,7 +209,7 @@ return {
           all_mslp_servers = vim.tbl_keys(mappings.lspconfig_to_package)
         end
       end
-      
+
       local ensure_installed = {}
       for server, server_opts in pairs(servers) do
         if server_opts then
@@ -222,25 +223,13 @@ return {
           end
         end
       end
-      
+
       if have_mason then
         mlsp.setup({
           ensure_installed = ensure_installed,
           handlers = { setup },
         })
       end
-      
-      -- Deno/vtsls conflict resolution (commented out due to API change)
-      -- if Util.lsp.is_enabled("denols") and Util.lsp.is_enabled("vtsls") then
-      --   local is_deno = require("lspconfig.util").root_pattern("deno.json", "deno.jsonc")
-      --   Util.lsp.disable("vtsls", is_deno)
-      --   Util.lsp.disable("denols", function(root_dir, config)
-      --     if not is_deno(root_dir) then
-      --       config.settings.deno.enable = false
-      --     end
-      --     return false
-      --   end)
-      -- end
     end,
   },
 }

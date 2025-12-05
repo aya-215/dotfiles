@@ -12,7 +12,6 @@ return {
 
         -- 基本言語のパーサーを自動インストール
         ensure_installed = {
-          "c",
           "lua",
           "vim",
           "vimdoc",
@@ -30,10 +29,10 @@ return {
           "regex",
           "java",
         },
-        
+
         -- パーサーを自動でインストール（使用頻度低+LSP再起動あるため有効化）
         auto_install = true,
-        
+
         -- シンタックスハイライト設定
         highlight = {
           enable = true,
@@ -48,14 +47,14 @@ return {
           -- JSPファイルで追加のVimの正規表現ハイライト使用
           additional_vim_regex_highlighting = { "jsp" },
         },
-        
+
         -- インデント設定
         indent = {
           enable = true,
           -- 問題のある言語では無効化
           disable = { "python" },
         },
-        
+
         -- 段階的選択
         incremental_selection = {
           enable = true,
@@ -66,7 +65,7 @@ return {
             node_decremental = "<C-backspace>",
           },
         },
-        
+
         -- テキストオブジェクト（nvim-treesitter-textobjectsプラグイン使用）
         textobjects = {
           select = {

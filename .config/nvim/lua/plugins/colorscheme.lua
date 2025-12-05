@@ -1,16 +1,15 @@
 return {
   {
-    "LazyVim/LazyVim",
-    opts = {
-      colorscheme = "catppuccin-mocha",
-    },
-  },
-  {
-    "catppuccin",
-    lazy = false, -- カラースキームは起動時に必要
-    priority = 1000, -- 他のプラグインより先に読み込む
+    "catppuccin/nvim",
+    name = "catppuccin",
+    lazy = false,
+    priority = 1000,
     opts = {
       transparent_background = true,
     },
+    config = function(_, opts)
+      require("catppuccin").setup(opts)
+      vim.cmd.colorscheme("catppuccin-mocha")
+    end,
   },
 }

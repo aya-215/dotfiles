@@ -34,7 +34,7 @@ return {
         },
       },
       log_level = vim.log.levels.INFO,
-      max_concurrent_installers = 2, -- メモリ最適化: 4→2に削減
+      max_concurrent_installers = 2,
       registries = {
         "github:mason-org/mason-registry",
       },
@@ -62,7 +62,6 @@ return {
         end, 100)
       end)
 
-      -- 起動時間最適化: refresh を遅延実行
       vim.defer_fn(function()
         mr.refresh(function()
           for _, tool in ipairs(opts.ensure_installed) do
@@ -72,7 +71,7 @@ return {
             end
           end
         end)
-      end, 3000) -- 3秒後に実行
+      end, 3000)
     end,
   },
   {
@@ -91,19 +90,16 @@ return {
         "ts_ls",
         "eslint",
         "pyright",
-        -- "rust_analyzer", -- メモリ最適化: Rust未使用のため削除
         "bashls",
-        -- "dockerls", -- メモリ最適化: Docker編集頻度低いため削除
-        -- "docker_compose_language_service", -- メモリ最適化: Docker編集頻度低いため削除
         "marksman",
-        "jdtls", -- Java使用中のため保持
+        "jdtls",
       },
       automatic_installation = false,
     },
     config = function(_, opts)
       local mlsp = require("mason-lspconfig")
       mlsp.setup(opts)
-      
+
       if vim.fn.has("nvim-0.11") == 1 then
         mlsp.setup({
           automatic_enable = true,
@@ -124,7 +120,6 @@ return {
     "WhoIsSethDaniel/mason-tool-installer.nvim",
     dependencies = { "mason-org/mason.nvim" },
     cmd = { "MasonToolsInstall", "MasonToolsUpdate", "MasonToolsClean" },
-    -- event = "VeryLazy", -- 起動時間最適化: eventを削除してcmdのみで遅延読み込み
     opts = {
       ensure_installed = {
         "prettier",
