@@ -14,7 +14,7 @@
 
 移行前の完全な設定が保存されており、必要なプラグイン設定はここから参照・コピー可能。
 
-## 現在のプラグイン構成（最小構成）
+## 現在のプラグイン構成
 
 ### コアプラグイン
 1. **colorscheme.lua** - Catppuccin Mocha（透過背景）
@@ -22,7 +22,24 @@
 3. **mason.lua** - LSP/ツール管理（mason + mason-lspconfig + mason-tool-installer）
 4. **nvim-lspconfig.lua** - LSP詳細設定（診断表示、lua_ls設定など）
 5. **claudecode.lua** - Claude Code統合
-6. **snacks/init.lua** - snacks.nvim（スクロール機能）
+6. **snacks/** - snacks.nvim（スクロール、ダッシュボード機能）
+7. **telescope.lua** - ファジーファインダー（plenary.nvim + telescope-fzf-native.nvim）
+
+### UI/UX
+8. **which-key.lua** - キーバインドヘルプ
+9. **lualine.lua** - ステータスライン
+10. **barbar.lua** - バッファライン
+11. **nvim-web-devicons.lua** - アイコン表示
+12. **noice.lua** - コマンドライン・通知UI改善
+13. **oil.lua** - ファイルエクスプローラー（oil-git-status統合）
+
+### コーディング支援
+14. **blink-cmp.lua** - 補完エンジン（LuaSnip + friendly-snippets）
+15. **vim-auto-save.lua** - 自動保存
+16. **mini-pairs.lua** - 括弧・引用符の自動ペアリング
+
+### Git統合
+17. **gitsigns.lua** - Git差分表示
 
 ### 主要な設定ファイル
 - `init.lua` - エントリーポイント（leader キー設定、config読み込み）
@@ -34,21 +51,11 @@
 
 必要に応じて段階的に追加予定のプラグイン：
 
-### UI/UX
-- which-key.nvim - キーバインドヘルプ
-- lualine.nvim - ステータスライン
-- nvim-tree.lua - ファイルエクスプローラー
-- telescope.nvim - ファジーファインダー
-- barbar.nvim - バッファライン
-
 ### コーディング支援
-- mini.pairs - 括弧の自動ペアリング
 - ts-comments.nvim - コメント機能
 - mini.ai - テキストオブジェクト拡張
-- blink.cmp - 補完エンジン
 
 ### Git統合
-- gitsigns.nvim - Git差分表示
 - lazygit.nvim - LazyGit統合
 
 ### その他
@@ -73,6 +80,18 @@
 - [x] 既存プラグイン設定を全削除
 - [x] lazy.luaからLazyVim依存を削除
 - [x] lazyvim.jsonを削除
-- [x] 最小構成プラグインを追加（6個）
+- [x] 最小構成プラグインを追加（7個）
 - [x] init.luaでleader キー設定を修正
-- [ ] 動作確認
+- [x] 動作確認
+
+### 2025-12-08
+- [x] UI/UXプラグインを追加（which-key, lualine, barbar, nvim-web-devicons, oil, noice）
+- [x] 補完エンジン追加（blink-cmp + LuaSnip + friendly-snippets）
+- [x] Git統合追加（gitsigns + oil-git-status）
+- [x] 自動保存機能追加（vim-auto-save）
+- [x] snacks.nvimの機能拡張（ダッシュボード追加）
+- [x] 合計16プラグインの構成に拡張完了
+- [x] mini.pairs追加（括弧・引用符の自動ペアリング）
+- [x] Visual modeインデント後の選択維持設定追加
+- [x] Escキーで検索ハイライト解除設定追加
+- [x] 合計17プラグインの構成に拡張完了
