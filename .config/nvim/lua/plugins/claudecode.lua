@@ -18,7 +18,9 @@ return {
         snacks_win_opts = {
           wo = {
             winblend = 15,  -- ターミナルの透過度（0-100）
+            winhighlight = "Normal:Normal,NormalFloat:Normal",
           },
+          style = "terminal",
         },
       },
 

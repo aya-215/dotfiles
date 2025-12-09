@@ -31,8 +31,25 @@ vim.g.autoformat = false
 -- ウィンドウ透過設定
 vim.opt.winblend = 15  -- フロートウィンドウ・ターミナルの透過度（0-100）
 
--- ターミナル設定：PowerShell Coreをデフォルトシェルに設定
-vim.opt.shell = "pwsh"
-vim.opt.shellcmdflag = "-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command"
-vim.opt.shellquote = ""
-vim.opt.shellxquote = ""
+-- OS検出によるシェル設定
+if vim.fn.has("wsl") == 1 or vim.fn.has("unix") == 1 then
+	-- WSL/Linux環境
+	vim.opt.shell = vim.env.SHELL or "/usr/bin/zsh"
+	vim.opt.shellcmdflag = "-c"
+else
+	-- Windows環境
+	vim.opt.shell = "pwsh"
+	vim.opt.shellcmdflag = "-NoLogo -NoProfile -ExecutionPolicy RemoteSigned -Command"
+	vim.opt.shellquote = ""
+	vim.opt.shellxquote = ""
+end
+
+-- ターミナル透過設定
+vim.api.nvim_create_autocmd("TermOpen", {
+	callback = function()
+		vim.cmd("setlocal winblend=15")
+		-- ターミナル背景を透明に設定
+		vim.cmd("highlight Terminal guibg=NONE ctermbg=NONE")
+		vim.cmd("highlight TerminalNormal guibg=NONE ctermbg=NONE")
+	end,
+})
