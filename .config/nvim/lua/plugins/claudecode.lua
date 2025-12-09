@@ -15,6 +15,11 @@ return {
         split_width_percentage = 0.35,
         provider = "snacks",
         auto_close = true,
+        snacks_win_opts = {
+          wo = {
+            winblend = 15,  -- ターミナルの透過度（0-100）
+          },
+        },
       },
 
       -- Diff設定（新しいタブで表示）

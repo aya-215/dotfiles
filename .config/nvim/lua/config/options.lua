@@ -6,6 +6,9 @@
 vim.opt.number = true
 vim.opt.relativenumber = true
 
+-- クリップボード設定：ヤンク時にシステムクリップボードにコピー
+vim.opt.clipboard = "unnamedplus"
+
 -- 検索設定
 vim.opt.ignorecase = true   -- 検索時に大文字・小文字を区別しない
 vim.opt.smartcase = true    -- 検索文字列に大文字が含まれている場合は区別する
@@ -24,6 +27,9 @@ vim.opt.softtabstop = 0    -- タブ文字を使用
 
 -- 自動フォーマッター無効化
 vim.g.autoformat = false
+
+-- ウィンドウ透過設定
+vim.opt.winblend = 15  -- フロートウィンドウ・ターミナルの透過度（0-100）
 
 -- ターミナル設定：PowerShell Coreをデフォルトシェルに設定
 vim.opt.shell = "pwsh"

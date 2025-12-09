@@ -6,6 +6,13 @@
 -- ファイルエクスプローラー
 vim.keymap.set("n", "<leader>e", ":NvimTreeToggle<CR>", { desc = "ファイルエクスプローラーの表示切替" })
 
+-- Visual mode: インデント後も選択を維持
+vim.keymap.set("v", "<", "<gv", { desc = "インデント（選択維持）" })
+vim.keymap.set("v", ">", ">gv", { desc = "インデント（選択維持）" })
+
+-- Normal mode: Escで検索ハイライトを解除
+vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>", { desc = "検索ハイライトを解除" })
+
 -- ===================================================
 -- Alt+hjkl: ウィンドウ移動（全モードで動作）
 -- Neovim公式ドキュメント推奨の方法
