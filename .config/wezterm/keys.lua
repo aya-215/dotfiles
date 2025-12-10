@@ -15,6 +15,26 @@ function M.setup(config)
 
   config.keys = {
     -- ========================================
+    -- シェル環境切り替え (Ctrl+Alt+W/P)
+    -- ========================================
+    {
+      key = 'w',
+      mods = 'CTRL|ALT',
+      action = act.SpawnCommandInNewTab {
+        domain = { DomainName = 'WSL:Ubuntu-22.04' },
+      },
+    },
+    {
+      key = 'p',
+      mods = 'CTRL|ALT',
+      action = act.SpawnCommandInNewTab {
+        args = { 'pwsh.exe', '-NoLogo' },
+        domain = { DomainName = 'local' },
+        cwd = 'D:\\',
+      },
+    },
+
+    -- ========================================
     -- タブ操作 (Leader経由)
     -- ========================================
     {

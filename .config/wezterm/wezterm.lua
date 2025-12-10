@@ -58,7 +58,31 @@ config.set_environment_variables = {
 -- ========================================
 -- デフォルトシェル設定
 -- ========================================
-config.default_prog = { 'pwsh.exe' }
+-- WSLをデフォルトに設定（シェル統合とディレクトリ追跡を有効化）
+config.default_domain = 'WSL:Ubuntu-22.04'
+
+-- WSLドメインのカスタマイズ
+config.wsl_domains = {
+  {
+    name = 'WSL:Ubuntu-22.04',
+    distribution = 'Ubuntu-22.04',
+    default_cwd = '~',
+  },
+}
+
+-- 複数のシェル環境を選択可能にする
+config.launch_menu = {
+  {
+    label = 'PowerShell 7',
+    args = { 'pwsh.exe', '-NoLogo' },
+    domain = { DomainName = 'local' },
+    cwd = 'D:\\',
+  },
+  {
+    label = 'WSL Ubuntu',
+    domain = { DomainName = 'WSL:Ubuntu-22.04' },
+  },
+}
 
 -- ワークスペースタイプに応じて起動ディレクトリを設定
 local workspace_type = env_loader.get_env(env, 'WORKSPACE_TYPE', 'home')
