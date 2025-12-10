@@ -2,9 +2,11 @@
 vim.g.mapleader = " "
 vim.g.maplocalleader = "\\"
 
--- system32のripgrepを優先 (起動時間最適化: vim.scheduleで遅延実行)
+-- PATH設定 (起動時間最適化: vim.scheduleで遅延実行)
 vim.schedule(function()
-  vim.env.PATH = "C:\\Windows\\System32;" .. (vim.env.PATH or "")
+  local nvm_node_path = vim.fn.expand("$HOME/.nvm/versions/node/v24.11.1/bin")
+  -- WSL環境: nvmとsystem32のripgrepを優先
+  vim.env.PATH = nvm_node_path .. ":" .. "C:\\Windows\\System32;" .. (vim.env.PATH or "")
 end)
 
 -- プロジェクト固有の.nvimrcを自動読み込み
