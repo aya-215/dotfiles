@@ -1,0 +1,57 @@
+# WSL バックアップ除外リスト
+# このファイルで指定されたファイル・ディレクトリはバックアップから除外されます
+
+# キャッシュディレクトリ
+.cache/
+.npm/
+.yarn/
+.pnpm-store/
+.cargo/registry/
+.cargo/git/
+.local/share/Trash/
+__pycache__/
+*.pyc
+
+# 一時ファイル
+*.tmp
+*.temp
+*.log
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# 大きなバイナリ・依存関係（オプション - 必要に応じてコメントアウト解除）
+# node_modules/
+# vendor/
+# .venv/
+# venv/
+
+# ブラウザキャッシュ
+.mozilla/firefox/*/cache*/
+.config/google-chrome/*/Cache/
+.config/chromium/*/Cache/
+
+# システム関連の一時ファイル
+.local/share/recently-used.xbel
+.bash_history
+.zsh_history
+.lesshst
+.viminfo
+.wget-hsts
+
+# バックアップログ自体
+.backup-logs/
+
+# Docker関連（大きくなりがち）
+# .docker/
+
+# VS Code関連のキャッシュ
+.vscode-server/data/logs/
+.vscode-server/data/CachedData/
+.vscode-server/extensions/*/node_modules/
+
+# その他
+.Trash/
+lost+found/
