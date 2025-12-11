@@ -27,8 +27,8 @@ plugins=(
 # Load Oh My Zsh
 source $ZSH/oh-my-zsh.sh
 
-# Custom prompt (相対パス2階層 + Git情報)
-PROMPT='%F{green}%2~%f $(git_prompt_info) %# '
+# Starship prompt
+eval "$(starship init zsh)"
 
 # NVM configuration
 export NVM_DIR="$HOME/.nvm"
