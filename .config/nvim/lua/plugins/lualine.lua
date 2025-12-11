@@ -10,7 +10,7 @@ return {
       disabled_filetypes = {
         statusline = { "dashboard", "alpha", "starter" },
       },
-      globalstatus = true, -- グローバルステータスラインを有効化
+      globalstatus = false, -- 各ウィンドウごとにステータスラインを表示
     },
     sections = {
       lualine_a = { "mode" },
