@@ -21,6 +21,7 @@ return {
             winhighlight = "Normal:Normal,NormalFloat:Normal",
           },
           style = "terminal",
+          keys = {},  -- claudecode.nvim のデフォルトキー (<S-CR>) を無効化（WSLペースト問題対策）
         },
       },
 

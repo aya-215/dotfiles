@@ -5,16 +5,12 @@ return {
   opts = {
     scroll = {
       enabled = true,
-      -- promptバッファ以外、またはターミナルのNormalモード時のみスムーズスクロールを有効化
+      -- ターミナルバッファでは完全に無効化（ペースト時の文字欠落防止）
+      -- https://github.com/folke/snacks.nvim/issues/384
       filter = function(buf)
         local buftype = vim.bo[buf].buftype
-        if buftype == "prompt" then
+        if buftype == "prompt" or buftype == "terminal" then
           return false
-        end
-        -- ターミナルバッファの場合、Normalモード時のみ有効
-        if buftype == "terminal" then
-          local mode = vim.api.nvim_get_mode().mode
-          return mode == "n" or mode == "nt"
         end
         return true
       end,

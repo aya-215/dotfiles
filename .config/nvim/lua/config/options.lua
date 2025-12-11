@@ -6,8 +6,19 @@
 vim.opt.number = true
 vim.opt.relativenumber = true
 
--- クリップボード設定：ヤンク時にシステムクリップボードにコピー
+-- クリップボード設定：OSC 52（WSL環境で高速・安定）
 vim.opt.clipboard = "unnamedplus"
+vim.g.clipboard = {
+  name = 'OSC 52',
+  copy = {
+    ['+'] = require('vim.ui.clipboard.osc52').copy('+'),
+    ['*'] = require('vim.ui.clipboard.osc52').copy('*'),
+  },
+  paste = {
+    ['+'] = require('vim.ui.clipboard.osc52').paste('+'),
+    ['*'] = require('vim.ui.clipboard.osc52').paste('*'),
+  },
+}
 
 -- 検索設定
 vim.opt.ignorecase = true   -- 検索時に大文字・小文字を区別しない
