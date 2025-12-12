@@ -1,0 +1,9 @@
+ ~ 
+❯ gj                                                                                                                                                                                                                                                                 13:55:30
+[WARN] - (starship::modules::git_status): Error in module `git_status`:
+ --> 1:116
+  |
+1 | ([ ](bg:$style fg:#c0daf5)$conflicted$staged$modified$renamed$deleted$untracked$stashed$ahead_behind[](fg:#2f4570)
+  |                                                                                                                    ^---
+  |
+  = expected variable, string, textgroup, or conditional

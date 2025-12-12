@@ -1,0 +1,152 @@
+# https://starship.rs/config/
+# Ice Blue Tokyo - バランス紫アクセント（Tokyo Night風）
+
+command_timeout = 1000
+right_format = """$time"""
+
+[time]
+disabled = false
+style = "#939594"
+format = "[$time]($style)"
+
+[aws]
+style = "bg:#66c2ff fg:black"
+symbol = "☁ "
+format = "[](fg:black bg:#66c2ff)[$symbol$profile]($style)[](fg:#66c2ff bg:black)"
+
+[character]
+success_symbol = "[❯](#80d4ff)"
+error_symbol = "[✗](#ff4757)"
+
+[cmd_duration]
+style = "#66c2ff"
+format = "[](fg:black bg:#66c2ff)[祥$duration](bg:$style fg:black)[](fg:$style)"
+
+[directory]
+style = "#4db8ff"
+truncate_to_repo = false
+fish_style_pwd_dir_length = 1
+format = "[](fg:black bg:#4db8ff)[$path[$read_only](bg:$style fg:black)](bg:$style fg:black)[](fg:$style)"
+read_only = " "
+
+[docker_context]
+style = "fg:black bg:#7dcfff"
+symbol = "🐳  "
+format = "[](fg:black bg:#7dcfff)[$symbol$context]($style)[](fg:#7dcfff)"
+
+[git_branch]
+style = "#bb9af7"
+format = "[](fg:black bg:$style)[ $symbol$branch](fg:black bg:$style)[](fg:$style)"
+
+[git_commit]
+style = "#bb9af7"
+format = "\b[ ](bg:$style)[\\($hash$tag\\)](fg:black bg:$style)[](fg:$style)"
+
+[git_state]
+style = "#bb9af7"
+format = "\b[ ](bg:$style)[ \\($state( $progress_current/$progress_total)\\)](fg:black bg:$style)[](fg:$style)"
+
+[git_status]
+style = "#bb9af7"
+format = "(\b[ ](bg:$style fg:black)$conflicted$staged$modified$renamed$deleted$untracked$stashed$ahead_behind[](fg:$style))"
+conflicted = "[ ](bold fg:88 bg:#bb9af7)[  ${count} ](fg:black bg:#bb9af7)"
+staged = "[ $count ](fg:black bg:#bb9af7)"
+modified = "[ ${count} ](fg:black bg:#bb9af7)"
+renamed = "[ ${count} ](fg:black bg:#bb9af7)"
+deleted = "[ ${count} ](fg:black bg:#bb9af7)"
+untracked = "[?${count} ](fg:black bg:#bb9af7)"
+stashed = "[ ${count} ](fg:black bg:#bb9af7)"
+ahead = "[ ${count} ](fg:#2d5566 bg:#bb9af7)"
+behind = "[ ${count} ](fg:black bg:#bb9af7)"
+diverged = "[ ](fg:88 bg:#bb9af7)[ נּ ](fg:black bg:#bb9af7)[ ${ahead_count} ](fg:black bg:#bb9af7)[ ${behind_count} ](fg:black bg:#bb9af7)"
+
+[golang]
+symbol = "ﳑ "
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[helm]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol($version)]($style)[](fg:#7dcfff)"
+
+[java]
+symbol = " "
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[kotlin]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[kubernetes]
+format = "[](fg:white bg:#7856c7)[$symbol$context](fg:white bg:#7856c7)[](fg:#7856c7)"
+disabled = false
+
+#[memory_usage]
+#style = "#66c2ff"
+#symbol = " "
+#format = "[](fg:black bg:#66c2ff)[$symbol$ram](bg:$style fg:black)[](fg:$style)"
+#threshold = 95
+#disabled = false
+
+[nodejs]
+style = "green"
+format = "[](fg:black bg:#7dcfff)[$symbol($version)](fg:black bg:#7dcfff)[](fg:#7dcfff)"
+
+[ocaml]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[package]
+disabled = true
+
+[php]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[python]
+symbol = " "
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$pyenv_prefix$version$virtualenv]($style)[](fg:#7dcfff)"
+
+[ruby]
+symbol = " "
+format = "[](fg:black bg:#7dcfff)[$symbol$version](fg:black bg:#7dcfff)(fg:black bg:#7dcfff)[](fg:#7dcfff)"
+
+[rust]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[scala]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[swift]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
+
+[shell]
+fish_indicator = ""
+bash_indicator = "bash "
+zsh_indicator = "zsh "
+powershell_indicator = ""
+format = "[$indicator](fg:#7856c7)"
+disabled = false
+[shlvl]
+symbol = " "
+style = "fg:white bg:#7856c7"
+format = "[](fg:white bg:#7856c7)[$symbol$shlvl]($style)[](fg:#7856c7)"
+disabled = false
+
+[terraform]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$workspace]($style)[](fg:#7dcfff)"
+
+[username]
+style_user = "#80d4ff"
+style_root = "#C00311"
+format = "[](fg:black bg:$style)[$user](fg:black bg:$style)[](fg:$style)"
+
+[vagrant]
+style = "fg:black bg:#7dcfff"
+format = "[](fg:black bg:#7dcfff)[$symbol$version]($style)[](fg:#7dcfff)"
