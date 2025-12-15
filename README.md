@@ -147,13 +147,24 @@ cd ~
 git clone git@github.com:aya-215/dotfiles.git .dotfiles
 ```
 
-#### 2. lazygitをインストール（Linux/WSL2）
+#### 2. 依存ツールをインストール（Linux/WSL2）
+
+##### lazygit（Git TUI）
 
 ```bash
 LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
 curl -Lo /tmp/lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz"
 cd /tmp && tar xf lazygit.tar.gz
 sudo install lazygit -D -t /usr/local/bin/
+```
+
+##### delta（diff表示の強化）
+
+```bash
+DELTA_VERSION=$(curl -s "https://api.github.com/repos/dandavison/delta/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
+curl -Lo /tmp/delta.tar.gz "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/delta-${DELTA_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+cd /tmp && tar xzf delta.tar.gz
+sudo install delta-${DELTA_VERSION}-x86_64-unknown-linux-gnu/delta /usr/local/bin/
 ```
 
 #### 3. シンボリックリンクを作成
@@ -196,6 +207,58 @@ cd ~/dotfiles  # Windows: D:\git\dotfiles
 git add .
 git commit -m "設定を更新"
 git push
+```
+
+## lazygitの使い方
+
+### 基本操作
+
+任意のGitリポジトリで`lazygit`を実行すると、対話的なGit操作UIが起動します：
+
+```bash
+lazygit
+```
+
+### diff表示の切り替え
+
+lazygitには3つのdiff表示モードを設定しています。**`|`キー**で切り替えられます：
+
+1. **通常表示**（デフォルト）
+   - コンパクトな差分表示
+   - 行番号付き
+   - 小さな変更の確認に最適
+
+2. **side-by-side表示**
+   - 左右2画面で差分表示
+   - 大きな変更の比較に便利
+   - 行番号付き
+
+3. **詳細表示（ハイパーリンク付き）**
+   - side-by-side表示
+   - 行番号がクリック可能
+   - クリックでnvimが該当行で開く
+
+### 主なキーバインド
+
+| キー | 動作 |
+|------|------|
+| `|` | diff表示モードを切り替え |
+| `?` | ヘルプを表示 |
+| `1-5` | パネル切り替え |
+| `space` | ステージング/アンステージング |
+| `c` | コミット |
+| `P` | プッシュ |
+| `p` | プル |
+| `q` | 終了 |
+
+### deltaについて
+
+`git diff`や`git log`コマンドでも、自動的にdeltaが使用されます：
+
+```bash
+# コマンドラインでの差分表示もdelta経由で表示される
+git diff
+git log -p
 ```
 
 ## PowerShell設定の詳細
