@@ -1,0 +1,68 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/jesseduffield/lazygit/master/schema/config.json
+
+# GUI設定
+gui:
+  # スクロール設定
+  scrollHeight: 2
+  scrollPastBottom: true
+
+  # マウス操作
+  mouseEvents: true
+
+  # サイドパネルの幅（0～1の範囲）
+  sidePanelWidth: 0.3
+
+  # コミットメッセージの長さ
+  commitLength:
+    show: true
+
+  # ブランチカラー
+  theme:
+    activeBorderColor:
+      - cyan
+      - bold
+    inactiveBorderColor:
+      - white
+    selectedLineBgColor:
+      - blue
+
+# Git設定
+git:
+  paging:
+    colorArg: always
+    pager: delta --dark --paging=never
+
+  # コミットメッセージの自動折り返し
+  commit:
+    signOff: false
+    autoWrapCommitMessage: true
+    autoWrapWidth: 72
+
+  # ブランチのソート順序
+  branchLogCmd: "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
+
+  # 自動フェッチ
+  autoFetch: true
+  autoRefresh: true
+
+  # マージ動作
+  merging:
+    # マージコミットなしでマージ（fast-forward）
+    manualCommit: false
+    args: ""
+
+# OS統合
+os:
+  # エディタ設定（nvimを使用）
+  editCommand: "nvim"
+  editCommandTemplate: "{{editor}} {{filename}}"
+  openCommand: ""
+
+# 確認ダイアログ
+confirmOnQuit: false
+
+# 通知
+notARepository: "prompt"
+
+# スタートアップ
+startupPopupVersion: 5

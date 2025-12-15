@@ -8,7 +8,8 @@
 dotfiles/
 ├── .config/
 │   ├── wezterm/           # WezTerm設定
-│   └── nvim/              # Neovim設定
+│   ├── nvim/              # Neovim設定
+│   └── lazygit/           # lazygit設定
 ├── PowerShell/            # PowerShell設定
 │   ├── Microsoft.PowerShell_profile.ps1  # プロファイル
 │   ├── kubectl_completion.ps1            # kubectl補完
@@ -143,20 +144,35 @@ New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\Documents\PowerShell" -T
 
 ```bash
 cd ~
-git clone git@github.com:aya-215/dotfiles.git
+git clone git@github.com:aya-215/dotfiles.git .dotfiles
 ```
 
-#### 2. シンボリックリンクを作成
+#### 2. lazygitをインストール（Linux/WSL2）
 
 ```bash
-# WezTerm
-ln -s ~/dotfiles/.config/wezterm ~/.config/wezterm
+LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
+curl -Lo /tmp/lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz"
+cd /tmp && tar xf lazygit.tar.gz
+sudo install lazygit -D -t /usr/local/bin/
+```
 
+#### 3. シンボリックリンクを作成
+
+```bash
 # Neovim
-ln -s ~/dotfiles/.config/nvim ~/.config/nvim
+ln -s ~/.dotfiles/.config/nvim ~/.config/nvim
+
+# Starship
+ln -s ~/.dotfiles/.config/starship.toml ~/.config/starship.toml
+
+# lazygit
+ln -s ~/.dotfiles/.config/lazygit ~/.config/lazygit
+
+# WezTerm（必要な場合）
+ln -s ~/.dotfiles/.config/wezterm ~/.config/wezterm
 
 # PowerShell（macOSの場合）
-ln -s ~/dotfiles/PowerShell ~/.config/powershell
+ln -s ~/.dotfiles/PowerShell ~/.config/powershell
 ```
 
 ## 日常の使い方
