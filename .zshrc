@@ -57,21 +57,18 @@ _zeno_lazy_init() {
     source ~/src/github.com/yuki-yano/zeno.zsh/zeno.zsh
 
     # キーバインディング設定
-    bindkey ' '  zeno-auto-snippet
-    bindkey '^m' zeno-auto-snippet-and-accept-line
-    bindkey '^i' zeno-completion
-    bindkey '^r' zeno-history-selection
-    bindkey '^x^s' zeno-insert-snippet
+    # スペースは通常動作、Ctrl+Spaceでスニペット展開
+    bindkey '^ ' zeno-auto-snippet            # Ctrl+Space: スニペット展開
+    bindkey '^i' zeno-completion              # Tab: 補完
+    bindkey '^r' zeno-history-selection       # Ctrl-R: 履歴検索
+    bindkey '^x^s' zeno-insert-snippet        # Ctrl-X Ctrl-S: スニペット挿入
 
     _zeno_loaded=1
   fi
 }
 
 # 遅延読み込み用のトリガー関数
-_zeno_trigger_space() {
-  _zeno_lazy_init
-  zle zeno-auto-snippet
-}
+# スペースキーは通常動作するため、TabとCtrl-Rのみトリガー設定
 
 _zeno_trigger_tab() {
   _zeno_lazy_init
@@ -84,13 +81,11 @@ _zeno_trigger_ctrl_r() {
 }
 
 # ZLE widgetとして登録
-zle -N _zeno_trigger_space
 zle -N _zeno_trigger_tab
 zle -N _zeno_trigger_ctrl_r
 
 # 最初は遅延読み込みトリガーをバインド
 # 一度読み込まれたら、zeno.zsh側が正しいキーバインドに上書きする
-bindkey ' '  _zeno_trigger_space
 bindkey '^i' _zeno_trigger_tab
 bindkey '^r' _zeno_trigger_ctrl_r
 
@@ -285,29 +280,32 @@ nbd() {
   echo "🔄 タスク一覧を更新中..."
   nbtsync 2>/dev/null
 
-  # 2. 今日・期限切れのタスクを収集
-  local today_tasks=""
-  find "$tasks_dir" -name "*.md" -not -path "*/.*" -not -name "inbox.md" -not -name "2025-*.md" 2>/dev/null | while read -r file; do
-    local due=$(grep "^due:" "$file" 2>/dev/null | cut -d: -f2- | xargs)
-    local status=$(grep "^status:" "$file" 2>/dev/null | cut -d: -f2- | xargs)
-    local tags=$(grep "^tags:" "$file" 2>/dev/null | cut -d: -f2- | xargs)
-    local title=$(basename "$file" .md)
+  # 2. inbox.mdから今週のタスクを収集
+  local inbox="$tasks_dir/inbox.md"
 
-    [[ "$status" == "done" ]] && continue
+  # 今日・期限切れのタスクを抽出
+  awk '
+    /## 🔥 今日・期限切れ/ { in_section = 1; next }
+    in_section && /^## / { in_section = 0 }
+    in_section && /^- \[ \]/ {
+      sub(/ → \[\[tasks:.*\]\]$/, "")
+      print
+    }
+  ' "$inbox" > /tmp/today_tasks.txt
 
-    if [[ "$due" != "未定" ]]; then
-      local today_date=$(date +%Y-%m-%d)
-      local days_diff=$(( ($(date -d "$due" +%s 2>/dev/null || echo 0) - $(date -d "$today_date" +%s 2>/dev/null || echo 0)) / 86400 ))
+  # 今週中のタスクを抽出
+  awk '
+    /## 📅 今週中/ { in_section = 1; next }
+    in_section && /^## / { in_section = 0 }
+    in_section && /^- \[ \]/ {
+      sub(/ → \[\[tasks:.*\]\]$/, "")
+      print
+    }
+  ' "$inbox" >> /tmp/today_tasks.txt
 
-      if [[ $days_diff -le 0 ]]; then
-        echo "- [ ] $title 📅 $due $tags"
-      fi
-    fi
-  done > /tmp/today_tasks.txt
-
-  # 3. 今日のタスクを表示
+  # 3. 今週のタスクを表示
   echo ""
-  echo "📅 今日・期限切れのタスク:"
+  echo "📅 今週のタスク:"
   echo "========================="
   if [[ -s /tmp/today_tasks.txt ]]; then
     cat /tmp/today_tasks.txt
@@ -322,26 +320,20 @@ nbd() {
 
     # 今日のタスクを自動挿入
     if [[ -s /tmp/today_tasks.txt ]]; then
-      # "## 📋 今日のタスク" セクションの空行にタスクを挿入
-      content=$(echo "$content" | awk -v tasks="$(cat /tmp/today_tasks.txt)" '
-        /## 📋 今日のタスク/ {
+      local task_list=$(cat /tmp/today_tasks.txt)
+      content=$(echo "$content" | awk -v tasks="$task_list" '
+        /^## 📋 今日のタスク/ {
           print
           getline
           print
-          print ""
           print tasks
-          skip = 3
-          next
-        }
-        skip > 0 && /^- \[ \] $/ {
-          skip--
           next
         }
         { print }
       ')
     fi
 
-    echo "$content" | nb daily:add "$date.md" --content "$(cat -)"
+    nb daily:add "$date.md" --content "$content"
     echo "✅ 日報作成: daily:$date.md"
     echo ""
     echo "💡 ヒント: inbox.mdの確認は 'nbi' コマンド"
@@ -507,6 +499,9 @@ nbt() {
 
     echo "✅ タスク作成: tasks:$file_path"
     nb tasks:edit "$file_path"
+
+    # inbox.mdを自動更新
+    nbtsync
   else
     echo "❌ テンプレートが見つかりません: $template"
   fi
@@ -526,7 +521,7 @@ nbtl() {
     # frontmatterから情報抽出
     local due=$(grep "^due:" "$file" | cut -d: -f2- | xargs)
     local tags=$(grep "^tags:" "$file" | cut -d: -f2- | xargs)
-    local status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
+    local task_status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
     local priority=$(grep "^priority:" "$file" | cut -d: -f2- | xargs)
     local title=$(basename "$file" .md)
 
@@ -541,7 +536,7 @@ nbtl() {
     fi
 
     # statusがdone以外のものだけ表示
-    if [[ "$status" == "done" ]]; then
+    if [[ "$task_status" == "done" ]]; then
       continue
     fi
 
@@ -597,12 +592,12 @@ EOF
   echo "## 🔥 今日・期限切れ" >> "$inbox"
   echo "" >> "$inbox"
 
-  find "$tasks_dir" -name "*.md" -not -path "*/.*" -not -name "inbox.md" -not -name "2025-*.md" | while read -r file; do
+  find "$tasks_dir" -name "*.md" -not -path "*/.templates/*" -not -path "*/.git/*" -not -name "inbox.md" -not -name "2025-*.md" | while read -r file; do
     local due=$(grep "^due:" "$file" | cut -d: -f2- | xargs)
-    local status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
+    local task_status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
     local title=$(basename "$file" .md)
 
-    [[ "$status" == "done" ]] && continue
+    [[ "$task_status" == "done" ]] && continue
 
     if [[ "$due" != "未定" ]]; then
       local today=$(date +%Y-%m-%d)
@@ -618,13 +613,13 @@ EOF
   echo "## 📅 今週中" >> "$inbox"
   echo "" >> "$inbox"
 
-  find "$tasks_dir" -name "*.md" -not -path "*/.*" -not -name "inbox.md" -not -name "2025-*.md" | while read -r file; do
+  find "$tasks_dir" -name "*.md" -not -path "*/.templates/*" -not -path "*/.git/*" -not -name "inbox.md" -not -name "2025-*.md" | while read -r file; do
     local due=$(grep "^due:" "$file" | cut -d: -f2- | xargs)
-    local status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
+    local task_status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
     local tags=$(grep "^tags:" "$file" | cut -d: -f2- | xargs)
     local title=$(basename "$file" .md)
 
-    [[ "$status" == "done" ]] && continue
+    [[ "$task_status" == "done" ]] && continue
 
     if [[ "$due" != "未定" ]]; then
       local today=$(date +%Y-%m-%d)
@@ -640,13 +635,13 @@ EOF
   echo "## 📋 期限未定" >> "$inbox"
   echo "" >> "$inbox"
 
-  find "$tasks_dir" -name "*.md" -not -path "*/.*" -not -name "inbox.md" -not -name "2025-*.md" | while read -r file; do
+  find "$tasks_dir" -name "*.md" -not -path "*/.templates/*" -not -path "*/.git/*" -not -name "inbox.md" -not -name "2025-*.md" | while read -r file; do
     local due=$(grep "^due:" "$file" | cut -d: -f2- | xargs)
-    local status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
+    local task_status=$(grep "^status:" "$file" | cut -d: -f2- | xargs)
     local tags=$(grep "^tags:" "$file" | cut -d: -f2- | xargs)
     local title=$(basename "$file" .md)
 
-    [[ "$status" == "done" ]] && continue
+    [[ "$task_status" == "done" ]] && continue
 
     if [[ "$due" == "未定" ]]; then
       echo "- [ ] $title $tags → [[tasks:$title.md]]" >> "$inbox"
@@ -675,7 +670,7 @@ nbtdone() {
 
   # ファイルが見つからない場合、全検索
   if [[ ! -f "$file" ]]; then
-    local found=$(find "$HOME/.nb/tasks" -name "$(basename "$task")" -not -path "*/.*" | head -1)
+    local found=$(find "$HOME/.nb/tasks" -name "$(basename "$task")" -not -path "*/.templates/*" | head -1)
     if [[ -n "$found" ]]; then
       file="$found"
     else
