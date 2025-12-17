@@ -5,6 +5,7 @@ return {
     dependencies = {
       "mason.nvim",
       "mason-org/mason-lspconfig.nvim",
+      "folke/neoconf.nvim",
     },
     opts = function()
       local ret = {
