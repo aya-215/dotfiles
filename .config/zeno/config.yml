@@ -1,0 +1,90 @@
+snippets:
+  # Git関連のスニペット
+  - name: git status
+    keyword: gs
+    snippet: git status --short --branch
+
+  - name: git add all
+    keyword: gaa
+    snippet: git add .
+
+  - name: git commit
+    keyword: gc
+    snippet: git commit -m "{{commit message}}"
+
+  - name: git push
+    keyword: gp
+    snippet: git push origin {{branch}}
+
+  # nb関連のスニペット（プレースホルダ付きのみ残す）
+  - name: nb search
+    keyword: nbs
+    snippet: nb search "{{keyword}}"
+
+  - name: nb add note
+    keyword: nba
+    snippet: nb add "{{title}}"
+
+  - name: nb task add
+    keyword: nbta
+    snippet: nbt "{{task name}}"
+
+completions:
+  # nb補完設定
+  - name: nb notebooks
+    patterns:
+      - "^nb (.*)$"
+    sourceCommand: "nb notebooks --names --no-color"
+    options:
+      --prompt: "'Notebook> '"
+      --preview: "nb {1}:list --limit 10"
+
+  - name: nb notes
+    patterns:
+      - "^nb ([^:]+):(.*)$"
+    sourceCommand: "nb {1}:list --no-color --filenames"
+    options:
+      --prompt: "'Note> '"
+      --preview: "nb {1}:show {}"
+
+  - name: nb daily notes
+    patterns:
+      - "^nb daily:(.*)$"
+    sourceCommand: "nb daily:list --no-color --filenames"
+    options:
+      --prompt: "'Daily Note> '"
+      --preview: "nb daily:show {}"
+
+  - name: git branches
+    patterns:
+      - "^git checkout (.*)$"
+      - "^git switch (.*)$"
+    sourceCommand: "git branch --all | sed 's/^[* ]*//' | sed 's#remotes/origin/##'"
+    options:
+      --prompt: "'Branch> '"
+      --preview: "git log --oneline --graph --color=always {}"
+
+  - name: git modified files
+    patterns:
+      - "^git add (.*)$"
+    sourceCommand: "git status --short | awk '{print $2}'"
+    options:
+      --prompt: "'Add Files> '"
+      --multi: true
+
+  # nb タスク管理補完
+  - name: nb task folders
+    patterns:
+      - "^nbt \"[^\"]+\" (.*)$"
+      - "^nbt \\S+ (.*)$"
+    sourceCommand: "find ~/.nb/tasks -mindepth 1 -maxdepth 1 -type d -not -name '.*' -exec basename {} \\; 2>/dev/null"
+    options:
+      --prompt: "'Task Folder> '"
+
+  - name: nb task completion
+    patterns:
+      - "^nbtdone (.*)$"
+    sourceCommand: "source ~/.config/nb/functions.zsh && _nb_incomplete_tasks"
+    options:
+      --prompt: "'Complete Task> '"
+      --preview: "cat ~/.nb/tasks/{}.md 2>/dev/null || cat ~/.nb/tasks/*/{}.md 2>/dev/null"
