@@ -204,38 +204,15 @@ nbd() {
   [[ -z "$yesterday_summary" ]] && yesterday_summary="（前日のサマリーなし）"
 
   # テンプレートから日報作成
-  local content
-  if [[ -f "$template_path" ]]; then
-    content=$(cat "$template_path")
-    content="${content//\{\{DATE\}\}/$date}"
-    content="${content//\{\{TASKS\}\}/$tasks}"
-    content="${content//\{\{YESTERDAY_SUMMARY\}\}/$yesterday_summary}"
-  else
-    # フォールバック（テンプレートがない場合）
-    content="# $date 日報
-
-## 📋 前日のサマリー
-
-$yesterday_summary
-
-## 📋 未完了タスク
-
-\`\`\`
-$tasks
-\`\`\`
-
-## 📝 今日のサマリー
-
-### Work
-
-
-### Personal
-
-
-## 💡 メモ
-
-"
+  if [[ ! -f "$template_path" ]]; then
+    echo "❌ テンプレートが見つかりません: $template_path"
+    return 1
   fi
+
+  local content=$(cat "$template_path")
+  content="${content//\{\{DATE\}\}/$date}"
+  content="${content//\{\{TASKS\}\}/$tasks}"
+  content="${content//\{\{YESTERDAY_SUMMARY\}\}/$yesterday_summary}"
 
   nb ${_NB_DAILY}add "$date.md" --content "$content"
   nb ${_NB_DAILY}edit "$date.md"
