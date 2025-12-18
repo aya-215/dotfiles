@@ -27,7 +27,7 @@ snippets:
 
   - name: nb task add
     keyword: nbta
-    snippet: nbt "{{task name}}"
+    snippet: nbt "{{task}}" -d {{due}} -t {{tags}}
 
 completions:
   # nb補完設定
@@ -72,19 +72,12 @@ completions:
       --prompt: "'Add Files> '"
       --multi: true
 
-  # nb タスク管理補完
-  - name: nb task folders
+  # nb タスクID補完（nbtd, nbtu用）
+  - name: nb task id
     patterns:
-      - "^nbt \"[^\"]+\" (.*)$"
-      - "^nbt \\S+ (.*)$"
-    sourceCommand: "find ~/.nb/tasks -mindepth 1 -maxdepth 1 -type d -not -name '.*' -exec basename {} \\; 2>/dev/null"
+      - "^nbtd (.*)$"
+      - "^nbtu (.*)$"
+    sourceCommand: "nb tasks:todos open --no-color | awk '{print $1}' | tr -d '[]'"
     options:
-      --prompt: "'Task Folder> '"
-
-  - name: nb task completion
-    patterns:
-      - "^nbtdone (.*)$"
-    sourceCommand: "source ~/.config/nb/functions.zsh && _nb_incomplete_tasks"
-    options:
-      --prompt: "'Complete Task> '"
-      --preview: "cat ~/.nb/tasks/{}.md 2>/dev/null || cat ~/.nb/tasks/*/{}.md 2>/dev/null"
+      --prompt: "'Task ID> '"
+      --preview: "nb tasks:show {}"
