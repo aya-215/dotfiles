@@ -32,6 +32,14 @@ source $ZSH/oh-my-zsh.sh
 # Starship prompt
 eval "$(starship init zsh)"
 
+# WezTerm OSC 7 - 現在のディレクトリをターミナルに通知（新規タブで同じディレクトリを開くため）
+__wezterm_osc7() {
+  printf "\033]7;file://%s%s\033\\" "${HOST}" "${PWD}"
+}
+autoload -Uz add-zsh-hook
+add-zsh-hook chpwd __wezterm_osc7
+__wezterm_osc7  # 初回起動時にも実行
+
 # NVM configuration
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
@@ -216,10 +224,6 @@ _gj_widget() {
 }
 zle -N _gj_widget
 bindkey '^f' _gj_widget
-
-# Start in home directory
-cd ~
-
 
 eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
 export EDITOR="vim"
