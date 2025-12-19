@@ -4,6 +4,8 @@
 # nbネイティブ機能をベースに、fzfでUXを強化
 _NB_TASKS="tasks:"
 _NB_DAILY="daily:"
+_NB_WEEKLY="weekly:"
+_NB_NOTES="notes:"
 
 # -------------
 # タスク管理
@@ -82,10 +84,16 @@ _nb_parse_priority() {
   esac
 }
 
+# タグ取得（notebook指定可能、日本語タグ対応）
+_nb_get_tags() {
+  local notebook="${1:-tasks}"
+  grep -rhoP '#[^\s#]+' ~/.nb/$notebook/*.md 2>/dev/null | sort -u
+}
+
 # タグ選択（fzf複数選択）
 _nb_select_tags() {
-  local existing=$(grep -rh '#[a-zA-Z]' ~/.nb/tasks/*.md 2>/dev/null | \
-    grep -oE '#[a-zA-Z0-9_/-]+' | sed 's/^#//' | sort -u)
+  local notebook="${1:-tasks}"
+  local existing=$(_nb_get_tags "$notebook" | sed 's/^#//')
   [[ -z "$existing" ]] && return
   echo "$existing" | fzf --multi --prompt="Tags (tab:複数選択)> " | tr '\n' ',' | sed 's/,$//'
 }
@@ -143,10 +151,8 @@ nbts() {
 
 # nbtag - タグで絞り込み
 nbtag() {
-  # タスクファイルからタグを収集
-  local tag=$(grep -rh '#[a-zA-Z]' ~/.nb/tasks/*.md 2>/dev/null | \
-    grep -oE '#[a-zA-Z0-9_/-]+' | sort -u | fzf --prompt="Tag> ")
-  [[ -n "$tag" ]] && nb ${_NB_TASKS}search "$tag"
+  local tag=$(_nb_get_tags tasks | sed 's/^#//' | fzf --prompt="Tag> ")
+  [[ -n "$tag" ]] && nb ${_NB_TASKS}search "#$tag"
 }
 
 # nbtclosed - 完了タスク一覧
@@ -298,4 +304,144 @@ nbdl() {
   local selected=$(nb ${_NB_DAILY}list --no-color | \
     fzf --prompt="日報> " --preview 'nb show $(echo {1} | tr -d "[]")')
   [[ -n "$selected" ]] && nb ${_NB_DAILY}show "$(echo "$selected" | awk '{print $1}' | tr -d '[]')"
+}
+
+# -------------
+# 週報管理
+# -------------
+
+# _nb_get_week_monday - 指定日を含む週の月曜日を取得
+_nb_get_week_monday() {
+  local target="${1:-$(date +%Y-%m-%d)}"
+  local dow=$(date -d "$target" +%u)  # 1=月, 7=日
+  date -d "$target - $((dow - 1)) days" +%Y-%m-%d
+}
+
+# nbw - 今週の週報を編集
+nbw() {
+  local monday=$(_nb_get_week_monday)
+  local filename="${monday}-weekly.md"
+
+  if nb ${_NB_WEEKLY}show "$filename" &>/dev/null; then
+    nb ${_NB_WEEKLY}edit "$filename"
+  else
+    echo "週報がありません: $filename"
+    echo "ヒント: Claude Code で /weekly-report を実行して作成"
+  fi
+}
+
+# nbws - 週報表示
+nbws() {
+  local monday
+  if [[ -n "$1" ]]; then
+    monday=$(_nb_get_week_monday "$1")
+  else
+    monday=$(_nb_get_week_monday)
+  fi
+  local filename="${monday}-weekly.md"
+  nb ${_NB_WEEKLY}show "$filename"
+}
+
+# nbwe - 週報編集
+nbwe() {
+  local monday
+  if [[ -n "$1" ]]; then
+    monday=$(_nb_get_week_monday "$1")
+  else
+    monday=$(_nb_get_week_monday)
+  fi
+  local filename="${monday}-weekly.md"
+  nb ${_NB_WEEKLY}edit "$filename"
+}
+
+# nbwl - 週報一覧（fzf）
+nbwl() {
+  local selected=$(nb ${_NB_WEEKLY}list --no-color | \
+    fzf --prompt="週報> " --preview 'nb show $(echo {1} | tr -d "[]")')
+  [[ -n "$selected" ]] && nb ${_NB_WEEKLY}show "$(echo "$selected" | awk '{print $1}' | tr -d '[]')"
+}
+
+# -------------
+# メモ管理
+# -------------
+
+# nbn - メモ追加
+nbn() {
+  local title="" tags=""
+
+  # オプション解析
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -t|--tags) tags="$2"; shift 2 ;;
+      -*) echo "不明なオプション: $1"; return 1 ;;
+      *) title="$1"; shift ;;
+    esac
+  done
+
+  # 引数なし → 対話形式
+  if [[ -z "$title" ]]; then
+    read "title?タイトル: "
+    [[ -z "$title" ]] && return 1
+    echo -n "タグ (カンマ区切り or Tab選択): "
+    read "tags_input?"
+    if [[ -z "$tags_input" ]]; then
+      tags=$(_nb_select_tags notes)
+    else
+      tags="$tags_input"
+    fi
+  fi
+
+  # タグなしなら inbox を付与
+  [[ -z "$tags" ]] && tags="inbox"
+
+  # タグをハッシュタグ形式に変換（カンマ → スペース + #）
+  local hashtags="#${tags//,/ #}"
+
+  # メモ内容を作成
+  local content="# $title
+
+$hashtags
+
+## Description
+
+
+
+## References
+
+"
+
+  # nb add で直接作成（--edit でエディタを開く）
+  nb ${_NB_NOTES}add --content "$content" --edit
+
+  echo "📝 メモ作成: $title"
+}
+
+# nbnl - メモ一覧（fzf選択→編集）
+nbnl() {
+  local selected=$(nb ${_NB_NOTES}list --no-color | \
+    fzf --prompt="メモ> " --preview 'nb notes:show $(echo {1} | tr -d "[]")')
+  [[ -z "$selected" ]] && return
+  local id=$(echo "$selected" | awk '{print $1}' | tr -d '[]')
+  nb ${_NB_NOTES}edit "$id"
+}
+
+# nbns - メモ検索
+nbns() {
+  if [[ -z "$1" ]]; then
+    nb ${_NB_NOTES}list --no-color | \
+      fzf --prompt="Search> " --preview 'nb notes:show $(echo {1} | tr -d "[]")'
+  else
+    nb ${_NB_NOTES}search "$1"
+  fi
+}
+
+# nbntag - タグで絞り込み
+nbntag() {
+  local tag=$(_nb_get_tags notes | sed 's/^#//' | fzf --prompt="Tag> ")
+  [[ -n "$tag" ]] && nb ${_NB_NOTES}search "#$tag"
+}
+
+# nbninbox - inbox一覧（整理用）
+nbninbox() {
+  nb ${_NB_NOTES}search "#inbox"
 }
