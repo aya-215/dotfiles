@@ -48,13 +48,13 @@ nbt() {
   # 相対日付をパース
   due=$(_nb_parse_date "$due")
 
-  # nbネイティブコマンド構築
-  local cmd="nb ${_NB_TASKS}todo add \"$title\""
-  [[ -n "$due" ]] && cmd+=" --due \"$due\""
-  [[ -n "$tags" ]] && cmd+=" --tags \"$tags\""
-  [[ -n "$desc" ]] && cmd+=" --description \"$desc\""
+  # nbネイティブコマンド実行（配列で直接実行し文字化けを防止）
+  local -a args=("${_NB_TASKS}todo" "add" "$title")
+  [[ -n "$due" ]] && args+=(--due "$due")
+  [[ -n "$tags" ]] && args+=(--tags "$tags")
+  [[ -n "$desc" ]] && args+=(--description "$desc")
 
-  eval "$cmd"
+  nb "${args[@]}"
   echo "✅ タスク作成: $title"
 }
 
