@@ -72,13 +72,13 @@ _nb_parse_date() {
   esac
 }
 
-# 優先度パース
+# 優先度パース（priority/xxx形式で出力）
 _nb_parse_priority() {
   case "$1" in
-    1|high)   echo "high" ;;
-    2|medium) echo "medium" ;;
-    3|low)    echo "low" ;;
-    *)        echo "$1" ;;
+    1|high)   echo "priority/high" ;;
+    2|medium) echo "priority/medium" ;;
+    3|low)    echo "priority/low" ;;
+    *)        [[ -n "$1" ]] && echo "$1" ;;
   esac
 }
 
@@ -154,6 +154,16 @@ nbtclosed() {
   nb ${_NB_TASKS}todos closed
 }
 
+# 優先度を数値に変換（ソート用）
+_nb_priority_to_num() {
+  case "$1" in
+    *"#priority/high"*)   echo "1" ;;
+    *"#priority/medium"*) echo "2" ;;
+    *"#priority/low"*)    echo "3" ;;
+    *)                    echo "4" ;;
+  esac
+}
+
 # タスク1件を整形出力
 _nb_format_single_task() {
   local id="$1"
@@ -176,41 +186,39 @@ _nb_format_single_task() {
   fi
 }
 
-# 日報用タスク整形（workタグ優先、期限: タイトル形式）
+# 日報用タスク整形（workタグ優先、日付順、優先度順）
 _nb_format_tasks_for_daily() {
-  local -a work_ids=()
-  local -a other_ids=()
-
-  # タスクをwork/otherに分類
+  # タスク情報を収集してソート用キーを生成
+  # 形式: GROUP|DUE|PRIORITY|ID
   nb ${_NB_TASKS}todos open --no-color 2>/dev/null | head -20 | while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     local id=$(echo "$line" | grep -oE '\[tasks:[0-9]+\]' | grep -oE '[0-9]+')
     [[ -z "$id" ]] && continue
-    local tags=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^## *Tags/{found=1;next} found && /^#/{print;exit}')
-    if [[ "$tags" == *"#work"* ]]; then
-      echo "work:$id"
-    else
-      echo "other:$id"
-    fi
-  done | {
-    # 分類結果を読み込んで出力
-    local -a work_ids=()
-    local -a other_ids=()
-    while IFS= read -r item; do
-      case "$item" in
-        work:*)  work_ids+=("${item#work:}") ;;
-        other:*) other_ids+=("${item#other:}") ;;
-      esac
-    done
-    # workタグ付きを先に出力
-    for id in "${work_ids[@]}"; do
+
+    local task_data=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null)
+    local tags=$(echo "$task_data" | awk '/^## *Tags/{found=1;next} found && /^#/{print;exit}')
+    local due=$(echo "$task_data" | awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}')
+
+    # グループ: work=0, other=1
+    local group="1"
+    [[ "$tags" == *"#work"* ]] && group="0"
+
+    # 日付: なしは9999-99-99
+    [[ -z "$due" || ! "$due" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && due="9999-99-99"
+
+    # 優先度を数値に
+    local priority=$(_nb_priority_to_num "$tags")
+
+    echo "${group}|${due}|${priority}|${id}"
+  done | sort -t'|' -k1,1 -k2,2 -k3,3n | {
+    local prev_group=""
+    while IFS='|' read -r group due priority id; do
+      # work/otherの間に空行
+      if [[ -n "$prev_group" && "$prev_group" == "0" && "$group" == "1" ]]; then
+        echo ""
+      fi
       _nb_format_single_task "$id"
-    done
-    # work/otherの間に空行
-    [[ ${#work_ids[@]} -gt 0 && ${#other_ids[@]} -gt 0 ]] && echo ""
-    # その他を出力
-    for id in "${other_ids[@]}"; do
-      _nb_format_single_task "$id"
+      prev_group="$group"
     done
   }
 }
