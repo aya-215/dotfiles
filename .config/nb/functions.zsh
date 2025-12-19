@@ -197,7 +197,7 @@ nbd() {
   # 前日のサマリーを取得
   local yesterday_summary=""
   if nb ${_NB_DAILY}show "$yesterday.md" &>/dev/null; then
-    yesterday_summary=$(nb ${_NB_DAILY}show "$yesterday.md" 2>/dev/null | \
+    yesterday_summary=$(nb ${_NB_DAILY}show "$yesterday.md" --no-color 2>/dev/null | \
       awk '/^## 📝 今日のサマリー/{flag=1;next}/^## /{flag=0}flag' | \
       sed '/^$/d' | sed 's/^/> /')
   fi
