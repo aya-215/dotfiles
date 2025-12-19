@@ -5,27 +5,41 @@ return {
       "nvim-treesitter/nvim-treesitter",
       "nvim-mini/mini.nvim",
     },
-    ft = { "markdown", "md", "quarto", "rmd", "org" },
+    ft = { "markdown", "quarto", "rmd", "org" },
     keys = {
       { "<leader>rm", "<cmd>RenderMarkdown toggle<cr>", desc = "Toggle Render Markdown" },
+      { "<leader>rp", "<cmd>RenderMarkdown preview<cr>", desc = "Markdown Preview (side panel)" },
     },
     opts = {
       enabled = true,
       max_file_size = 10.0,
       debounce = 100,
-      render_modes = { "n", "c" },
+      render_modes = { "n", "c", "t" },
       preset = "lazy",
+
+      -- LSP補完でcheckbox/calloutを補完可能に
+      completions = { lsp = { enabled = true } },
+
+      -- gitcommitでもmarkdownレンダリングを有効化
+      injections = {
+        gitcommit = { enabled = true },
+      },
 
       anti_conceal = {
         enabled = true,
         above = 0,
         below = 0,
+        ignore = {
+          code_background = true,
+          sign = true,
+        },
       },
 
       heading = {
         enabled = true,
         sign = false,
         icons = { "󰲡 ", "󰲣 ", "󰲥 ", "󰲧 ", "󰲩 ", "󰲫 " },
+        width = "full",
       },
 
       code = {
@@ -42,6 +56,8 @@ return {
         below = "▀",
         highlight = "RenderMarkdownCode",
         highlight_inline = "RenderMarkdownCodeInline",
+        -- diff表示時は背景色を無効化
+        disable_background = { "diff" },
       },
 
       dash = {
