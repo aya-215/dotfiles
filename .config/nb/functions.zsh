@@ -154,24 +154,55 @@ nbtclosed() {
   nb ${_NB_TASKS}todos closed
 }
 
-# 日報用タスク整形（期限: タイトル形式、期限なしはタイトルのみ）
+# タスク1件を整形出力
+_nb_format_single_task() {
+  local id="$1"
+  local title=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^# \[ \]/{gsub(/^# \[ \] */, ""); print; exit}')
+  [[ -z "$title" ]] && return
+  local due=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}')
+  if [[ -n "$due" && "$due" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    due=$(date -d "$due" +%m/%d 2>/dev/null)
+    echo "- $due: $title"
+  else
+    echo "- $title"
+  fi
+}
+
+# 日報用タスク整形（workタグ優先、期限: タイトル形式）
 _nb_format_tasks_for_daily() {
-  nb ${_NB_TASKS}todos open --no-color 2>/dev/null | head -10 | while IFS= read -r line; do
+  local -a work_ids=()
+  local -a other_ids=()
+
+  # タスクをwork/otherに分類
+  nb ${_NB_TASKS}todos open --no-color 2>/dev/null | head -20 | while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    # ID抽出
     local id=$(echo "$line" | grep -oE '\[tasks:[0-9]+\]' | grep -oE '[0-9]+')
     [[ -z "$id" ]] && continue
-    # タイトル抽出
-    local title=$(echo "$line" | sed 's/.*\] *✔️ *\[ \] *//')
-    # 期限取得（ファイルから）
-    local due=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}')
-    if [[ -n "$due" && "$due" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-      due=$(date -d "$due" +%m/%d 2>/dev/null)
-      echo "- $due: $title"
+    local tags=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^## *Tags/{found=1;next} found && /^#/{print;exit}')
+    if [[ "$tags" == *"#work"* ]]; then
+      echo "work:$id"
     else
-      echo "- $title"
+      echo "other:$id"
     fi
-  done
+  done | {
+    # 分類結果を読み込んで出力
+    local -a work_ids=()
+    local -a other_ids=()
+    while IFS= read -r item; do
+      case "$item" in
+        work:*)  work_ids+=("${item#work:}") ;;
+        other:*) other_ids+=("${item#other:}") ;;
+      esac
+    done
+    # workタグ付きを先に出力
+    for id in "${work_ids[@]}"; do
+      _nb_format_single_task "$id"
+    done
+    # その他を出力
+    for id in "${other_ids[@]}"; do
+      _nb_format_single_task "$id"
+    done
+  } | head -10
 }
 
 # -------------
