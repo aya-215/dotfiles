@@ -157,7 +157,15 @@ nbtclosed() {
 # タスク1件を整形出力
 _nb_format_single_task() {
   local id="$1"
-  local title=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^# \[ \]/{gsub(/^# \[ \] */, ""); print; exit}')
+  # タイトル取得（同じ行 or 次の行の両方に対応）
+  local title=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '
+    /^# \[ \]/ {
+      gsub(/^# \[ \] */, "")
+      if ($0 != "") { print; exit }
+      getline
+      print
+      exit
+    }')
   [[ -z "$title" ]] && return
   local due=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}')
   if [[ -n "$due" && "$due" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
