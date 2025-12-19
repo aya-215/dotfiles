@@ -198,11 +198,13 @@ _nb_format_tasks_for_daily() {
     for id in "${work_ids[@]}"; do
       _nb_format_single_task "$id"
     done
+    # work/otherの間に空行
+    [[ ${#work_ids[@]} -gt 0 && ${#other_ids[@]} -gt 0 ]] && echo ""
     # その他を出力
     for id in "${other_ids[@]}"; do
       _nb_format_single_task "$id"
     done
-  } | head -10
+  }
 }
 
 # -------------
