@@ -31,16 +31,14 @@ nbt() {
   if [[ -z "$title" ]]; then
     read "title?タスク名: "
     [[ -z "$title" ]] && return 1
-    read "due?期限 (数字/3d/1w/tomorrow): "
-    echo -n "タグ: "
-    read "tags_input?"
+    read "due?期限 (数字/1w/空でスキップ): "
+    read "tags_input?タグ (カンマ区切り/空でfzf): "
     if [[ -z "$tags_input" ]]; then
       tags=$(_nb_select_tags)
     else
       tags="$tags_input"
     fi
-    read "priority?優先度 (1:high/2:medium/3:low): "
-    read "desc?説明 (省略可): "
+    read "priority?優先度 (1:high/2:medium/3:low/空で2): "
   fi
 
   # 優先度をパースしてタグに追加
@@ -50,13 +48,28 @@ nbt() {
   # 相対日付をパース
   due=$(_nb_parse_date "$due")
 
-  # nbネイティブコマンド実行（配列で直接実行し文字化けを防止）
-  local -a args=("${_NB_TASKS}todo" "add" "$title")
-  [[ -n "$due" ]] && args+=(--due "$due")
-  [[ -n "$tags" ]] && args+=(--tags "$tags")
-  [[ -n "$desc" ]] && args+=(--description "$desc")
+  # タグをハッシュタグ形式に変換（カンマ → スペース + #）
+  local hashtags=""
+  [[ -n "$tags" ]] && hashtags="#${tags//,/ #}"
 
-  nb "${args[@]}"
+  # タスク内容を作成
+  local content="# [ ] $title
+
+## Tags
+
+$hashtags
+
+## Due
+
+$due
+
+## Description
+
+$desc"
+
+  # nb add で直接作成（--edit でエディタを開く）
+  nb ${_NB_TASKS}add --content "$content" --filename "$(date +%Y%m%d%H%M%S).todo.md" --edit
+
   echo "✅ タスク作成: $title"
 }
 
@@ -74,13 +87,14 @@ _nb_parse_date() {
   esac
 }
 
-# 優先度パース（priority/xxx形式で出力）
+# 優先度パース（priority/xxx形式で出力、デフォルトはmedium）
 _nb_parse_priority() {
   case "$1" in
     1|high)   echo "priority/high" ;;
     2|medium) echo "priority/medium" ;;
     3|low)    echo "priority/low" ;;
-    *)        [[ -n "$1" ]] && echo "$1" ;;
+    "")       echo "priority/medium" ;;
+    *)        echo "$1" ;;
   esac
 }
 
@@ -110,29 +124,55 @@ nbtl() {
 
 # nbtd - タスク完了
 nbtd() {
+  local id=""
   if [[ -z "$1" ]]; then
     # fzfで選択
     local selected=$(nb ${_NB_TASKS}todos open --no-color | \
       fzf --prompt="Complete> " --preview 'nb show $(echo {1} | tr -d "[]")')
     [[ -z "$selected" ]] && return
-    local id=$(echo "$selected" | awk '{print $1}' | tr -d '[]')
-    nb ${_NB_TASKS}do "$id"
+    id=$(echo "$selected" | awk '{print $1}' | tr -d '[]')
   else
-    nb ${_NB_TASKS}do "$1"
+    id="$1"
   fi
+
+  # タスク完了
+  nb ${_NB_TASKS}do "$id"
+
+  # 完了日時を追記
+  local filepath=$(nb ${_NB_TASKS}show "$id" --path 2>/dev/null)
+  if [[ -n "$filepath" && -f "$filepath" ]]; then
+    local today=$(date +%Y-%m-%d)
+    # ## Description の前に ## Completed セクションを挿入
+    sed -i "/^## Description/i ## Completed\n\n$today\n" "$filepath"
+  fi
+
   echo "✅ 完了"
 }
 
 # nbtu - タスク完了取消
 nbtu() {
   [[ -z "$1" ]] && { echo "使い方: nbtu <ID>"; return 1; }
+
+  # 完了取消
   nb ${_NB_TASKS}undo "$1"
+
+  # Completedセクションを削除（## Completed + 空行 + 日付 + 空行）
+  local filepath=$(nb ${_NB_TASKS}show "$1" --path 2>/dev/null)
+  if [[ -n "$filepath" && -f "$filepath" ]]; then
+    awk '
+      /^## Completed$/ { skip=1; next }
+      skip && /^## / { skip=0 }
+      skip { next }
+      { print }
+    ' "$filepath" > "${filepath}.tmp" && mv "${filepath}.tmp" "$filepath"
+  fi
+
   echo "↩️ 取消: #$1"
 }
 
 # nbte - タスク編集（fzf選択）
 nbte() {
-  local selected=$(nb ${_NB_TASKS}todos --no-color | \
+  local selected=$(nb ${_NB_TASKS}todos open --no-color | \
     fzf --prompt="Edit> " --preview 'nb show $(echo {1} | tr -d "[]")')
   [[ -z "$selected" ]] && return
   local id=$(echo "$selected" | awk '{print $1}' | tr -d '[]')
@@ -233,10 +273,24 @@ _nb_format_tasks_for_daily() {
 # 日報管理
 # -------------
 
+# _nb_get_latest_daily - 最新の日報ファイル名を取得（今日を除く）
+_nb_get_latest_daily() {
+  local today=$(date +%Y-%m-%d)
+  ls -1 ~/.nb/daily/*.md 2>/dev/null | grep -v '.templates' | \
+    xargs -I{} basename {} .md | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | \
+    grep -v "^$today$" | sort -r | head -1
+}
+
+# _nb_get_second_latest_daily - 2番目に新しい日報ファイル名を取得
+_nb_get_second_latest_daily() {
+  ls -1 ~/.nb/daily/*.md 2>/dev/null | grep -v '.templates' | \
+    xargs -I{} basename {} .md | grep -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' | \
+    sort -r | sed -n '2p'
+}
+
 # nbd - 今日の日報作成/編集
 nbd() {
   local date=$(date +%Y-%m-%d)
-  local yesterday=$(date -d yesterday +%Y-%m-%d)
   local template_path="$HOME/.nb/daily/.templates/daily.md"
 
   # 既に存在する場合は編集
@@ -249,10 +303,11 @@ nbd() {
   local tasks=$(_nb_format_tasks_for_daily)
   [[ -z "$tasks" ]] && tasks="（未完了タスクなし）"
 
-  # 前日のサマリーを取得
+  # 最新の日報（今日を除く）からサマリーを取得
+  local latest_daily=$(_nb_get_latest_daily)
   local yesterday_summary=""
-  if nb ${_NB_DAILY}show "$yesterday.md" &>/dev/null; then
-    yesterday_summary=$(nb ${_NB_DAILY}show "$yesterday.md" --no-color 2>/dev/null | \
+  if [[ -n "$latest_daily" ]] && nb ${_NB_DAILY}show "$latest_daily.md" &>/dev/null; then
+    yesterday_summary=$(nb ${_NB_DAILY}show "$latest_daily.md" --no-color 2>/dev/null | \
       awk '/^## 📝 今日のサマリー/{flag=1;next}/^## /{flag=0}flag' | \
       sed '/^$/d' | sed 's/^/> /')
   fi
@@ -296,8 +351,15 @@ nbds() { nb ${_NB_DAILY}show "$(date +%Y-%m-%d).md"; }
 # nbde - 今日の日報編集
 nbde() { nb ${_NB_DAILY}edit "$(date +%Y-%m-%d).md"; }
 
-# nbdy - 昨日の日報表示
-nbdy() { nb ${_NB_DAILY}show "$(date -d yesterday +%Y-%m-%d).md"; }
+# nbdy - 最新の1つ前の日報表示
+nbdy() {
+  local second_latest=$(_nb_get_second_latest_daily)
+  if [[ -n "$second_latest" ]]; then
+    nb ${_NB_DAILY}show "$second_latest.md"
+  else
+    echo "前回の日報がありません"
+  fi
+}
 
 # nbdl - 日報一覧（fzf）
 nbdl() {
