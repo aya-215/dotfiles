@@ -43,14 +43,13 @@ function M.setup(config)
       action = act.SpawnTab 'CurrentPaneDomain'
     },
     {
-      key = 'n',
-      mods = 'LEADER',
-      action = act.ActivateTabRelative(1)
-    },
-    {
       key = 'p',
       mods = 'LEADER',
-      action = act.ActivateTabRelative(-1)
+      action = act.SpawnCommandInNewTab {
+        args = { 'pwsh.exe', '-NoLogo' },
+        domain = { DomainName = 'local' },
+        cwd = 'D:\\',
+      },
     },
     {
       key = '&',
