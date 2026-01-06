@@ -1,6 +1,12 @@
 # Profiling (コメント解除して起動時間を計測)
 # zmodload zsh/zprof
 
+# Homebrew
+eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+
+# fnm (Node version manager) - NVM より高速
+eval "$(fnm env --use-on-cd)"
+
 # PATH configuration
 export PATH="$HOME/.local/bin:$PATH"
 export PATH="$HOME/.deno/bin:$PATH"
@@ -39,11 +45,6 @@ __wezterm_osc7() {
 autoload -Uz add-zsh-hook
 add-zsh-hook chpwd __wezterm_osc7
 __wezterm_osc7  # 初回起動時にも実行
-
-# NVM configuration
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
 [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
 eval "$(zoxide init zsh)"
@@ -225,8 +226,7 @@ _gj_widget() {
 zle -N _gj_widget
 bindkey '^f' _gj_widget
 
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-export EDITOR="vim"
+export EDITOR="nvim"
 export PATH="$HOME/.local/bin:$PATH"
 
 # nb関連関数（日報・タスク管理）
