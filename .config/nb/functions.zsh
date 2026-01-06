@@ -117,11 +117,14 @@ _nb_select_tags() {
 # nbtl - タスク一覧
 nbtl() {
   local filter="$1"
-  if [[ -n "$filter" ]]; then
-    nb ${_NB_TASKS}todos open | grep -i "$filter"
-  else
-    nb ${_NB_TASKS}todos open
-  fi
+  {
+    nb ${_NB_TASKS}todos open --no-color 2>/dev/null | while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      local id=$(echo "$line" | grep -oE '\[tasks:[0-9]+\]' | grep -oE '[0-9]+')
+      [[ -z "$id" ]] && continue
+      _nb_format_single_task "$id" sort
+    done
+  } | sort | cut -d'|' -f2- | if [[ -n "$filter" ]]; then grep -i "$filter"; else cat; fi
 }
 
 # nbtd - タスク完了
@@ -191,10 +194,26 @@ nbts() {
   fi
 }
 
-# nbtag - タグで絞り込み
+# nbtag - タグで絞り込み（タスク列挙形式）
 nbtag() {
   local tag=$(_nb_get_tags tasks | sed 's/^#//' | fzf --prompt="Tag> ")
-  [[ -n "$tag" ]] && nb ${_NB_TASKS}search "#$tag"
+  [[ -z "$tag" ]] && return
+
+  {
+    nb ${_NB_TASKS}todos open --no-color 2>/dev/null | while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      local id=$(echo "$line" | grep -oE '\[tasks:[0-9]+\]' | grep -oE '[0-9]+')
+      [[ -z "$id" ]] && continue
+
+      local filepath=$(nb ${_NB_TASKS}show "$id" --path 2>/dev/null)
+      [[ ! -f "$filepath" ]] && continue
+
+      # タグチェック
+      grep -q "#$tag" "$filepath" || continue
+
+      _nb_format_single_task "$id" sort
+    done
+  } | sort | cut -d'|' -f2-
 }
 
 # nbtclosed - 完了タスク一覧
@@ -212,9 +231,11 @@ _nb_priority_to_num() {
   esac
 }
 
-# タスク1件を整形出力
+# タスク1件を整形出力（ソート用キー付き）
+# 引数2に "sort" を指定するとソート用キー付きで出力
 _nb_format_single_task() {
   local id="$1"
+  local mode="$2"
   # ファイルパスを取得して直接読む（nb showの幅制限による文字化け回避）
   local filepath=$(nb ${_NB_TASKS}show "$id" --path 2>/dev/null)
   [[ ! -f "$filepath" ]] && return
@@ -225,11 +246,46 @@ _nb_format_single_task() {
 
   # Due取得
   local due=$(awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}' "$filepath")
+  local display_due=""
+  local sort_key="9999-99-99"  # 日付なしは最後
+
   if [[ -n "$due" && "$due" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
-    due=$(date -d "$due" +%m/%d 2>/dev/null)
-    echo "- $due: $title"
+    display_due=$(date -d "$due" +%m/%d 2>/dev/null)
+    sort_key="$due"
+  fi
+
+  if [[ "$mode" == "sort" ]]; then
+    if [[ -n "$display_due" ]]; then
+      echo "${sort_key}|- ${display_due}: ${title}"
+    else
+      echo "${sort_key}|- ${title}"
+    fi
   else
-    echo "- $title"
+    if [[ -n "$display_due" ]]; then
+      echo "- ${display_due}: ${title}"
+    else
+      echo "- ${title}"
+    fi
+  fi
+}
+
+# メモ1件を整形出力（タイトル + タグ）
+_nb_format_single_note() {
+  local id="$1"
+  local filepath=$(nb ${_NB_NOTES}show "$id" --path 2>/dev/null)
+  [[ ! -f "$filepath" ]] && return
+
+  # タイトル取得（# の後）
+  local title=$(head -1 "$filepath" | sed 's/^# *//')
+  [[ -z "$title" ]] && return
+
+  # タグ取得（2行目以降で#から始まる行）
+  local tags=$(awk 'NR>1 && /^#[a-zA-Z]/ {print; exit}' "$filepath")
+
+  if [[ -n "$tags" ]]; then
+    echo "${title}  ${tags}"
+  else
+    echo "${title}"
   fi
 }
 
@@ -484,10 +540,21 @@ $hashtags
 
 # nbnl - メモ一覧（fzf選択→編集）
 nbnl() {
-  local selected=$(nb ${_NB_NOTES}list --no-color | \
-    fzf --prompt="メモ> " --preview 'nb notes:show $(echo {1} | tr -d "[]")')
+  # ID付きで一覧生成（選択用）
+  local list=$(nb ${_NB_NOTES}list --no-color 2>/dev/null | while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    local id=$(echo "$line" | grep -oE '\[notes:[0-9]+\]' | grep -oE '[0-9]+')
+    [[ -z "$id" ]] && continue
+    local formatted=$(_nb_format_single_note "$id")
+    [[ -n "$formatted" ]] && echo "${id}|${formatted}"
+  done)
+
+  local selected=$(echo "$list" | fzf --prompt="メモ> " \
+    --with-nth=2.. --delimiter='|' \
+    --preview 'nb notes:show {1}')
   [[ -z "$selected" ]] && return
-  local id=$(echo "$selected" | awk '{print $1}' | tr -d '[]')
+
+  local id=$(echo "$selected" | cut -d'|' -f1)
   nb ${_NB_NOTES}edit "$id"
 }
 
