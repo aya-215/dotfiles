@@ -27,18 +27,19 @@ nbt() {
     esac
   done
 
-  # 引数なし → 対話形式
+  # 引数なし → 対話形式（varedでマルチバイト文字対応）
   if [[ -z "$title" ]]; then
-    read "title?タスク名: "
+    local title="" due="" tags_input="" priority=""
+    vared -p "タスク名: " title
     [[ -z "$title" ]] && return 1
-    read "due?期限 (数字/1w/空でスキップ): "
-    read "tags_input?タグ (カンマ区切り/空でfzf): "
+    vared -p "期限 (数字/1w/空でスキップ): " due
+    vared -p "タグ (カンマ区切り/空でfzf): " tags_input
     if [[ -z "$tags_input" ]]; then
       tags=$(_nb_select_tags)
     else
       tags="$tags_input"
     fi
-    read "priority?優先度 (1:high/2:medium/3:low/空で2): "
+    vared -p "優先度 (1:high/2:medium/3:low/空で2): " priority
   fi
 
   # 優先度をパースしてタグに追加
@@ -98,10 +99,11 @@ _nb_parse_priority() {
   esac
 }
 
-# タグ取得（notebook指定可能、日本語タグ対応）
+# タグ取得（notebook指定可能、日本語タグ対応、Tagsセクションのみ）
 _nb_get_tags() {
   local notebook="${1:-tasks}"
-  grep -rhoP '#[^\s#]+' ~/.nb/$notebook/*.md 2>/dev/null | sort -u
+  awk 'FNR==1{found=0} /^## *Tags$/{found=1;next} found && /^#/{print;found=0}' ~/.nb/$notebook/*.md 2>/dev/null | \
+    grep -oP '#[^\s#]+' | sort -u
 }
 
 # タグ選択（fzf複数選択）
@@ -213,17 +215,16 @@ _nb_priority_to_num() {
 # タスク1件を整形出力
 _nb_format_single_task() {
   local id="$1"
-  # タイトル取得（同じ行 or 次の行の両方に対応）
-  local title=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '
-    /^# \[ \]/ {
-      gsub(/^# \[ \] */, "")
-      if ($0 != "") { print; exit }
-      getline
-      print
-      exit
-    }')
+  # ファイルパスを取得して直接読む（nb showの幅制限による文字化け回避）
+  local filepath=$(nb ${_NB_TASKS}show "$id" --path 2>/dev/null)
+  [[ ! -f "$filepath" ]] && return
+
+  # タイトル取得（# [ ] の後）
+  local title=$(head -1 "$filepath" | sed 's/^# \[ \] *//')
   [[ -z "$title" ]] && return
-  local due=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null | awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}')
+
+  # Due取得
+  local due=$(awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}' "$filepath")
   if [[ -n "$due" && "$due" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
     due=$(date -d "$due" +%m/%d 2>/dev/null)
     echo "- $due: $title"
@@ -241,9 +242,12 @@ _nb_format_tasks_for_daily() {
     local id=$(echo "$line" | grep -oE '\[tasks:[0-9]+\]' | grep -oE '[0-9]+')
     [[ -z "$id" ]] && continue
 
-    local task_data=$(nb ${_NB_TASKS}show "$id" --no-color 2>/dev/null)
-    local tags=$(echo "$task_data" | awk '/^## *Tags/{found=1;next} found && /^#/{print;exit}')
-    local due=$(echo "$task_data" | awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}')
+    # ファイルパスを取得して直接読む（文字化け回避）
+    local filepath=$(nb ${_NB_TASKS}show "$id" --path 2>/dev/null)
+    [[ ! -f "$filepath" ]] && continue
+
+    local tags=$(awk '/^## *Tags/{found=1;next} found && /^#/{print;exit}' "$filepath")
+    local due=$(awk '/^## *Due/{found=1;next} found && /^[0-9]/{print;exit}' "$filepath")
 
     # グループ: work=0, other=1
     local group="1"
@@ -440,12 +444,12 @@ nbn() {
     esac
   done
 
-  # 引数なし → 対話形式
+  # 引数なし → 対話形式（varedでマルチバイト文字対応）
   if [[ -z "$title" ]]; then
-    read "title?タイトル: "
+    local title="" tags_input=""
+    vared -p "タイトル: " title
     [[ -z "$title" ]] && return 1
-    echo -n "タグ (カンマ区切り or Tab選択): "
-    read "tags_input?"
+    vared -p "タグ (カンマ区切り or Tab選択): " tags_input
     if [[ -z "$tags_input" ]]; then
       tags=$(_nb_select_tags notes)
     else
