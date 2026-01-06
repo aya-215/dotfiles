@@ -131,11 +131,20 @@ nbtl() {
 nbtd() {
   local id=""
   if [[ -z "$1" ]]; then
-    # fzfで選択
-    local selected=$(nb ${_NB_TASKS}todos open --no-color | \
-      fzf --prompt="Complete> " --preview 'nb show $(echo {1} | tr -d "[]")')
+    # ID付きで一覧生成（選択用）
+    local list=$(nb ${_NB_TASKS}todos open --no-color 2>/dev/null | while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      local tid=$(echo "$line" | grep -oE '\[tasks:[0-9]+\]' | grep -oE '[0-9]+')
+      [[ -z "$tid" ]] && continue
+      local formatted=$(_nb_format_single_task "$tid")
+      [[ -n "$formatted" ]] && echo "${tid}|${formatted#- }"
+    done)
+
+    local selected=$(echo "$list" | fzf --prompt="Complete> " \
+      --with-nth=2.. --delimiter='|' \
+      --preview 'nb tasks:show {1}')
     [[ -z "$selected" ]] && return
-    id=$(echo "$selected" | awk '{print $1}' | tr -d '[]')
+    id=$(echo "$selected" | cut -d'|' -f1)
   else
     id="$1"
   fi
