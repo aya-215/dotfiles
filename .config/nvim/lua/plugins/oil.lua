@@ -56,7 +56,12 @@ return {
       ["<C-s>"] = { "actions.select", opts = { vertical = true }, desc = "Open in vertical split" },
       ["<C-h>"] = { "actions.select", opts = { horizontal = true }, desc = "Open in horizontal split" },
       ["<C-t>"] = { "actions.select", opts = { tab = true }, desc = "Open in new tab" },
-      ["<C-p>"] = "actions.preview",
+      ["<C-p>"] = {
+        callback = function()
+          require("oil").open_preview({ vertical = true, split = "botright" })
+        end,
+        desc = "Open preview (right side)",
+      },
       ["<esc>"] = "actions.close",
       ["<C-l>"] = "actions.refresh",
       ["-"] = "actions.parent",
@@ -70,6 +75,40 @@ return {
       -- ファイルパスコピー
       ["y"] = "actions.copy_entry_path",
       ["Y"] = "actions.copy_entry_filename",
+      -- Telescope連携
+      ["<C-f>"] = {
+        callback = function()
+          local oil = require("oil")
+          local dir = oil.get_current_dir()
+          if dir then
+            require("telescope.builtin").find_files({ cwd = dir })
+          end
+        end,
+        desc = "Find files in current directory",
+      },
+      ["<C-g>"] = {
+        callback = function()
+          local oil = require("oil")
+          local dir = oil.get_current_dir()
+          if dir then
+            require("telescope.builtin").live_grep({ cwd = dir })
+          end
+        end,
+        desc = "Grep in current directory",
+      },
+      -- クイックジャンプ
+      ["gh"] = {
+        callback = function()
+          require("oil").open(vim.fn.expand("~"))
+        end,
+        desc = "Go to home directory",
+      },
+      ["gd"] = {
+        callback = function()
+          require("oil").open(vim.fn.expand("~/.dotfiles"))
+        end,
+        desc = "Go to dotfiles",
+      },
     },
 
     -- ビュー設定
