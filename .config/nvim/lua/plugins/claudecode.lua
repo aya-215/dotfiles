@@ -33,6 +33,37 @@ return {
         keep_terminal_focus = false,  -- Diff受け入れ後にClaudeにフォーカス
       },
     },
+    config = function(_, opts)
+      require("claudecode").setup(opts)
+
+      -- diff表示時に他のエディタウィンドウを閉じる（ウィンドウ増加問題の回避策）
+      -- Issue: https://github.com/coder/claudecode.nvim/issues/155
+      vim.api.nvim_create_autocmd("BufEnter", {
+        pattern = "*(proposed)*",
+        callback = function()
+          vim.schedule(function()
+            local current_win = vim.api.nvim_get_current_win()
+            local wins = vim.api.nvim_tabpage_list_wins(0)
+            for _, win in ipairs(wins) do
+              if win ~= current_win and vim.api.nvim_win_is_valid(win) then
+                local buf = vim.api.nvim_win_get_buf(win)
+                local buftype = vim.bo[buf].buftype
+                local bufname = vim.api.nvim_buf_get_name(buf)
+                local is_diff = vim.wo[win].diff
+
+                -- ターミナル、diff関連バッファ、diffモードのウィンドウ以外を閉じる
+                if buftype ~= "terminal"
+                   and not bufname:match("%(proposed%)")
+                   and not bufname:match("%(NEW FILE%)")
+                   and not is_diff then
+                  pcall(vim.api.nvim_win_close, win, false)
+                end
+              end
+            end
+          end)
+        end,
+      })
+    end,
     keys = {
       -- AI/Claude Code グループ
       { "<leader>a", nil, desc = "🤖 AI/Claude Code" },
