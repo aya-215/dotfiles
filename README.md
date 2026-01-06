@@ -11,15 +11,7 @@ dotfiles/
 │   ├── nvim/              # Neovim設定
 │   └── lazygit/           # lazygit設定
 ├── PowerShell/            # PowerShell設定
-│   ├── Microsoft.PowerShell_profile.ps1  # プロファイル
-│   ├── kubectl_completion.ps1            # kubectl補完
-│   ├── Modules/                          # モジュール
-│   └── Scripts/                          # スクリプト
 ├── scripts/               # インストールスクリプト
-│   ├── common.ps1                        # 共通関数
-│   ├── install.ps1                       # メインインストーラー
-│   ├── install-dependencies.ps1          # ツール・モジュールインストーラー
-│   └── install-fonts.ps1                 # フォントインストーラー
 ├── .gitignore
 └── README.md
 ```
