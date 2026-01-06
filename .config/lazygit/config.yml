@@ -20,7 +20,7 @@ gui:
     inactiveBorderColor:
       - white
     selectedLineBgColor:
-      - blue
+      - "#2d3b4d"
 # Git設定
 git:
   pagers:
