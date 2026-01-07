@@ -16,11 +16,14 @@ export PATH=$(echo $PATH | tr ':' '\n' | grep -v '^/mnt/c/' | tr '\n' ':' | sed 
 export PATH="$PATH:/mnt/c/Windows/System32"
 
 # 必要に応じてコメント解除
-# export PATH="$PATH:/mnt/c/Users/368/AppData/Local/Programs/Microsoft VS Code/bin"  # VS Code
+export PATH="$PATH:/mnt/c/Users/368/AppData/Local/Programs/Microsoft VS Code/bin"  # VS Code
 # export PATH="$PATH:/mnt/c/Program Files/Docker/Docker/resources/bin"  # Docker
 
 # Oh My Zsh configuration
 export ZSH="$HOME/.oh-my-zsh"
+
+# compauditのセキュリティチェックをスキップ（起動高速化: 29ms節約）
+export ZSH_DISABLE_COMPFIX=true
 
 # Theme
 ZSH_THEME=""  # カスタムプロンプトを使用するため無効化
