@@ -324,7 +324,11 @@ function M.setup(config)
     },
 
     search_mode = {
-      { key = 'Enter', mods = 'NONE', action = act.CopyMode 'PriorMatch' },
+      -- Enterで検索を確定してコピーモードに戻る
+      { key = 'Enter', mods = 'NONE', action = act.Multiple {
+        { CopyMode = 'NextMatch' },
+        { CopyMode = 'AcceptPattern' },
+      }},
       { key = 'Escape', mods = 'NONE', action = act.CopyMode 'Close' },
       { key = 'n', mods = 'CTRL', action = act.CopyMode 'NextMatch' },
       { key = 'p', mods = 'CTRL', action = act.CopyMode 'PriorMatch' },
