@@ -357,6 +357,32 @@ _nb_get_second_latest_daily() {
     sort -r | sed -n '2p'
 }
 
+# _nb_get_today_schedule - 今日のスケジュールを取得
+_nb_get_today_schedule() {
+  if ! command -v gcalcli &>/dev/null; then
+    echo "（gcalcliが未インストール）"
+    return
+  fi
+  local schedule=$(gcalcli agenda "today" "tomorrow" --nocolor --nodeclined 2>/dev/null | \
+    grep -v '^$' | head -20)
+  [[ -z "$schedule" ]] && schedule="（予定なし）"
+  echo "$schedule"
+}
+
+# _nb_get_week_schedule - 今週のスケジュールを取得（今日以降）
+_nb_get_week_schedule() {
+  if ! command -v gcalcli &>/dev/null; then
+    echo "（gcalcliが未インストール）"
+    return
+  fi
+  # 今週の日曜日を計算
+  local end_of_week=$(date -d "next sunday" +%Y-%m-%d 2>/dev/null || date -v+sun +%Y-%m-%d)
+  local schedule=$(gcalcli agenda "tomorrow" "$end_of_week" --nocolor --nodeclined 2>/dev/null | \
+    grep -v '^$' | head -30)
+  [[ -z "$schedule" ]] && schedule="（予定なし）"
+  echo "$schedule"
+}
+
 # nbd - 今日の日報作成/編集
 nbd() {
   local date=$(date +%Y-%m-%d)
@@ -382,6 +408,10 @@ nbd() {
   fi
   [[ -z "$yesterday_summary" ]] && yesterday_summary="（前日のサマリーなし）"
 
+  # スケジュール取得
+  local today_schedule=$(_nb_get_today_schedule)
+  local week_schedule=$(_nb_get_week_schedule)
+
   # 一時ファイルに日報を作成（文字化け防止のためヒアドキュメント使用）
   local tmpfile=$(mktemp)
   cat > "$tmpfile" <<EOF
@@ -396,6 +426,14 @@ $yesterday_summary
 \`\`\`
 $tasks
 \`\`\`
+
+## 📅 今日のスケジュール
+
+$today_schedule
+
+## 📅 今週のスケジュール
+
+$week_schedule
 
 ## 📝 今日のサマリー
 
