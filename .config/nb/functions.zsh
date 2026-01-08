@@ -357,6 +357,28 @@ _nb_get_second_latest_daily() {
     sort -r | sed -n '2p'
 }
 
+# _nb_format_schedule_date - gcalcliの日付をMM-DD (曜日)形式に変換
+_nb_format_schedule_date() {
+  awk '{
+    # 曜日の変換マップ
+    day_map["Sun"] = "日"; day_map["Mon"] = "月"; day_map["Tue"] = "火";
+    day_map["Wed"] = "水"; day_map["Thu"] = "木"; day_map["Fri"] = "金"; day_map["Sat"] = "土";
+
+    # 月の変換マップ
+    month_map["Jan"] = "01"; month_map["Feb"] = "02"; month_map["Mar"] = "03";
+    month_map["Apr"] = "04"; month_map["May"] = "05"; month_map["Jun"] = "06";
+    month_map["Jul"] = "07"; month_map["Aug"] = "08"; month_map["Sep"] = "09";
+    month_map["Oct"] = "10"; month_map["Nov"] = "11"; month_map["Dec"] = "12";
+
+    # 日付行の場合 (例: "Thu Jan 08")
+    if ($1 in day_map && $2 in month_map && $3 ~ /^[0-9]+$/) {
+      printf "%s-%s (%s)%s\n", month_map[$2], $3, day_map[$1], substr($0, index($0, $4));
+    } else {
+      print $0;
+    }
+  }'
+}
+
 # _nb_get_today_schedule - 今日のスケジュールを取得
 _nb_get_today_schedule() {
   if ! command -v gcalcli &>/dev/null; then
@@ -364,7 +386,7 @@ _nb_get_today_schedule() {
     return
   fi
   local schedule=$(gcalcli agenda "today" "tomorrow" --nocolor --nodeclined 2>/dev/null | \
-    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | head -20)
+    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | _nb_format_schedule_date | head -20)
   [[ -z "$schedule" ]] && schedule="（予定なし）"
   echo "$schedule"
 }
@@ -378,7 +400,7 @@ _nb_get_week_schedule() {
   # 今日から7日後までの予定を取得
   local end_date=$(date -d "+7 days" +%Y-%m-%d 2>/dev/null || date -v+7d +%Y-%m-%d)
   local schedule=$(gcalcli agenda "tomorrow" "$end_date" --nocolor --nodeclined 2>/dev/null | \
-    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | head -30)
+    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | _nb_format_schedule_date | head -30)
   [[ -z "$schedule" ]] && schedule="（予定なし）"
   echo "$schedule"
 }
@@ -430,14 +452,12 @@ $tasks
 ## 📅 スケジュール
 
 **今日**
-\`\`\`
+
 $today_schedule
-\`\`\`
 
 **1週間**
-\`\`\`
+
 $week_schedule
-\`\`\`
 
 ## 📝 今日のサマリー
 
