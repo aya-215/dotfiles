@@ -364,21 +364,21 @@ _nb_get_today_schedule() {
     return
   fi
   local schedule=$(gcalcli agenda "today" "tomorrow" --nocolor --nodeclined 2>/dev/null | \
-    grep -v '^$' | head -20)
+    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | head -20)
   [[ -z "$schedule" ]] && schedule="（予定なし）"
   echo "$schedule"
 }
 
-# _nb_get_week_schedule - 今週のスケジュールを取得（今日以降）
+# _nb_get_week_schedule - 今日から7日後までのスケジュールを取得
 _nb_get_week_schedule() {
   if ! command -v gcalcli &>/dev/null; then
     echo "（gcalcliが未インストール）"
     return
   fi
-  # 今週の日曜日を計算
-  local end_of_week=$(date -d "next sunday" +%Y-%m-%d 2>/dev/null || date -v+sun +%Y-%m-%d)
-  local schedule=$(gcalcli agenda "tomorrow" "$end_of_week" --nocolor --nodeclined 2>/dev/null | \
-    grep -v '^$' | head -30)
+  # 今日から7日後までの予定を取得
+  local end_date=$(date -d "+7 days" +%Y-%m-%d 2>/dev/null || date -v+7d +%Y-%m-%d)
+  local schedule=$(gcalcli agenda "tomorrow" "$end_date" --nocolor --nodeclined 2>/dev/null | \
+    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | head -30)
   [[ -z "$schedule" ]] && schedule="（予定なし）"
   echo "$schedule"
 }
@@ -431,7 +431,7 @@ $tasks
 
 $today_schedule
 
-## 📅 今週のスケジュール
+## 📅 今後1週間のスケジュール
 
 $week_schedule
 
