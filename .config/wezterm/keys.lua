@@ -143,9 +143,18 @@ function M.setup(config)
     -- コピーモード (Vim風スクロール)
     -- ========================================
     {
-      key = '[',
+      key = 'y',
       mods = 'LEADER',
       action = act.ActivateCopyMode
+    },
+
+    -- ========================================
+    -- Quick Select Mode (ラベルベース選択)
+    -- ========================================
+    {
+      key = 'u',
+      mods = 'LEADER',
+      action = act.QuickSelect
     },
 
     -- ========================================
@@ -280,6 +289,11 @@ function M.setup(config)
       { key = 'u', mods = 'CTRL', action = act.CopyMode 'PageUp' },
       { key = 'd', mods = 'CTRL', action = act.CopyMode 'PageDown' },
 
+      -- 画面内移動 (Vim H/M/L)
+      { key = 'H', mods = 'SHIFT', action = act.CopyMode 'MoveToViewportTop' },
+      { key = 'M', mods = 'SHIFT', action = act.CopyMode 'MoveToViewportMiddle' },
+      { key = 'L', mods = 'SHIFT', action = act.CopyMode 'MoveToViewportBottom' },
+
       -- 選択開始
       { key = 'v', mods = 'NONE', action = act.CopyMode { SetSelectionMode = 'Cell' } },
       { key = 'V', mods = 'SHIFT', action = act.CopyMode { SetSelectionMode = 'Line' } },
@@ -295,6 +309,14 @@ function M.setup(config)
       { key = '/', mods = 'NONE', action = act.Search 'CurrentSelectionOrEmptyString' },
       { key = 'n', mods = 'NONE', action = act.CopyMode 'NextMatch' },
       { key = 'N', mods = 'SHIFT', action = act.CopyMode 'PriorMatch' },
+
+      -- 文字ジャンプ (Vim f/t/F/T)
+      { key = 'f', mods = 'NONE', action = act.CopyMode { JumpForward = { prev_char = false } } },
+      { key = 'F', mods = 'SHIFT', action = act.CopyMode { JumpBackward = { prev_char = false } } },
+      { key = 't', mods = 'NONE', action = act.CopyMode { JumpForward = { prev_char = true } } },
+      { key = 'T', mods = 'SHIFT', action = act.CopyMode { JumpBackward = { prev_char = true } } },
+      { key = ';', mods = 'NONE', action = act.CopyMode 'JumpAgain' },
+      { key = ',', mods = 'NONE', action = act.CopyMode 'JumpReverse' },
 
       -- モード終了
       { key = 'q', mods = 'NONE', action = act.CopyMode 'Close' },
