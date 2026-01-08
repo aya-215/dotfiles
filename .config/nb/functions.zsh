@@ -357,7 +357,7 @@ _nb_get_second_latest_daily() {
     sort -r | sed -n '2p'
 }
 
-# _nb_format_schedule_date - gcalcliの日付をMM-DD (曜日)形式に変換
+# _nb_format_schedule_date - gcalcliの日付をMM-DD (曜日)形式に変換し、日付ごとにグループ化
 _nb_format_schedule_date() {
   awk '{
     # 曜日の変換マップ
@@ -370,9 +370,41 @@ _nb_format_schedule_date() {
     month_map["Jul"] = "07"; month_map["Aug"] = "08"; month_map["Sep"] = "09";
     month_map["Oct"] = "10"; month_map["Nov"] = "11"; month_map["Dec"] = "12";
 
-    # 日付行の場合 (例: "Thu Jan 08")
+    # 日付行の場合 (例: "Thu Jan 08  10:00  テスト" or "Thu Jan 08         成人の日")
     if ($1 in day_map && $2 in month_map && $3 ~ /^[0-9]+$/) {
-      printf "%s-%s (%s)%s\n", month_map[$2], $3, day_map[$1], substr($0, index($0, $4));
+      date_str = month_map[$2] "-" $3 " (" day_map[$1] ")";
+
+      # 残りの部分を取得
+      rest = substr($0, index($0, $4));
+      gsub(/^[ \t]+/, "", rest);  # 先頭の空白を削除
+
+      # 時刻があるかチェック (HH:MM形式)
+      if (rest ~ /^[0-9]{1,2}:[0-9]{2}/) {
+        # 時刻とイベント名を分離
+        match(rest, /^[0-9]{1,2}:[0-9]{2}/);
+        time_str = substr(rest, RSTART, RLENGTH);
+        event = substr(rest, RLENGTH + 1);
+        gsub(/^[ \t]+/, "", event);  # イベント名の先頭空白削除
+        printf "%s\n  %s %s\n", date_str, time_str, event;
+      } else if (rest != "") {
+        # 終日イベント
+        printf "%s\n  終日  %s\n", date_str, rest;
+      } else {
+        # 日付のみ（イベント名なし）
+        printf "%s\n", date_str;
+      }
+    } else if ($0 ~ /^[ \t]+[0-9]{1,2}:[0-9]{2}/) {
+      # 継続行（同じ日の次のイベント）
+      gsub(/^[ \t]+/, "");  # 先頭の空白を削除
+      match($0, /^[0-9]{1,2}:[0-9]{2}/);
+      time_str = substr($0, RSTART, RLENGTH);
+      event = substr($0, RLENGTH + 1);
+      gsub(/^[ \t]+/, "", event);
+      printf "  %s %s\n", time_str, event;
+    } else if ($0 ~ /^[ \t]+/) {
+      # 継続行（終日イベント）
+      gsub(/^[ \t]+/, "");
+      printf "  終日  %s\n", $0;
     } else {
       print $0;
     }
