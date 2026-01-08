@@ -419,8 +419,8 @@ _nb_get_today_schedule() {
   fi
   local schedule=$(gcalcli agenda "today" "tomorrow" --nocolor --nodeclined 2>/dev/null | \
     sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | _nb_format_schedule_date | \
-    grep -v '^[0-9][0-9]-[0-9][0-9] ' | head -20)
-  [[ -z "$schedule" ]] && schedule="（予定なし）"
+    grep -v '^[0-9][0-9]-[0-9][0-9] ' | sed 's/No Events Found\.\.\./予定なし/g' | head -20)
+  [[ -z "$schedule" ]] && schedule="予定なし"
   echo "$schedule"
 }
 
@@ -433,8 +433,9 @@ _nb_get_week_schedule() {
   # 今日から7日後までの予定を取得
   local end_date=$(date -d "+7 days" +%Y-%m-%d 2>/dev/null || date -v+7d +%Y-%m-%d)
   local schedule=$(gcalcli agenda "tomorrow" "$end_date" --nocolor --nodeclined 2>/dev/null | \
-    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | _nb_format_schedule_date | head -30)
-  [[ -z "$schedule" ]] && schedule="（予定なし）"
+    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | _nb_format_schedule_date | \
+    sed 's/No Events Found\.\.\./予定なし/g' | head -30)
+  [[ -z "$schedule" ]] && schedule="予定なし"
   echo "$schedule"
 }
 
@@ -476,12 +477,6 @@ nbd() {
 
 $yesterday_summary
 
-## 📋 未完了タスク
-
-\`\`\`
-$tasks
-\`\`\`
-
 ## 📅 スケジュール
 
 **今日**
@@ -491,6 +486,10 @@ $today_schedule
 **1週間**
 
 $week_schedule
+
+## 📋 未完了タスク
+
+$tasks
 
 ## 📝 今日のサマリー
 
