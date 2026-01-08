@@ -411,14 +411,15 @@ _nb_format_schedule_date() {
   }'
 }
 
-# _nb_get_today_schedule - 今日のスケジュールを取得
+# _nb_get_today_schedule - 今日のスケジュールを取得（日付行なし）
 _nb_get_today_schedule() {
   if ! command -v gcalcli &>/dev/null; then
     echo "（gcalcliが未インストール）"
     return
   fi
   local schedule=$(gcalcli agenda "today" "tomorrow" --nocolor --nodeclined 2>/dev/null | \
-    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | _nb_format_schedule_date | head -20)
+    sed 's/\x1b\[[0-9;]*m//g' | grep -v '^$' | _nb_format_schedule_date | \
+    grep -v '^[0-9][0-9]-[0-9][0-9] ' | head -20)
   [[ -z "$schedule" ]] && schedule="（予定なし）"
   echo "$schedule"
 }
