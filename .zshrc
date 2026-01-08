@@ -234,3 +234,8 @@ export PATH="$HOME/.local/bin:$PATH"
 
 # nb関連関数（日報・タスク管理）
 [[ -f ~/.config/nb/functions.zsh ]] && source ~/.config/nb/functions.zsh
+
+# Bun (JavaScript runtime)
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
+[ -s "$BUN_INSTALL/_bun" ] && source "$BUN_INSTALL/_bun"
