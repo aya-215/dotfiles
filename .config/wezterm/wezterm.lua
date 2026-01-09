@@ -58,6 +58,9 @@ config.set_environment_variables = {
 -- ========================================
 -- デフォルトシェル設定
 -- ========================================
+-- localドメインのデフォルトシェル（Ctrl+Shift+T対策）
+config.default_prog = { 'pwsh.exe', '-NoLogo' }
+
 -- WSLをデフォルトに設定（シェル統合とディレクトリ追跡を有効化）
 config.default_domain = 'WSL:Ubuntu-22.04'
 
