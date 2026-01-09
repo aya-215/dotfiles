@@ -99,11 +99,15 @@ _nb_parse_priority() {
   esac
 }
 
-# タグ取得（notebook指定可能、日本語タグ対応、Tagsセクションのみ）
+# タグ取得（notebook指定可能、日本語タグ対応、タスク・メモ両形式対応）
 _nb_get_tags() {
   local notebook="${1:-tasks}"
-  awk 'FNR==1{found=0} /^## *Tags$/{found=1;next} found && /^#/{print;found=0}' ~/.nb/$notebook/*.md 2>/dev/null | \
-    grep -oP '#[^\s#]+' | sort -u
+  {
+    # タスク形式: ## Tags セクション内のタグ
+    awk 'FNR==1{found=0} /^## *Tags$/{found=1;next} found && /^#/{print;found=0}' ~/.nb/$notebook/*.md 2>/dev/null
+    # メモ形式: タイトル直下（2行目以降）の #tag 行
+    awk 'NR>1 && /^#[^ \t#]/ {print; exit}' ~/.nb/$notebook/*.md 2>/dev/null
+  } | grep -oP '#[^\s#]+' | sort -u
 }
 
 # タグ選択（fzf複数選択）
