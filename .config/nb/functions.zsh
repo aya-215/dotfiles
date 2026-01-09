@@ -105,8 +105,8 @@ _nb_get_tags() {
   {
     # タスク形式: ## Tags セクション内のタグ
     awk 'FNR==1{found=0} /^## *Tags$/{found=1;next} found && /^#/{print;found=0}' ~/.nb/$notebook/*.md 2>/dev/null
-    # メモ形式: タイトル直下（2行目以降）の #tag 行
-    awk 'NR>1 && /^#[^ \t#]/ {print; exit}' ~/.nb/$notebook/*.md 2>/dev/null
+    # メモ形式: タイトル直下（2行目以降）の #tag 行（各ファイルから1行ずつ）
+    awk 'FNR>1 && /^#[^ \t#]/ {print; nextfile}' ~/.nb/$notebook/*.md 2>/dev/null
   } | grep -oP '#[^\s#]+' | sort -u
 }
 
