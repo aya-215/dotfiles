@@ -612,7 +612,7 @@ nbn() {
     local title="" tags_input=""
     vared -p "タイトル: " title
     [[ -z "$title" ]] && return 1
-    vared -p "タグ (カンマ区切り or Tab選択): " tags_input
+    vared -p "タグ (カンマ区切り/空でfzf): " tags_input
     if [[ -z "$tags_input" ]]; then
       tags=$(_nb_select_tags notes)
     else
