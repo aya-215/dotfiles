@@ -288,8 +288,8 @@ _nb_format_single_note() {
   local title=$(head -1 "$filepath" | sed 's/^# *//')
   [[ -z "$title" ]] && return
 
-  # タグ取得（2行目以降で#から始まる行）
-  local tags=$(awk 'NR>1 && /^#[a-zA-Z]/ {print; exit}' "$filepath")
+  # タグ取得（2行目以降で#から始まる行、日本語対応）
+  local tags=$(awk 'NR>1 && /^#[^ \t#]/ {print; exit}' "$filepath")
 
   if [[ -n "$tags" ]]; then
     echo "${title}  ${tags}"
