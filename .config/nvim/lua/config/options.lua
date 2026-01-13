@@ -6,18 +6,19 @@
 vim.opt.number = true
 vim.opt.relativenumber = true
 
--- クリップボード設定：OSC 52（WSL環境で高速・安定）
+-- クリップボード設定：win32yank（WSL環境で高速・安定）
 vim.opt.clipboard = "unnamedplus"
 vim.g.clipboard = {
-  name = 'OSC 52',
+  name = 'win32yank',
   copy = {
-    ['+'] = require('vim.ui.clipboard.osc52').copy('+'),
-    ['*'] = require('vim.ui.clipboard.osc52').copy('*'),
+    ['+'] = 'win32yank.exe -i --crlf',
+    ['*'] = 'win32yank.exe -i --crlf',
   },
   paste = {
-    ['+'] = require('vim.ui.clipboard.osc52').paste('+'),
-    ['*'] = require('vim.ui.clipboard.osc52').paste('*'),
+    ['+'] = 'win32yank.exe -o --lf',
+    ['*'] = 'win32yank.exe -o --lf',
   },
+  cache_enabled = 0,
 }
 
 -- 検索設定
