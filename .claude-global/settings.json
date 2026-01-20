@@ -13,6 +13,25 @@
       "Bash(gh api:*)",
       "Bash(gh pr view:*)"
     ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(rm -r /:*)",
+      "Bash(chmod 777:*)",
+      "Bash(> /dev/sda:*)",
+      "Bash(mkfs:*)",
+      "Bash(dd if=:*)",
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(~/.ssh/*)",
+      "Read(~/.aws/*)",
+      "Read(~/.gnupg/*)",
+      "Edit(package-lock.json)",
+      "Edit(yarn.lock)",
+      "Edit(bun.lockb)",
+      "Write(package-lock.json)",
+      "Write(yarn.lock)",
+      "Write(bun.lockb)"
+    ],
     "defaultMode": "plan"
   },
   "model": "opusplan",
@@ -28,5 +47,18 @@
   },
   "language": "japanese",
   "alwaysThinkingEnabled": false,
-  "plansDirectory": "./.claude/plans"
+  "plansDirectory": "./.claude/plans",
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "idle_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify.sh"
+          }
+        ]
+      }
+    ]
+  }
 }
