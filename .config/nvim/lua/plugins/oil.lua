@@ -118,9 +118,14 @@ return {
 
           if entry then
             local reveal_path = current_dir .. entry.name
-            vim.cmd("Neotree reveal_file=" .. vim.fn.fnameescape(reveal_path))
+            -- ファイルの場合はreveal、ディレクトリの場合は開く
+            if vim.fn.isdirectory(reveal_path) == 1 then
+              vim.cmd("Neotree " .. vim.fn.fnameescape(reveal_path))
+            else
+              vim.cmd("Neotree reveal " .. vim.fn.fnameescape(reveal_path))
+            end
           else
-            vim.cmd("Neotree dir=" .. vim.fn.fnameescape(current_dir))
+            vim.cmd("Neotree " .. vim.fn.fnameescape(current_dir))
           end
         end,
         desc = "Open in Neo-tree",
