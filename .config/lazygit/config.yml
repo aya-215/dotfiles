@@ -2,6 +2,7 @@
 
 # GUI設定
 gui:
+  language: 'ja'
   # スクロール設定
   scrollHeight: 2
   scrollPastBottom: true
