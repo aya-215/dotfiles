@@ -99,15 +99,26 @@ return {
       -- クイックジャンプ
       ["gh"] = {
         callback = function()
-          require("oil").open(vim.fn.expand("~"))
+          local root = vim.fs.root(0, ".git")
+          if root then
+            require("oil").open(root)
+          else
+            vim.notify("Git root not found", vim.log.levels.WARN)
+          end
         end,
-        desc = "Go to home directory",
+        desc = "Go to git root",
       },
       ["gd"] = {
         callback = function()
           require("oil").open(vim.fn.expand("~/.dotfiles"))
         end,
         desc = "Go to dotfiles",
+      },
+      ["gu"] = {
+        callback = function()
+          require("oil").open(vim.fn.expand("~"))
+        end,
+        desc = "Go to user home",
       },
       -- Neo-tree連携
       ["go"] = {
