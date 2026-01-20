@@ -15,7 +15,14 @@ return {
     keys = {
       { "<leader>gd", "<cmd>DiffviewOpen<cr>", desc = "Open Diffview" },
       { "<leader>gD", "<cmd>DiffviewClose<cr>", desc = "Close Diffview" },
-      { "<leader>gm", "<cmd>DiffviewOpen origin/main<cr>", desc = "Diff with main" },
+      {
+        "<leader>gm",
+        function()
+          local base = vim.fn.system("git merge-base HEAD origin/main"):gsub("\n", "")
+          vim.cmd("DiffviewOpen " .. base)
+        end,
+        desc = "Diff with merge-base",
+      },
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "File History (Current)" },
       { "<leader>gH", "<cmd>DiffviewFileHistory<cr>", desc = "File History (All)" },
     },
