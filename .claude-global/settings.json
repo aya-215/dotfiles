@@ -1,0 +1,32 @@
+{
+  "env": {
+    "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
+  },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "mcp__figma__get_screenshot",
+      "mcp__figma__get_design_context",
+      "Bash(gh api:*)",
+      "Bash(gh pr view:*)"
+    ],
+    "defaultMode": "plan"
+  },
+  "model": "opusplan",
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline-command.sh"
+  },
+  "enabledPlugins": {
+    "aiebase-essentials@ebase-marketplace": false,
+    "aiebase-github-workflow@ebase-marketplace": true,
+    "aiebase-plugin-creator@ebase-marketplace": false,
+    "claude-mem@thedotmack": false
+  },
+  "language": "japanese",
+  "alwaysThinkingEnabled": false,
+  "plansDirectory": "./.claude/plans"
+}

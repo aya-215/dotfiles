@@ -1,0 +1,3 @@
+# Exclude memory files from git
+# These are conversation-specific and may contain sensitive information
+memories/
