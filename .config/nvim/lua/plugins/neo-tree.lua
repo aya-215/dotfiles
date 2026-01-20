@@ -78,6 +78,8 @@ return {
         ["/"] = "fuzzy_finder",
         ["[g"] = "prev_git_modified",
         ["]g"] = "next_git_modified",
+        ["s"] = "none", -- flash.nvimの's'を使えるように無効化
+        ["S"] = "none", -- flash.nvimの'S'を使えるように無効化
       },
     },
   },
