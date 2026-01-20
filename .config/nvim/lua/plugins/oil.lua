@@ -109,6 +109,22 @@ return {
         end,
         desc = "Go to dotfiles",
       },
+      -- Neo-tree連携
+      ["go"] = {
+        callback = function()
+          local oil = require("oil")
+          local entry = oil.get_cursor_entry()
+          local current_dir = oil.get_current_dir() or vim.fn.getcwd()
+
+          if entry then
+            local reveal_path = current_dir .. entry.name
+            vim.cmd("Neotree reveal_file=" .. vim.fn.fnameescape(reveal_path))
+          else
+            vim.cmd("Neotree dir=" .. vim.fn.fnameescape(current_dir))
+          end
+        end,
+        desc = "Open in Neo-tree",
+      },
     },
 
     -- ビュー設定
