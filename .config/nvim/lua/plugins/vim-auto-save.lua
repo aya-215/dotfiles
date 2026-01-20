@@ -1,18 +1,17 @@
 return {
   "vim-scripts/vim-auto-save",
   event = { "InsertLeave", "TextChanged" },
+  init = function()
+    -- プラグイン読み込み前に設定（autocmd登録に影響）
+    vim.g.auto_save_in_insert_mode = 0
+    vim.g.auto_save_no_updatetime = 1
+  end,
   config = function()
     -- 自動保存を有効化
     vim.g.auto_save = 1
 
-    -- インサートモード中の自動保存を無効化
-    vim.g.auto_save_in_insert_mode = 0
-
     -- サイレントモード（保存通知を表示しない）
     vim.g.auto_save_silent = 1
-
-    -- updatetime（200ms）の変更を防ぐ
-    vim.g.auto_save_no_updatetime = 1
 
     -- ClaudeCodeのdiffバッファを自動保存から除外
     local function check_and_set_autosave()
