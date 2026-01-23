@@ -5,3 +5,9 @@
 *.swp
 *.swo
 *~
+
+# テストフォルダを除外
+test/
+
+# Nix
+result
