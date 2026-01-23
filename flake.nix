@@ -16,7 +16,7 @@
       pkgs = nixpkgs.legacyPackages.${system};
     in
     {
-      homeConfigurations."yourusername" = home-manager.lib.homeManagerConfiguration {
+      homeConfigurations."aya" = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
 
         modules = [
