@@ -19,5 +19,10 @@
     # Oh My Zsh プラグイン
     zsh-you-should-use
     zsh-autosuggestions
+
+    # Nix開発ツール
+    nixpkgs-fmt    # フォーマッタ
+    statix         # Linter
+    nil            # LSP
   ];
 }
