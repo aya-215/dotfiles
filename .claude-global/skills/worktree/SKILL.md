@@ -1,7 +1,8 @@
 ---
+name: worktree
 description: Git worktreeの作成・削除を対話的に行う
-argument-hint: [add|rm] [branch-name]
 allowed-tools: Bash(git:*), Bash(npm install:*), Bash(pnpm install:*), Bash(yarn install:*), Bash(bun install:*), Bash(ls:*), Bash(pwd:*), Bash(head:*), Bash(cp:*), Bash(find:*), Bash(mkdir:*), AskUserQuestion
+version: 1.0.0
 ---
 
 # Git Worktree 管理コマンド

@@ -1,7 +1,8 @@
 ---
+name: task-from-daily
 description: 日報からタスク候補を抽出してnbに登録
-argument-hint: "[日数] 過去N日分（デフォルト: 7）"
 allowed-tools: Read, Bash, AskUserQuestion
+version: 1.0.0
 ---
 
 # 日報からタスク抽出

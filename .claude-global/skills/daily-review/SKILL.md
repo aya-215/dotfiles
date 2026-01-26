@@ -3,6 +3,7 @@ name: daily-review
 description: 日次レビュー - サマリー生成、会話レビュー、メモリ整理
 allowed-tools: Read, Bash, Edit, AskUserQuestion
 version: 1.0.0
+model: opus
 ---
 
 # 日次レビュー

@@ -1,3 +1,10 @@
+---
+name: weekly-report
+description: 週報生成
+allowed-tools: Read, Bash, AskUserQuestion, Write
+version: 1.0.0
+---
+
 # 週報生成
 
 指定された週の日報を分析し、週報を生成してください。
