@@ -1,0 +1,75 @@
+"$schema" = 'https://starship.rs/config-schema.json'
+
+
+right_format = """$time"""
+format = """
+[](fg:#3d5a8a)\
+$directory\
+[](fg:#3d5a8a bg:#2f4570)\
+($git_branch$git_status[](fg:#2f4570 bg:#172238))\
+$cmd_duration\
+\n$character"""
+
+[directory]
+truncate_to_repo = false
+home_symbol = "~"
+style = "fg:#e8ecf2 bg:#3d5a8a"
+format = "[ $path ]($style)"
+truncation_length = 0
+
+[directory.substitutions]
+"src/github.com" = " "
+
+[git_branch]
+symbol = ""
+style = "bg:#2f4570"
+format = '[[ $symbol $branch ](fg:#c0daf5 bg:#2f4570)]($style)'
+
+[git_status]
+style = "bg:#2f4570"
+format = "([ ](bg:$style fg:#c0daf5)$conflicted$staged$modified$renamed$deleted$untracked$stashed$ahead_behind)"
+conflicted = "[ ](bold fg:88 bg:#2f4570)[  ${count} ](fg:#c0daf5 bg:#2f4570)"
+staged = "[ ${count} ](fg:#c0daf5 bg:#2f4570)"
+modified = "[ ${count} ](fg:#c0daf5 bg:#2f4570)"
+renamed = "[ ${count} ](fg:#c0daf5 bg:#2f4570)"
+deleted = "[ ${count} ](fg:#c0daf5 bg:#2f4570)"
+untracked = "[?${count} ](fg:#c0daf5 bg:#2f4570)"
+stashed = "[ ${count} ](fg:#c0daf5 bg:#2f4570)"
+ahead = "[ ${count} ](fg:#c0daf5 bg:#2f4570)"
+behind = "[ ${count} ](fg:#c0daf5 bg:#2f4570)"
+diverged = "[ ](fg:88 bg:#2f4570)[ נּ ](fg:#c0daf5 bg:#2f4570)[ ${ahead_count} ](fg:#c0daf5 bg:#2f4570)[ ${behind_count} ](fg:#c0daf5 bg:#2f4570)"
+
+[cmd_duration]
+style = "bg:#172238"
+format = '[ ](bg:#172238 fg:#2f4570)[ ⏱ $duration ](fg:#c0daf5 bg:#172238)[](fg:#172238)'
+min_time = 1000
+
+[nodejs]
+symbol = ""
+style = "bg:#263550"
+format = '[[ $symbol ($version) ](fg:#c0daf5 bg:#263550)]($style)'
+
+[rust]
+symbol = ""
+style = "bg:#263550"
+format = '[[ $symbol ($version) ](fg:#c0daf5 bg:#263550)]($style)'
+
+[golang]
+symbol = ""
+style = "bg:#263550"
+format = '[[ $symbol ($version) ](fg:#c0daf5 bg:#263550)]($style)'
+
+[php]
+symbol = ""
+style = "bg:#263550"
+format = '[[ $symbol ($version) ](fg:#c0daf5 bg:#263550)]($style)'
+
+[time]
+disabled = false
+time_format = "%T" # Hour:Minute:Second Format
+style = "bg:#1d2230"
+format = '[[  $time ](fg:#c0daf5 bg:#1d2230)]($style)'
+
+[character]
+success_symbol = "[❯](bold #3d5a8a)"
+error_symbol = "[❯](bold red)"

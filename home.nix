@@ -5,6 +5,9 @@
     ./modules/packages.nix
     ./modules/shell.nix
     ./modules/git.nix
+    ./modules/starship.nix
+    ./modules/lazygit.nix
+    ./modules/neovim.nix
   ];
 
   # Home Managerのバージョン

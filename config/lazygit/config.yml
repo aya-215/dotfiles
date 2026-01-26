@@ -1,0 +1,63 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/jesseduffield/lazygit/master/schema/config.json
+
+# GUI設定
+gui:
+  language: 'ja'
+  # スクロール設定
+  scrollHeight: 2
+  scrollPastBottom: true
+  # マウス操作
+  mouseEvents: true
+  # サイドパネルの幅（0～1の範囲）
+  sidePanelWidth: 0.3
+  # コミットメッセージの長さ
+  commitLength:
+    show: true
+  # ブランチカラー
+  theme:
+    activeBorderColor:
+      - cyan
+      - bold
+    inactiveBorderColor:
+      - white
+    selectedLineBgColor:
+      - "#2d3b4d"
+# Git設定
+git:
+  pagers:
+    # 1. 通常表示（デフォルト、コンパクト）
+    - colorArg: always
+      pager: delta --dark --paging=never --line-numbers
+    # 2. side-by-side表示（|キーで切り替え）
+    - colorArg: always
+      pager: delta --dark --paging=never --side-by-side --line-numbers
+    # 3. 詳細表示（ハイパーリンク付き、行番号クリックでnvim起動）
+    - colorArg: always
+      pager: delta --dark --paging=never --side-by-side --line-numbers --hyperlinks --hyperlinks-file-link-format="lazygit-edit://{path}:{line}"
+  # コミットメッセージの自動折り返し
+  commit:
+    signOff: false
+    autoWrapCommitMessage: true
+    autoWrapWidth: 72
+  # ブランチのソート順序
+  branchLogCmd: "git log --graph --color=always --abbrev-commit --decorate --date=relative --pretty=medium {{branchName}} --"
+  # 自動フェッチ
+  autoFetch: true
+  autoRefresh: true
+  # マージ動作
+  merging:
+    # マージコミットなしでマージ（fast-forward）
+    manualCommit: false
+    args: ""
+# OS統合
+os:
+  # エディタ設定（nvimを使用）
+  editCommand: "nvim"
+  editCommandTemplate: "{{editor}} {{filename}}"
+  openCommand: ""
+# 確認ダイアログ
+confirmOnQuit: false
+# 通知
+notARepository: "prompt"
+# スタートアップ
+startupPopupVersion: 5
