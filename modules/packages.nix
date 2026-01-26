@@ -15,5 +15,9 @@
     zoxide     # スマートcd
     nb         # ノート管理
     delta      # Git diff viewer
+
+    # Oh My Zsh プラグイン
+    zsh-you-should-use
+    zsh-autosuggestions
   ];
 }
