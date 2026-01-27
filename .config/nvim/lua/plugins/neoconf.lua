@@ -1,8 +1,1 @@
-return {
-  {
-    "folke/neoconf.nvim",
-    lazy = false,
-    priority = 100,
-    opts = {},
-  },
-}
+/nix/store/ly4aklf6j429ys15zmsqd2284z1a221y-home-manager-files/.config/nvim/lua/plugins/neoconf.lua
