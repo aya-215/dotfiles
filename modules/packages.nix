@@ -15,6 +15,19 @@
     zoxide     # スマートcd
     nb         # ノート管理
     delta      # Git diff viewer
+    ghq        # リポジトリ管理
+    gh         # GitHub CLI
+    gcalcli    # Googleカレンダー
+    wslu       # WSL utilities (wslview等)
+
+    # ランタイム・バージョン管理
+    fnm        # Node.jsバージョン管理
+    deno       # Deno JavaScript runtime
+    bun        # Bun JavaScript runtime
+
+    # Python
+    python3    # Python 3.x
+    pipx       # Pythonツール管理
 
     # Oh My Zsh プラグイン
     zsh-you-should-use
