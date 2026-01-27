@@ -9,6 +9,9 @@
       # Claude Code
       ".claude/plans/"
 
+      # Serena MCP
+      ".serena/"
+
       # Neovim
       "*.swp"
       "*.swo"
