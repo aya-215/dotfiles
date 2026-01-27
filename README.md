@@ -1,241 +1,318 @@
 # dotfiles
 
-個人用dotfiles管理リポジトリ
+個人用dotfiles管理リポジトリ - Nix/Home Manager による宣言的な環境構築
+
+## 概要
+
+このリポジトリは、WSL/Linux環境を **Nix Flakes + Home Manager** で宣言的に管理します。
+
+### 主な特徴
+
+- **宣言的管理**: `flake.nix`と`home.nix`で環境を定義
+- **再現可能**: 同じ設定から同じ環境を構築可能
+- **モジュール構成**: 機能ごとに分離された設定ファイル
+- **自動シンボリックリンク**: Home Managerが設定ファイルを自動配置
 
 ## 構成
 
 ```
 dotfiles/
-├── .config/
-│   ├── wezterm/           # WezTerm設定
-│   ├── nvim/              # Neovim設定
-│   └── lazygit/           # lazygit設定
-├── PowerShell/            # PowerShell設定
-├── scripts/               # インストールスクリプト
-├── .gitignore
+├── flake.nix              # Nix Flake設定（エントリーポイント）
+├── home.nix               # Home Manager メイン設定
+├── modules/               # Nixモジュール（機能別）
+│   ├── packages.nix      # インストールするパッケージ一覧
+│   ├── git.nix           # Git設定
+│   ├── zsh.nix           # Zsh設定（エイリアス、関数、プラグイン）
+│   ├── starship.nix      # Starship設定
+│   ├── lazygit.nix       # Lazygit設定
+│   ├── neovim.nix        # Neovim設定
+│   ├── nb.nix            # nb（ノート管理）設定
+│   └── zeno.nix          # Zeno（スニペット/補完）設定
+├── config/                # 設定ファイルのソース（Nixが管理）
+│   ├── nvim/             # Neovim設定
+│   ├── lazygit/          # Lazygit設定
+│   ├── starship/         # Starship設定
+│   ├── nb/               # nb関数（タスク管理・日報）
+│   └── zeno/             # Zeno設定（スニペット定義）
+├── .config/               # 実際の設定ファイル配置先
+│   ├── nvim/             # → Home Managerがシンボリックリンク作成
+│   ├── wezterm/          # WezTerm設定（手動管理）
+│   ├── lazygit/          # → Home Managerがシンボリックリンク作成
+│   └── starship.toml     # → Home Managerがシンボリックリンク作成
+├── docs/                  # ドキュメント
+│   └── nix-guide/        # Nix学習ガイド
+├── PowerShell/            # PowerShell設定（Windows用）
+│   ├── Modules/          # PowerShellモジュール
+│   └── Scripts/          # PowerShellスクリプト
+├── AutoHotkey/            # AutoHotkey設定（Windows用キーバインド）
+├── scripts/               # 各種スクリプト
+│   ├── setup/            # セットアップスクリプト
+│   ├── backup/           # バックアップスクリプト
+│   └── claude-sync/      # Claude同期ツール
+├── .claude/               # Claude Code プロジェクト設定
+├── .claude-global/        # Claude Code グローバルルール
 └── README.md
 ```
 
 ## セットアップ手順
 
-### Windows
+### WSL/Linux (推奨)
 
-#### 🚀 クイックスタート（推奨）
+Nix/Home Managerを使用した宣言的セットアップ。
 
-```powershell
-# 管理者権限のPowerShellで実行
+#### 1. Nixのインストール
 
-# 1. Chocolateyをインストール（フォント用、オプション）
-Set-ExecutionPolicy Bypass -Scope Process -Force
-[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-iex ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+```bash
+# Nixインストール（マルチユーザーモード）
+sh <(curl -L https://nixos.org/nix/install) --daemon
 
-# 2. dotfilesをクローン
-cd D:\git
-git clone git@github.com:aya-215/dotfiles.git
-cd dotfiles
-
-# 3. すべて一括インストール
-.\scripts\install.ps1 -InstallAll
+# インストール後、シェルを再起動
+exec $SHELL
 ```
 
-**このコマンドで自動的にインストールされるもの:**
-- ✅ 環境変数 `XDG_CONFIG_HOME` の設定
-- ✅ シンボリックリンク（WezTerm、Neovim、PowerShell）
-- ✅ fzf、Neovim
-- ✅ PowerShellモジュール（PSFzf、ZLocation、BurntToast）
-- ✅ HackGen Nerd Font（Chocolatey必須）
+#### 2. Flakesを有効化
 
----
+```bash
+# Nix設定ディレクトリを作成
+mkdir -p ~/.config/nix
 
-#### 📦 個別インストール
-
-dotfilesと依存関係を別々にインストールする場合:
-
-```powershell
-# 管理者権限のPowerShellで実行
-
-# 1. dotfilesのみインストール
-cd D:\git
-git clone git@github.com:aya-215/dotfiles.git
-cd dotfiles
-.\scripts\install.ps1
-
-# 2. 依存関係を個別にインストール
-.\scripts\install-dependencies.ps1  # ツール・モジュール
-.\scripts\install-fonts.ps1         # フォント（Chocolatey必須）
+# Flakes機能を有効化
+cat > ~/.config/nix/nix.conf <<EOF
+experimental-features = nix-command flakes
+EOF
 ```
 
-**各スクリプトの役割:**
-
-| スクリプト | 内容 | 必須 |
-|-----------|------|------|
-| `install.ps1` | シンボリックリンク作成、環境変数設定 | ✅ 必須 |
-| `install-dependencies.ps1` | fzf、Neovim、PowerShellモジュール | 推奨 |
-| `install-fonts.ps1` | HackGen Nerd Font | オプション |
-
----
-
-#### ⚙️ オプション
-
-**メインインストーラー:**
-```powershell
-.\scripts\install.ps1 -DryRun      # 実行内容を確認（変更なし）
-.\scripts\install.ps1 -Force       # 確認なしで実行
-.\scripts\install.ps1 -InstallAll  # すべて一括インストール
-```
-
-**個別スクリプト:**
-```powershell
-.\scripts\install-dependencies.ps1 -SkipTools    # CLIツールをスキップ
-.\scripts\install-dependencies.ps1 -SkipModules  # PowerShellモジュールをスキップ
-.\scripts\install-dependencies.ps1 -DryRun       # 実行内容を確認
-.\scripts\install-fonts.ps1 -DryRun              # 実行内容を確認
-```
-
----
-
-#### 方法2: 手動セットアップ
-
-**前提条件**: 開発者モードを有効化（シンボリックリンクに管理者権限不要にするため）
-
-##### 1. 環境変数の設定（Neovim用）
-
-Windowsではデフォルトで`.config`ディレクトリを使用しないため、環境変数の設定が必要です。
-
-1. `Win + R` → `sysdm.cpl` → `Enter`
-2. 「詳細設定」タブ → 「環境変数」
-3. ユーザー環境変数で「新規」
-   - 変数名: `XDG_CONFIG_HOME`
-   - 変数値: `C:\Users\<ユーザー名>\.config`（例: `C:\Users\368\.config`）
-4. `OK` → PowerShellを再起動
-
-##### 2. リポジトリをクローン
-
-```powershell
-cd D:\git
-git clone git@github.com:aya-215/dotfiles.git
-```
-
-##### 3. シンボリックリンクを作成
-
-```powershell
-# WezTerm
-New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\wezterm" -Target "D:\git\dotfiles\.config\wezterm"
-
-# Neovim
-New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\.config\nvim" -Target "D:\git\dotfiles\.config\nvim"
-
-# PowerShell
-New-Item -ItemType SymbolicLink -Path "$env:USERPROFILE\Documents\PowerShell" -Target "D:\git\dotfiles\PowerShell"
-```
-
-### macOS / Linux
-
-#### 1. リポジトリをクローン
+#### 3. dotfilesをクローン
 
 ```bash
 cd ~
 git clone git@github.com:aya-215/dotfiles.git .dotfiles
+cd .dotfiles
 ```
 
-#### 2. 依存ツールをインストール（Linux/WSL2）
-
-##### lazygit（Git TUI）
+#### 4. Home Managerで環境を構築
 
 ```bash
-LAZYGIT_VERSION=$(curl -s "https://api.github.com/repos/jesseduffield/lazygit/releases/latest" | grep '"tag_name"' | sed -E 's/.*"v([^"]+)".*/\1/')
-curl -Lo /tmp/lazygit.tar.gz "https://github.com/jesseduffield/lazygit/releases/download/v${LAZYGIT_VERSION}/lazygit_${LAZYGIT_VERSION}_Linux_x86_64.tar.gz"
-cd /tmp && tar xf lazygit.tar.gz
-sudo install lazygit -D -t /usr/local/bin/
+# Home Managerでシステムを構築（初回）
+nix run home-manager/master -- switch --flake .
+
+# 設定変更後の適用
+home-manager switch --flake .
 ```
 
-##### delta（diff表示の強化）
+#### 5. WezTerm設定のシンボリックリンク作成（必要な場合）
 
 ```bash
-DELTA_VERSION=$(curl -s "https://api.github.com/repos/dandavison/delta/releases/latest" | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/')
-curl -Lo /tmp/delta.tar.gz "https://github.com/dandavison/delta/releases/download/${DELTA_VERSION}/delta-${DELTA_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
-cd /tmp && tar xzf delta.tar.gz
-sudo install delta-${DELTA_VERSION}-x86_64-unknown-linux-gnu/delta /usr/local/bin/
-```
-
-#### 3. シンボリックリンクを作成
-
-```bash
-# Neovim
-ln -s ~/.dotfiles/.config/nvim ~/.config/nvim
-
-# Starship
-ln -s ~/.dotfiles/.config/starship.toml ~/.config/starship.toml
-
-# lazygit
-ln -s ~/.dotfiles/.config/lazygit ~/.config/lazygit
-
-# WezTerm（必要な場合）
+# WeztermはHome Manager管理外なので手動でリンク
 ln -s ~/.dotfiles/.config/wezterm ~/.config/wezterm
-
-# PowerShell（macOSの場合）
-ln -s ~/.dotfiles/PowerShell ~/.config/powershell
 ```
+
+#### セットアップで自動的にインストールされるもの
+
+- **CLIツール**: ripgrep, fd, fzf, bat, eza, jq, lazygit, zoxide, nb, delta, ghq, gh
+- **開発ツール**: fnm, deno, bun, python3, pipx
+- **Nix開発**: nixpkgs-fmt, statix, nil
+- **Zshプラグイン**: Oh My Zsh, you-should-use, zsh-autosuggestions, fast-syntax-highlighting
+- **設定ファイル**: Neovim, Zsh, Git, Starship, Lazygit, nb, zeno
+
+---
+
+### Windows
+
+Windows向けセットアップ（PowerShell、WezTerm、Neovim等）。
+
+詳細な手順は [`scripts/setup/`](scripts/setup/) を参照してください。
+
+#### クイックスタート
+
+```powershell
+# 管理者権限のPowerShellで実行
+cd D:\git
+git clone git@github.com:aya-215/dotfiles.git
+cd dotfiles
+.\scripts\install.ps1 -InstallAll
+```
+
+**インストールされるもの:**
+- シンボリックリンク（WezTerm、Neovim、PowerShell）
+- fzf、Neovim
+- PowerShellモジュール（PSFzf、ZLocation、BurntToast）
+- HackGen Nerd Font
+
+**オプション:**
+```powershell
+.\scripts\install.ps1 -DryRun      # 実行内容確認
+.\scripts\install.ps1 -Force       # 確認なしで実行
+```
+
+詳細は [scripts/setup/README.md](scripts/setup/README.md) を参照。
+
+---
 
 ## 日常の使い方
 
 ### 設定を編集
 
-どちらの場所で編集してもOK:
 ```bash
-# パターン1: 実環境側で編集
-nvim ~/.config/nvim/init.lua
+# 設定ファイルを編集（どちらでもOK）
+nvim ~/.config/nvim/init.lua       # 実環境側
+nvim ~/.dotfiles/config/nvim/init.lua  # dotfiles側
 
-# パターン2: dotfiles側で編集
-cd ~/dotfiles
-nvim .config/nvim/init.lua
+# Nixモジュールを編集
+nvim ~/.dotfiles/modules/zsh.nix
 ```
 
-### 変更をコミット
+### 変更を適用
 
 ```bash
-cd ~/dotfiles  # Windows: D:\git\dotfiles
+cd ~/.dotfiles
+
+# Home Managerで変更を適用
+home-manager switch --flake .
+
+# 変更をコミット
 git add .
 git commit -m "設定を更新"
 git push
 ```
 
-## lazygitの使い方
+### パッケージを追加
 
-### 基本操作
+```bash
+# 1. modules/packages.nixを編集
+nvim ~/.dotfiles/modules/packages.nix
 
-任意のGitリポジトリで`lazygit`を実行すると、対話的なGit操作UIが起動します：
+# 2. パッケージを追加
+# home.packages = with pkgs; [
+#   新しいパッケージ名
+# ];
+
+# 3. 変更を適用
+home-manager switch --flake .
+```
+
+---
+
+## 主な機能
+
+### 1. Zsh設定
+
+#### エイリアス
+
+```bash
+# エディタ
+vim/vi/v → nvim    # Neovim起動
+c        → claude  # Claude Code起動
+
+# バックアップ
+bak      → ~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh
+
+# eza (ls代替)
+ls       → eza --icons --group-directories-first
+ll       → eza -l --icons --group-directories-first --git
+la       → eza -la --icons --group-directories-first --git
+lt       → eza --tree --level=2 --icons
+lta      → eza --tree --level=2 --icons -a
+lg       → eza -l --icons --group-directories-first --git --git-ignore
+
+# npm
+npmd     → npm run dev -- -H 0.0.0.0
+npms     → npm run storybook -- --host 0.0.0.0
+```
+
+#### fzf関数
+
+| コマンド | 説明 | キーバインド |
+|---------|------|-------------|
+| `fn` | ファイル検索→nvim | - |
+| `fd` | ディレクトリ検索→cd | - |
+| `fe` | ファイル検索→VS Code | - |
+| `fbr` | Gitブランチ切替 | - |
+| `fga` | Git add（複数選択） | - |
+| `fgl` | Gitログ閲覧 | - |
+| `fgco` | コミットcheckout | - |
+| `fgs` | スタッシュ管理 | - |
+| `pk` | プロセスkill | - |
+| `fenv` | 環境変数閲覧 | - |
+| `falias` | エイリアス閲覧 | - |
+| `gj` | ghqリポジトリ選択→cd | `Ctrl+F` |
+
+#### zeno.zsh（スニペット/補完エンジン）
+
+高速なスニペット展開と補完機能。
+
+**キーバインド:**
+- `Ctrl+Space`: スニペット自動展開
+- `Tab`: 補完
+- `Ctrl+R`: 履歴検索（zeno版）
+- `Ctrl+X` `Ctrl+S`: スニペット挿入
+
+**設定ファイル:** `config/zeno/config.yml`
+
+#### プラグイン
+
+- **you-should-use**: エイリアスを使うべき時に通知
+- **zsh-autosuggestions**: コマンド履歴から自動提案
+- **fast-syntax-highlighting**: 高速シンタックスハイライト
+
+### 2. nb（ノート管理）
+
+CLIベースのノート・タスク管理ツール。
+
+#### 基本コマンド
+
+```bash
+nb                  # ノート一覧
+nb add              # ノート追加
+nb edit 123         # ノート編集
+nb show 123         # ノート表示
+nb search "keyword" # 検索
+```
+
+#### カスタム関数（config/nb/functions.zsh）
+
+```bash
+nb-task-add         # タスク追加
+nb-task-list        # タスク一覧
+nb-task-done        # タスク完了
+nb-daily            # 日報作成
+nb-daily-view       # 日報閲覧
+```
+
+### 3. Neovim設定
+
+- **プラグイン管理**: lazy.nvim
+- **LSP**: nvim-lspconfig + Mason
+- **補完**: nvim-cmp
+- **Git統合**: gitsigns.nvim
+- **ファイラー**: neo-tree.nvim
+
+設定詳細: [config/nvim/README.md](config/nvim/README.md)
+
+### 4. lazygit（Git TUI）
+
+対話的なGit操作UI。
+
+#### 起動
 
 ```bash
 lazygit
 ```
 
-### diff表示の切り替え
+#### diff表示切り替え
 
-lazygitには3つのdiff表示モードを設定しています。**`|`キー**で切り替えられます：
+`|`キーで3つのモードを切り替え:
 
-1. **通常表示**（デフォルト）
-   - コンパクトな差分表示
-   - 行番号付き
-   - 小さな変更の確認に最適
+1. **通常表示**: コンパクトな差分
+2. **side-by-side表示**: 左右2画面
+3. **詳細表示**: side-by-side + クリック可能な行番号
 
-2. **side-by-side表示**
-   - 左右2画面で差分表示
-   - 大きな変更の比較に便利
-   - 行番号付き
-
-3. **詳細表示（ハイパーリンク付き）**
-   - side-by-side表示
-   - 行番号がクリック可能
-   - クリックでnvimが該当行で開く
-
-### 主なキーバインド
+#### 主なキーバインド
 
 | キー | 動作 |
 |------|------|
-| `|` | diff表示モードを切り替え |
-| `?` | ヘルプを表示 |
+| `|` | diff表示モード切り替え |
+| `?` | ヘルプ表示 |
 | `1-5` | パネル切り替え |
 | `space` | ステージング/アンステージング |
 | `c` | コミット |
@@ -243,95 +320,145 @@ lazygitには3つのdiff表示モードを設定しています。**`|`キー**�
 | `p` | プル |
 | `q` | 終了 |
 
-### deltaについて
+### 5. Starship（プロンプト）
 
-`git diff`や`git log`コマンドでも、自動的にdeltaが使用されます：
+高速でカスタマイズ可能なプロンプト。
 
-```bash
-# コマンドラインでの差分表示もdelta経由で表示される
-git diff
-git log -p
-```
+設定ファイル: `config/starship/starship.toml`
 
-## PowerShell設定の詳細
+---
+
+## インストールされるパッケージ
+
+Nix/Home Managerで自動的にインストールされるパッケージ一覧（`modules/packages.nix`で管理）。
+
+### CLIツール
+
+| ツール | 説明 |
+|-------|------|
+| ripgrep | 高速grep（`rg`） |
+| fd | 高速find |
+| fzf | ファジーファインダー |
+| bat | cat代替（シンタックスハイライト） |
+| eza | ls代替（モダン） |
+| jq | JSON処理 |
+| lazygit | Git TUI |
+| zoxide | スマートcd |
+| nb | ノート管理 |
+| delta | Git diff viewer |
+| ghq | リポジトリ管理 |
+| gh | GitHub CLI |
+| gcalcli | Googleカレンダー |
+| wslu | WSL utilities（wslview等） |
+
+### 開発ツール
+
+| ツール | 説明 |
+|-------|------|
+| fnm | Node.jsバージョン管理 |
+| deno | Deno JavaScript runtime |
+| bun | Bun JavaScript runtime |
+| python3 | Python 3.x |
+| pipx | Pythonツール管理 |
+
+### Nix開発
+
+| ツール | 説明 |
+|-------|------|
+| nixpkgs-fmt | フォーマッタ |
+| statix | Linter |
+| nil | LSP |
+
+---
+
+## PowerShell設定（Windows）
 
 ### 主な機能
 
-- **超高速起動**: 遅延読み込み機構により、起動時間を最小化
-- **fzf統合**: ファイル、ディレクトリ、Gitブランチなどの検索をfzfで実行
-- **ZLocation**: ディレクトリジャンプ機能（`zf`または`Ctrl+D`）
-- **kubectl補完**: Kubernetes操作の補完（初回使用時に自動読み込み）
-- **WezTerm統合**: OSC 7シーケンスによるカレントディレクトリ通知
+- **超高速起動**: 遅延読み込み機構
+- **fzf統合**: ファイル、ディレクトリ、Gitブランチ検索
+- **ZLocation**: ディレクトリジャンプ（`zf`または`Ctrl+D`）
+- **kubectl補完**: 初回使用時に自動読み込み
+- **WezTerm統合**: OSC 7によるディレクトリ通知
 
-### 便利なエイリアス
+### エイリアス
 
 ```powershell
 vim/vi/v → nvim    # Neovim起動
 c        → claude  # Claude Code起動
-cc       → claude -c  # Claude Code（会話モード）
-cr       → claude -r  # Claude Code（リソース指定）
+cc       → claude -c  # 会話モード
+cr       → claude -r  # リソース指定
 ```
 
-### fzf機能
+### fzf関数
 
 | コマンド | 説明 | キーバインド |
 |---------|------|-------------|
 | `zf` / `zi` | ZLocation履歴からディレクトリ選択 | `Ctrl+D` |
-| `gb` | Gitブランチを選択してチェックアウト | - |
-| `fn` | ファイルを選択してnvimで開く | - |
-| `fd` | ディレクトリを選択して移動 | - |
-| `fe` | ファイルを選択してVS Codeで開く | - |
-| `ga` | Gitステージングファイルを選択 | - |
-| `gl` | Gitログを選択 | - |
-| `gco` | コミットを選択してチェックアウト | - |
-| `gs` | Gitスタッシュを選択して適用 | - |
-| `pk` | プロセスを選択して終了 | - |
-| `fenv` | 環境変数を検索 | - |
-| `falias` | エイリアスを検索 | - |
-| - | ファイル検索（パスを挿入） | `Ctrl+F` |
+| `gb` | Gitブランチ選択→チェックアウト | - |
+| `fn` | ファイル選択→nvim | - |
+| `fd` | ディレクトリ選択→移動 | - |
+| `fe` | ファイル選択→VS Code | - |
+| `ga` | Gitステージング | - |
+| `gl` | Gitログ | - |
+| `gco` | コミット選択→チェックアウト | - |
+| `gs` | スタッシュ選択→適用 | - |
+| `pk` | プロセス選択→終了 | - |
+| `fenv` | 環境変数検索 | - |
+| `falias` | エイリアス検索 | - |
+| - | ファイル検索（パス挿入） | `Ctrl+F` |
 | - | コマンド履歴検索 | `Ctrl+R` |
 
-### 必要な依存関係
+詳細: [PowerShell/README.md](PowerShell/README.md)
 
-プロファイルは以下のツールに依存していますが、遅延読み込みにより存在しなくてもエラーになりません:
+---
 
-```powershell
-# 必須
-winget install fzf
-winget install neovim
+## トラブルシューティング
 
-# 推奨（PowerShellモジュール）
-Install-Module PSFzf -Scope CurrentUser
-Install-Module ZLocation -Scope CurrentUser
-Install-Module BurntToast -Scope CurrentUser
+### Home Managerの更新
 
-# 推奨（フォント）
-choco install font-hackgen-nerd  # WezTerm/Neovim用
+```bash
+# Home Managerチャンネルを更新
+nix flake update
 
-# オプション
-winget install kubectl  # Kubernetes使用時のみ
+# 最新版で再構築
+home-manager switch --flake .
 ```
 
-**一括インストール:**
-```powershell
-# すべて自動インストール（推奨）
-.\scripts\install-dependencies.ps1
+### 設定の初期化
+
+```bash
+# Home Manager管理の設定を削除
+rm -rf ~/.config/nvim ~/.config/lazygit ~/.config/starship.toml
+
+# 再適用
+home-manager switch --flake .
 ```
 
-### 遅延読み込み機構
+### Nixストアのクリーンアップ
 
-プロファイルは以下のモジュールを初回使用時のみ読み込むことで、起動時間を最小化しています:
+```bash
+# 古い世代を削除
+nix-collect-garbage -d
 
-- **PSFzf**: fzf関連機能を最初に使用した時
-- **ZLocation**: `zf`コマンドまたは`Ctrl+D`を初めて押した時
-- **kubectl補完**: `kubectl`コマンドを初めて実行した時
+# 特定の世代を残す
+nix-collect-garbage --delete-older-than 30d
+```
 
-この仕組みにより、PowerShellの起動は通常0.5秒以下で完了します。
+---
+
+## 参考資料
+
+- [Nix公式ドキュメント](https://nixos.org/manual/nix/stable/)
+- [Home Manager Manual](https://nix-community.github.io/home-manager/)
+- [Nix学習ガイド（このリポジトリ内）](docs/nix-guide/)
+
+---
 
 ## 注意事項
 
-- `.claude/settings.local.json`は`.gitignore`で除外しています
-- シンボリックリンクは双方向で動作します（どちらから編集しても同じファイル）
-- シンボリックリンク削除時は`Remove-Item`（Windows）または`rm`（Mac/Linux）で安全に削除できます
-- Windows環境では`XDG_CONFIG_HOME`環境変数の設定が必須です
-- PowerShellモジュールは必須ではありませんが、インストールすることで全機能が使えます
+- `.claude/settings.local.json`は`.gitignore`で除外
+- Home Managerがシンボリックリンクを自動管理（`.config/`配下）
+- WezTerm設定は手動でシンボリックリンク作成が必要
+- Windows環境では`XDG_CONFIG_HOME`環境変数の設定が必須
+- Nix管理外のツール（WezTerm等）は手動セットアップ
