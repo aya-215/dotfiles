@@ -1,4 +1,1 @@
-return {
-  "nvim-tree/nvim-web-devicons",
-  lazy = true,
-}
+/nix/store/ly4aklf6j429ys15zmsqd2284z1a221y-home-manager-files/.config/nvim/lua/plugins/nvim-web-devicons.lua
