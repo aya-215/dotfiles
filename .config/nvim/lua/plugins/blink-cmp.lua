@@ -1,1 +1,0 @@
-/nix/store/ly4aklf6j429ys15zmsqd2284z1a221y-home-manager-files/.config/nvim/lua/plugins/blink-cmp.lua

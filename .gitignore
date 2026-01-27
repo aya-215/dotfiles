@@ -10,3 +10,8 @@ PowerShell/secrets.ps1
 
 # WezTerm environment-specific settings
 .config/wezterm/.env
+
+# Home Manager managed directories (config source is in config/)
+.config/nvim/
+.config/lazygit/
+.config/starship.toml
