@@ -8,8 +8,7 @@
     vimAlias = true;
   };
 
-  xdg.configFile."nvim" = {
-    source = ../config/nvim;
-    recursive = true;
-  };
+  home.file.".config/nvim".source =
+    config.lib.file.mkOutOfStoreSymlink
+      "/home/aya/.dotfiles/config/nvim";
 }

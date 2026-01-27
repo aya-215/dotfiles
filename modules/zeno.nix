@@ -1,5 +1,7 @@
 { config, ... }:
 
 {
-  xdg.configFile."zeno/config.yml".source = ../config/zeno/config.yml;
+  home.file.".config/zeno/config.yml".source =
+    config.lib.file.mkOutOfStoreSymlink
+      "/home/aya/.dotfiles/config/zeno/config.yml";
 }

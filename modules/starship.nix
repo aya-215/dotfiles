@@ -5,5 +5,7 @@
     enable = true;
   };
 
-  xdg.configFile."starship.toml".source = ../config/starship/starship.toml;
+  home.file.".config/starship.toml".source =
+    config.lib.file.mkOutOfStoreSymlink
+      "/home/aya/.dotfiles/config/starship/starship.toml";
 }
