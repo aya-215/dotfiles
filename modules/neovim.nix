@@ -10,5 +10,5 @@
 
   home.file.".config/nvim".source =
     config.lib.file.mkOutOfStoreSymlink
-      "/home/aya/.dotfiles/config/nvim";
+      "${config.home.homeDirectory}/.dotfiles/config/nvim";
 }

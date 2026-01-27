@@ -7,5 +7,5 @@
 
   home.file.".config/starship.toml".source =
     config.lib.file.mkOutOfStoreSymlink
-      "/home/aya/.dotfiles/config/starship/starship.toml";
+      "${config.home.homeDirectory}/.dotfiles/config/starship/starship.toml";
 }

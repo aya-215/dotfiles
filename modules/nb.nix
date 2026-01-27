@@ -3,5 +3,5 @@
 {
   home.file.".config/nb/functions.zsh".source =
     config.lib.file.mkOutOfStoreSymlink
-      "/home/aya/.dotfiles/config/nb/functions.zsh";
+      "${config.home.homeDirectory}/.dotfiles/config/nb/functions.zsh";
 }
