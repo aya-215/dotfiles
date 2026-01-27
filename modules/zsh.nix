@@ -6,6 +6,7 @@
     EDITOR = "nvim";
     VISUAL = "nvim";
     LANG = "ja_JP.UTF-8";
+    BROWSER = "wslview";
   };
 
   # PATH設定（shell.nixから移行）
@@ -76,19 +77,12 @@
       path = "$HOME/.zsh_history";
     };
 
-    # .zshrcの先頭に追加（oh-my-zshより前）
-    initExtraFirst = ''
-      # Homebrew
-      eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-    '';
-
     # .zshrcに追加（メイン部分）
     initExtra = ''
       # fnm (Node version manager)
       eval "$(fnm env --use-on-cd)"
 
       # PATH configuration
-      export PATH="$HOME/.deno/bin:$PATH"
       export PATH=$(echo $PATH | tr ':' '\n' | grep -v '^/mnt/c/' | tr '\n' ':' | sed 's/:$//')
       export PATH="$PATH:/mnt/c/Windows/System32"
       export PATH="$PATH:/mnt/c/Users/368/AppData/Local/Programs/Microsoft VS Code/bin"
@@ -121,9 +115,7 @@
       fi
 
       # fast-syntax-highlighting（zeno.zshの後に読み込む）
-      if [[ -f ~/src/github.com/zdharma-continuum/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh ]]; then
-        source ~/src/github.com/zdharma-continuum/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
-      fi
+      source ${pkgs.zsh-fast-syntax-highlighting}/share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
 
       # カスタム関数
       # fn - ファイル検索→nvim
@@ -246,11 +238,6 @@
 
       # nb関数（タスク管理）
       [[ -f ~/.config/nb/functions.zsh ]] && source ~/.config/nb/functions.zsh
-
-      # Bun (JavaScript runtime)
-      export BUN_INSTALL="$HOME/.bun"
-      export PATH="$BUN_INSTALL/bin:$PATH"
-      [ -s "$BUN_INSTALL/_bun" ] && source "$BUN_INSTALL/_bun"
     '';
   };
 }
