@@ -4,16 +4,30 @@
   programs.git = {
     enable = true;
 
+    # グローバルignore設定
+    ignores = [
+      # Claude Code
+      ".claude/plans/"
+
+      # Neovim
+      "*.swp"
+      "*.swo"
+      "*~"
+
+      # テストフォルダを除外
+      "test/"
+
+      # Nix
+      "result"
+    ];
+
     settings = {
       user = {
         name = "eBASE-Mori";
         email = "mori.a@ebase.co.jp";
       };
       init.defaultBranch = "main";
-      core = {
-        pager = "delta";
-        excludesfile = "~/.config/git/ignore";
-      };
+      core.pager = "delta";
       interactive.diffFilter = "delta --color-only";
       delta = {
         navigate = true;

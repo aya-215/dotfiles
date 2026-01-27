@@ -8,6 +8,8 @@
     ./modules/lazygit.nix
     ./modules/neovim.nix
     ./modules/zsh.nix
+    ./modules/nb.nix
+    ./modules/zeno.nix
   ];
 
   # Home Managerのバージョン
