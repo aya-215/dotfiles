@@ -52,6 +52,7 @@
       vi = "nvim";
       v = "nvim";
       c = "claude";
+      cw = "claude-watch";
 
       # バックアップ
       bak = "~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh";
