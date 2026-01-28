@@ -49,22 +49,52 @@ if [ -z "$pane_id" ]; then
   echo "[DEBUG] pane_id set to unknown" >> "$LOG_FILE"
 fi
 
-# フックイベントに応じて状態を設定
-case "$hook_event" in
-  "SessionStart")   status="active" ;;
-  "PostToolUse")    status="active" ;;  # ツール実行成功後 = 承認されて実行中
-  "Notification")   status="waiting" ;;
-  "Stop")           status="stopped" ;;
-  *)                status="unknown" ;;
-esac
-
 # セッションディレクトリを作成
 sessions_dir="$HOME/.claude/sessions"
 mkdir -p "$sessions_dir"
 
+# 既存のセッションファイルから現在の状態を読み取る
+session_file="${sessions_dir}/${session_id}.json"
+current_status="unknown"
+if [ -f "$session_file" ]; then
+  current_status=$(jq -r '.status // "unknown"' "$session_file" 2>/dev/null || echo "unknown")
+  echo "[DEBUG] current_status from file: $current_status" >> "$LOG_FILE"
+fi
+
+# フックイベントに応じて状態を設定
+case "$hook_event" in
+  "SessionStart")
+    # SessionStartは常にactiveに遷移（stopped→activeも可能）
+    status="active"
+    ;;
+  "PostToolUse")
+    # ツール実行成功後 = 承認されて実行中
+    # waiting→active または stopped→activeに遷移
+    status="active"
+    ;;
+  "Notification")
+    # 通知時はwaitingに遷移（ただしstoppedの場合は遷移しない）
+    if [ "$current_status" != "stopped" ]; then
+      status="waiting"
+    else
+      status="$current_status"
+    fi
+    ;;
+  "Stop")
+    # 停止時は常にstoppedに遷移
+    status="stopped"
+    ;;
+  *)
+    status="unknown"
+    ;;
+esac
+
+echo "[DEBUG] status transition: $current_status -> $status" >> "$LOG_FILE"
+
 # JSONファイルに書き込み
 # notification_message/notification_typeがある場合のみ追加
-if [ -n "$notification_message" ] && [ "$notification_message" != "null" ]; then
+# ただし、PostToolUse/SessionStart時は通知をクリア
+if [ -n "$notification_message" ] && [ "$notification_message" != "null" ] && [ "$hook_event" != "PostToolUse" ] && [ "$hook_event" != "SessionStart" ]; then
   cat > "${sessions_dir}/${session_id}.json" << EOF
 {
   "session_id": "${session_id}",
