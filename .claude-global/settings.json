@@ -53,6 +53,53 @@
     "defaultMode": "plan"
   },
   "model": "opusplan",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/session-tracker.sh"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "idle_prompt|permission_prompt",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify.sh"
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/session-tracker.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/session-tracker.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/session-tracker.sh"
+          }
+        ]
+      }
+    ]
+  },
   "statusLine": {
     "type": "command",
     "command": "~/.claude/statusline-command.sh"
@@ -61,22 +108,10 @@
     "aiebase-essentials@ebase-marketplace": false,
     "aiebase-github-workflow@ebase-marketplace": true,
     "aiebase-plugin-creator@ebase-marketplace": false,
-    "claude-mem@thedotmack": false
+    "claude-mem@thedotmack": false,
+    "rust-analyzer-lsp@claude-plugins-official": true
   },
   "language": "japanese",
   "alwaysThinkingEnabled": false,
-  "plansDirectory": "./.claude/plans",
-  "hooks": {
-    "Notification": [
-      {
-        "matcher": "idle_prompt|permission_prompt",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/notify.sh"
-          }
-        ]
-      }
-    ]
-  }
+  "plansDirectory": "./.claude/plans"
 }

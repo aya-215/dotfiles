@@ -52,6 +52,7 @@ fi
 # フックイベントに応じて状態を設定
 case "$hook_event" in
   "SessionStart")   status="active" ;;
+  "PostToolUse")    status="active" ;;  # ツール実行成功後 = 承認されて実行中
   "Notification")   status="waiting" ;;
   "Stop")           status="stopped" ;;
   *)                status="unknown" ;;
