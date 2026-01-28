@@ -67,6 +67,11 @@ case "$hook_event" in
     # SessionStartは常にactiveに遷移（stopped→activeも可能）
     status="active"
     ;;
+  "PreToolUse")
+    # ツール実行前 = 承認されて実行開始
+    # waiting→active に遷移
+    status="active"
+    ;;
   "PostToolUse")
     # ツール実行成功後 = 承認されて実行中
     # waiting→active または stopped→activeに遷移
