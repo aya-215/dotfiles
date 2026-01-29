@@ -9,10 +9,10 @@
 }
 
 
-; Ctrl+セミコロン（物理位置 = 論理的にはコロン）
-^;:: {
+; Ctrl+G で Escape + IME OFF
+^g:: {
     Send("{Escape}")
-    Sleep(100) 
+    Sleep(100)
     IME_SET(0)
 }
 
