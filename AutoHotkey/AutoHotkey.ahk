@@ -60,3 +60,56 @@ ToggleWezterm() {
         Run "wezterm-gui.exe"
     }
 }
+
+; ──────────────────────────────────────────────
+; WSL クリップボード画像ペースト (Alt+V)
+; ──────────────────────────────────────────────
+global gTempDir := "D:\wsl_clipboard_temp"
+global gLastNotifyTime := 0
+
+; 起動時にtempディレクトリ作成
+if !DirExist(gTempDir)
+    DirCreate(gTempDir)
+
+; Alt+V でクリップボード画像をWSLパスでペースト
+!v:: {
+    global gTempDir
+
+    ; クリップボードに画像があるか確認
+    if !DllCall("IsClipboardFormatAvailable", "UInt", 2) {  ; CF_BITMAP
+        ShowTip("クリップボードに画像がありません")
+        return
+    }
+
+    ; ファイル名生成
+    timestamp := FormatTime(, "yyyyMMdd_HHmmss")
+    filename := "clip_" . timestamp . ".png"
+    winPath := gTempDir . "\" . filename
+    wslPath := "/mnt/d/wsl_clipboard_temp/" . filename
+
+    ; 画像を保存（PowerShell使用）
+    psCmd := 'Add-Type -AssemblyName System.Windows.Forms; '
+           . '$img = [System.Windows.Forms.Clipboard]::GetImage(); '
+           . 'if ($img) { $img.Save(\"' . winPath . '\") }'
+    RunWait('powershell.exe -NoProfile -Command "' . psCmd . '"',, "Hide")
+
+    ; WSLパスをペースト
+    if FileExist(winPath) {
+        A_Clipboard := wslPath
+        Send("^v")
+        ShowTip("画像パスをペーストしました")
+    } else {
+        ShowTip("画像の保存に失敗しました")
+    }
+}
+
+; 通知表示（去抖処理付き）
+ShowTip(msg) {
+    global gLastNotifyTime
+    now := A_TickCount
+    if (now - gLastNotifyTime < 500)
+        return
+    gLastNotifyTime := now
+    ToolTip(msg)
+    SetTimer(() => ToolTip(), -2000)
+}
