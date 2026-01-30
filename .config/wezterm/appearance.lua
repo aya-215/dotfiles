@@ -42,7 +42,7 @@ function M.setup(config)
   -- フォント（フォールバック対応、太字で見やすく）
   config.font = wezterm.font_with_fallback({
     {family = "HackGen Console NF", weight = "Regular"},
-    {family = "Cascadia Code NF", weight = "Regular"},
+    {family = "Symbols Nerd Font Mono", weight = "Regular"},
     {family = "JetBrains Mono", weight = "Regular"},
   })
 
@@ -52,7 +52,7 @@ function M.setup(config)
       italic = true,
       font = wezterm.font_with_fallback({
         {family = "HackGen Console NF", weight = "Regular", italic = false},
-        {family = "Cascadia Code NF", weight = "Regular", italic = false},
+        {family = "Symbols Nerd Font Mono", weight = "Regular", italic = false},
         {family = "JetBrains Mono", weight = "Regular", italic = false},
       }),
     },
