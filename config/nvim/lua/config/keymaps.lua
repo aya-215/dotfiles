@@ -84,3 +84,27 @@ vim.api.nvim_create_autocmd("TermOpen", {
   end,
   desc = "ターミナルモードのキーバインド設定"
 })
+
+-- ===================================================
+-- ヤンク・削除・ペーストの改善
+-- ===================================================
+
+-- Visual コピー時にカーソル位置を保持
+vim.keymap.set('x', 'y', 'mzy`z', { desc = 'ヤンク（カーソル位置保持）' })
+
+-- x でレジスタに入れずに削除（カット）
+vim.keymap.set('n', 'x', '"_d', { desc = 'レジスタに入れず削除' })
+vim.keymap.set('n', 'X', '"_D', { desc = 'レジスタに入れず行末まで削除' })
+vim.keymap.set('x', 'x', '"_x', { desc = 'レジスタに入れず削除（Visual）' })
+vim.keymap.set('o', 'x', 'd', { desc = 'オペレータ待機: 削除' })
+
+-- ペースト時にインデント自動調整＋カーソルをペースト範囲末尾に配置＋glowエフェクト
+vim.keymap.set('n', 'p', function()
+  require('undo-glow').highlight_changes()
+  vim.cmd('normal! ]p`]')
+end, { desc = 'ペースト（インデント調整＋末尾＋glow）' })
+
+vim.keymap.set('n', 'P', function()
+  require('undo-glow').highlight_changes()
+  vim.cmd('normal! ]P`]')
+end, { desc = 'ペースト上（インデント調整＋末尾＋glow）' })
