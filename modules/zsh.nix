@@ -266,7 +266,7 @@
         if [[ $# -eq 1 ]]; then
           selected=$1
         else
-          selected=$(find ~/src -mindepth 2 -maxdepth 2 -type d 2>/dev/null | fzf --prompt="Project> " --preview 'eza -la --icons --group-directories-first {}')
+          selected=$(find ~/src -mindepth 3 -maxdepth 3 -type d 2>/dev/null | fzf --prompt="Project> " --preview 'eza -la --icons --group-directories-first {}')
         fi
         [[ -z $selected ]] && return 0
         local selected_name=$(basename "$selected" | tr . _)
