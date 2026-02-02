@@ -101,7 +101,7 @@ return {
           -- live_grep設定
           live_grep = {
             additional_args = function()
-              return { "--hidden" }
+              return { "--hidden", "--no-ignore" }
             end,
           },
 
@@ -129,8 +129,8 @@ return {
         },
       })
 
-      -- fzf-native拡張を読み込み
-      telescope.load_extension("fzf")
+      -- fzf-native拡張を読み込み (cmake未インストールのためコメントアウト)
+      -- telescope.load_extension("fzf")
     end,
   },
 }
