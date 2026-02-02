@@ -24,6 +24,7 @@ model: opus
 6. Work/Personalに分類してサマリー生成（Claude会話も含む）
 7. ユーザーに確認表示
 8. 承認後、日報ファイルの「📝 今日のサマリー」セクションを更新
+8.5. 日報の「💡 メモ」セクションに「調子: /5」が未記入（「調子: /5」のまま）の場合、ユーザーに「今日の調子は5段階で？」と質問し、回答を日報に反映する
 
 ### フェーズ2: メモリ整理
 
@@ -101,6 +102,29 @@ done'
 ```bash
 git -C ~/.dotfiles log --oneline --since="2026-01-15 00:00" --until="2026-01-16 00:00" --author="$(git config user.email)" 2>/dev/null
 ```
+
+### コミット数の集計
+
+gitログ取得後、リポジトリ別のコミット数をカウントし、サマリーのセクションヘッダーに合計を記載する:
+
+```bash
+# Work側の集計例
+for repo in ~/src/github.com/ebase-dev/*/; do
+  repo_name=$(basename "$repo")
+  author_email=$(git -C "$repo" config user.email 2>/dev/null || git config user.email)
+  count=$(git -C "$repo" log --oneline --since="$DATE 00:00" --until="$NEXT_DATE 00:00" --author="$author_email" 2>/dev/null | wc -l)
+  [ "$count" -gt 0 ] && echo "$repo_name: $count commits"
+done
+
+# Personal側の集計例
+count=$(git -C ~/.dotfiles log --oneline --since="$DATE 00:00" --until="$NEXT_DATE 00:00" --author="$(git config user.email)" 2>/dev/null | wc -l)
+[ "$count" -gt 0 ] && echo "dotfiles: $count commits"
+```
+
+集計結果をサマリーに反映する形式:
+- `### Work (N commits across M repos)`
+- `### Personal (N commits across M repos)`
+- 各プロジェクト行にも `(N commits)` を付与
 
 ### Claude会話同期の実行
 
@@ -184,14 +208,16 @@ rg "^summary:" ~/.claude/skills/agent-memory/memories/ --no-ignore --hidden
 ```markdown
 ## 📝 今日のサマリー
 
-### Work
-- ChatComposerのスクロールバーUI修正 (3 commits)
+### Work (12 commits across 3 repos)
+- **ebase-middleware-mcp** (5 commits): LLMパラメータ修正、テスト追加
+- **epc-feature-agent** (4 commits): プロンプト改善
+- **ebase-portal-chat** (3 commits): worktree整理
 - PRレビュー対応
 - [プロジェクト名] に関する調査・実装（Claude会話）
 
-### Personal
-- nb関数の最適化
-- dotfiles整備
+### Personal (8 commits across 2 repos)
+- **dotfiles** (6 commits): nb関数の最適化、WezTerm設定改善
+- **claude-watch** (2 commits): PostToolUse hook追加
 - [テーマ]についての学習（Claude会話）
 ```
 
