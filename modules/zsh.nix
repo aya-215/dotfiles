@@ -80,6 +80,9 @@
 
     # .zshrcに追加（メイン部分）
     initContent = ''
+      # compauditスキップ（起動高速化）
+      export ZSH_DISABLE_COMPFIX=true
+
       # fnm (Node version manager)
       eval "$(fnm env --use-on-cd)"
 
@@ -101,6 +104,15 @@
 
       # fzf (ファジーファインダー)
       [ -f ~/.fzf.zsh ] && source ~/.fzf.zsh
+
+      # zi - zoxide+fzf（デフォルトのziを上書き）
+      zi() {
+        local result
+        result=$(zoxide query -l | fzf --query="$*" --select-1 --exit-0 --height=40% --reverse)
+        if [[ -n "$result" ]]; then
+          cd "$result"
+        fi
+      }
 
       # zeno.zsh（スニペット/補完）
       if [[ -f ~/src/github.com/yuki-yano/zeno.zsh/zeno.zsh ]]; then
