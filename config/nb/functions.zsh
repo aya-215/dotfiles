@@ -331,14 +331,28 @@ _nb_format_tasks_for_daily() {
     echo "${group}|${due}|${priority}|${id}"
   done | sort -t'|' -k1,1 -k2,2 -k3,3n | {
     local prev_group=""
+    local other_count=0
+    local other_shown=0
     while IFS='|' read -r group due priority id; do
       # work/otherの間に空行
       if [[ -n "$prev_group" && "$prev_group" == "0" && "$group" == "1" ]]; then
         echo ""
       fi
-      _nb_format_single_task "$id"
+      if [[ "$group" == "0" ]]; then
+        _nb_format_single_task "$id"
+      else
+        other_count=$((other_count + 1))
+        if [[ $other_count -le 2 ]]; then
+          _nb_format_single_task "$id"
+          other_shown=$((other_shown + 1))
+        fi
+      fi
       prev_group="$group"
     done
+    local other_remaining=$((other_count - other_shown))
+    if [[ $other_remaining -gt 0 ]]; then
+      echo "- 他 ${other_remaining}件"
+    fi
   }
 }
 
