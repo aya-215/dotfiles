@@ -10,6 +10,7 @@
     ./modules/zsh.nix
     ./modules/nb.nix
     ./modules/zeno.nix
+    ./modules/tmux.nix
   ];
 
   # Home Managerのバージョン
