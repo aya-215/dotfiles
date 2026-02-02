@@ -36,6 +36,12 @@
     ];
 
     extraConfig = ''
+      # vim-tmux-navigatorの残骸バインド除去 (resurrectセッション対策)
+      unbind -T root C-h
+      unbind -T root C-j
+      unbind -T root C-k
+      unbind -T root C-l
+
       # True Color対応 (WezTerm + WSL)
       set -ag terminal-overrides ",xterm-256color:RGB"
 
@@ -98,6 +104,17 @@
       # 確認なしでペイン/ウィンドウを閉じる
       bind x kill-pane
       bind X kill-window
+
+      # ウィンドウタブのフォーマット
+      set -g @catppuccin_window_text " #W #{b:pane_current_path}"
+      set -g @catppuccin_window_current_text " #W #{b:pane_current_path}"
+      set -g @catppuccin_window_flags "icon"
+
+      # ステータスライン (catppuccin modules)
+      set -g status-left "#{E:@catppuccin_status_session}"
+      set -g status-right "#{E:@catppuccin_status_application}#{E:@catppuccin_status_directory}#{E:@catppuccin_status_date_time}"
+      set -g status-right-length 150
+      set -g status-left-length 100
     '';
   };
 }
