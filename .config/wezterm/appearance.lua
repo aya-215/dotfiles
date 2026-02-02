@@ -87,37 +87,32 @@ function M.setup(config)
   -- ========================================
   config.colors = {
     tab_bar = {
-      -- タブバーの背景
-      background = '#0b0022',
+      -- Catppuccin Mocha
+      background = '#181825',  -- mantle
 
-      -- アクティブなタブ（明るい青）
       active_tab = {
-        bg_color = '#2b7de9',
-        fg_color = '#ffffff',
+        bg_color = '#cba6f7',  -- mauve
+        fg_color = '#11111b',  -- crust
         intensity = 'Bold',
       },
 
-      -- 非アクティブなタブ（暗い青系）
       inactive_tab = {
-        bg_color = '#1a1b26',
-        fg_color = '#7aa2f7',
+        bg_color = '#313244',  -- surface_0
+        fg_color = '#9399b2',  -- overlay_2
       },
 
-      -- ホバー時
       inactive_tab_hover = {
-        bg_color = '#3b4261',
-        fg_color = '#c0caf5',
+        bg_color = '#45475a',  -- surface_1
+        fg_color = '#cdd6f4',  -- fg
       },
 
-      -- 新規タブボタン
       new_tab = {
-        bg_color = '#1a1b26',
-        fg_color = '#7aa2f7',
+        bg_color = '#313244',  -- surface_0
+        fg_color = '#9399b2',  -- overlay_2
       },
 
       inactive_tab_edge = "none",
     },
-    -- ビジュアルベルの色
     visual_bell = "#202020",
   }
 
@@ -172,38 +167,36 @@ function M.setup_tab_title()
     -- 表示テキスト: "1: Documents" 形式
     local title = string.format(' %d: %s ', index, dir_name)
 
-    -- PowerLine矢印記号
-    local SOLID_LEFT_ARROW = wezterm.nerdfonts.pl_right_hard_divider
-    local SOLID_RIGHT_ARROW = wezterm.nerdfonts.pl_left_hard_divider
+    -- 丸角セパレーター (tmux catppuccin rounded風)
+    local LEFT_CIRCLE = wezterm.nerdfonts.ple_left_half_circle_thick
+    local RIGHT_CIRCLE = wezterm.nerdfonts.ple_right_half_circle_thick
 
-    local edge_background = '#0b0022'  -- タブバーの背景色
+    local edge_background = '#181825'  -- mantle
 
-    -- アクティブなタブの場合
     if tab.is_active then
       return {
         { Background = { Color = edge_background } },
-        { Foreground = { Color = '#2b7de9' } },
-        { Text = SOLID_LEFT_ARROW },
-        { Background = { Color = '#2b7de9' } },
-        { Foreground = { Color = '#ffffff' } },
+        { Foreground = { Color = '#cba6f7' } },  -- mauve
+        { Text = LEFT_CIRCLE },
+        { Background = { Color = '#cba6f7' } },  -- mauve
+        { Foreground = { Color = '#11111b' } },   -- crust
         { Text = title },
         { Background = { Color = edge_background } },
-        { Foreground = { Color = '#2b7de9' } },
-        { Text = SOLID_RIGHT_ARROW },
+        { Foreground = { Color = '#cba6f7' } },  -- mauve
+        { Text = RIGHT_CIRCLE },
       }
     end
 
-    -- 非アクティブなタブの場合
     return {
       { Background = { Color = edge_background } },
-      { Foreground = { Color = '#1a1b26' } },
-      { Text = SOLID_LEFT_ARROW },
-      { Background = { Color = '#1a1b26' } },
-      { Foreground = { Color = '#7aa2f7' } },
+      { Foreground = { Color = '#313244' } },    -- surface_0
+      { Text = LEFT_CIRCLE },
+      { Background = { Color = '#313244' } },    -- surface_0
+      { Foreground = { Color = '#9399b2' } },    -- overlay_2
       { Text = title },
       { Background = { Color = edge_background } },
-      { Foreground = { Color = '#1a1b26' } },
-      { Text = SOLID_RIGHT_ARROW },
+      { Foreground = { Color = '#313244' } },    -- surface_0
+      { Text = RIGHT_CIRCLE },
     }
   end)
 end
