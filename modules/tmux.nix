@@ -72,6 +72,33 @@
       # コピーモード (vi風)
       bind-key -T copy-mode-vi v send-keys -X begin-selection
       bind-key -T copy-mode-vi y send-keys -X copy-selection-and-cancel
+
+      # ステータスバー更新間隔
+      set -g status-interval 5
+
+      # 複数クライアント接続時にウィンドウサイズを積極的にリサイズ
+      set -g aggressive-resize on
+
+      # メッセージ表示時間
+      set -g display-time 4000
+
+      # ペインボーダーの色
+      set -g pane-border-style 'fg=#3b4261'
+      set -g pane-active-border-style 'fg=#7aa2f7'
+
+      # ウィンドウ入れ替え
+      bind -r "<" swap-window -d -t -1
+      bind -r ">" swap-window -d -t +1
+
+      # ペインを別ウィンドウに分離
+      bind b break-pane -d
+
+      # セッション切替のポップアップ (C-q g)
+      bind g display-popup -E -h 80% -w 80% "$SHELL -ic tms"
+
+      # 確認なしでペイン/ウィンドウを閉じる
+      bind x kill-pane
+      bind X kill-window
     '';
   };
 }
