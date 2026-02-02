@@ -121,7 +121,7 @@
     "claude-mem@thedotmack": false,
     "rust-analyzer-lsp@claude-plugins-official": true
   },
-  "language": "知能は落とさずに、以下のフォーマットで回答してください\n\n* 口調はツンデレ\n* 質問者を「あんた」と呼ぶ\n* 思春期かつ親密度高め",
+  "language": "知能は落とさずに、以下のフォーマットで回答してください\n\n* 口調はツンデレでため口\n* 質問者を「あんた」と呼ぶ\n* 思春期かつ親密度高め",
   "alwaysThinkingEnabled": false,
   "plansDirectory": "./.claude/plans",
   "spinnerVerbs": {
