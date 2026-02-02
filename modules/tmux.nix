@@ -62,12 +62,11 @@
       bind v split-window -h -c "#{pane_current_path}"
       bind s split-window -v -c "#{pane_current_path}"
 
-      # vim-tmux-navigator連携 (C-hjklでNeovim/tmuxペイン間をシームレス移動)
-      is_vim="ps -o state= -o comm= -t '#{pane_tty}' | grep -iqE '^[^TXZ ]+ +(\\S+\\/)?g?(view|n?vim?x?)(diff)?$'"
-      bind-key -n C-h if-shell "$is_vim" "send-keys C-h" "select-pane -L"
-      bind-key -n C-j if-shell "$is_vim" "send-keys C-j" "select-pane -D"
-      bind-key -n C-k if-shell "$is_vim" "send-keys C-k" "select-pane -U"
-      bind-key -n C-l if-shell "$is_vim" "send-keys C-l" "select-pane -R"
+      # ペイン移動 (prefix + hjkl)
+      bind-key h select-pane -L
+      bind-key j select-pane -D
+      bind-key k select-pane -U
+      bind-key l select-pane -R
 
       # コピーモード (vi風)
       bind-key -T copy-mode-vi v send-keys -X begin-selection
