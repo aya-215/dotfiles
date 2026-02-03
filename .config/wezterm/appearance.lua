@@ -80,6 +80,7 @@ function M.setup(config)
   config.show_new_tab_button_in_tab_bar = false
   config.show_close_tab_button_in_tabs = false
   config.use_fancy_tab_bar = false
+  config.tab_max_width = 32
   config.tab_bar_at_bottom = false
 
   -- ========================================
