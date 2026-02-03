@@ -100,6 +100,9 @@
 
       # セッション切替のポップアップ (C-q g)
       bind g display-popup -E -h 80% -w 80% "$SHELL -ic tms"
+      # 既存セッション切替 (C-q f: fzf, C-q F: tree)
+      bind f display-popup -E -h 80% -w 80% "$SHELL -ic tsw"
+      bind F choose-tree -s
 
       # 確認なしでペイン/ウィンドウを閉じる
       bind x kill-pane
@@ -109,6 +112,12 @@
       set -g @catppuccin_window_text " #W #{b:pane_current_path}"
       set -g @catppuccin_window_current_text " #W #{b:pane_current_path}"
       set -g @catppuccin_window_flags "icon"
+
+      # アクティブウィンドウを目立たせる
+      set -g @catppuccin_window_current_background "#{@thm_lavender}"
+      # 非アクティブウィンドウを暗めに
+      set -g @catppuccin_window_default_background "#{@thm_surface0}"
+      set -g @catppuccin_window_default_color "#{@thm_overlay0}"
 
       # ステータスライン (catppuccin modules)
       set -g status-left "#{E:@catppuccin_status_session}"
