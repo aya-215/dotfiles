@@ -58,6 +58,10 @@
       # ウィンドウ番号を詰める
       set -g renumber-windows on
 
+      # WezTermのタブタイトルにtmux内プロセス名を伝える
+      set -g set-titles on
+      set -g set-titles-string '#T'
+
       # prefix + r で設定リロード
       bind r source-file ~/.config/tmux/tmux.conf \; display "Reloaded!"
 
@@ -90,6 +94,10 @@
       # ペインボーダーの色
       set -g pane-border-style 'fg=#3b4261'
       set -g pane-active-border-style 'fg=#7aa2f7'
+
+      # 非アクティブペインのテキストを薄くする（透過維持）
+      set -g window-style 'fg=#a6adc8'
+      set -g window-active-style 'fg=#cdd6f4'
 
       # ウィンドウ入れ替え
       bind -r "<" swap-window -d -t -1

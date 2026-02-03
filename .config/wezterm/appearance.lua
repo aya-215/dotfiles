@@ -187,11 +187,18 @@ function M.setup_tab_title()
       ['go'] = '\u{e627}',        -- nf-fae-go
     }
 
+    -- pane_titleからプロセス名を取得、tmuxの場合はforeground_process_nameにフォールバック
     local pane_title = tab.active_pane.title or ''
-    -- フルパスからファイル名を抽出し、拡張子を除去
-    local process_name = pane_title:match('([^/\\]+)$') or pane_title
-    process_name = process_name:gsub('%.exe$', '')
-    local icon = process_icons[process_name] or process_name
+    local raw_name = pane_title:match('([^/\\]+)$') or pane_title
+    raw_name = raw_name:gsub('%.exe$', '')
+
+    if raw_name == 'tmux' or raw_name == '' then
+      local fg = tab.active_pane.foreground_process_name or ''
+      raw_name = fg:match('([^/\\]+)$') or raw_name
+      raw_name = raw_name:gsub('%.exe$', '')
+    end
+
+    local icon = process_icons[raw_name] or raw_name
 
     local title = string.format(' %s %s ', dir_name, icon)
 
