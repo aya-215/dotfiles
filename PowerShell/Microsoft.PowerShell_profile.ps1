@@ -35,8 +35,8 @@ function cc { claude -c @args }
 function cr { claude -r @args }
 
 # 勤怠打刻
-function ckin { python "D:\個人用\script\kintai\kintai_auto_checkin.py" }
-function ckout { python "D:\個人用\script\kintai\kintai_auto_checkout.py" }
+function ki { python "D:\個人用\script\kintai\kintai_auto_checkin.py" }
+function ko { python "D:\個人用\script\kintai\kintai_auto_checkout.py" }
 
 # ======================
 # モジュール遅延読み込み
