@@ -165,9 +165,35 @@ function M.setup_tab_title()
     -- タブ番号（1から始まる）
     local index = tab.tab_index + 1
 
-    -- 表示テキスト: "dir_name pane_title" 形式
+    -- プロセス名からアイコンに変換
+    local process_icons = {
+      ['pwsh'] = '\u{e70f}',      -- nf-dev-terminal_badge (PowerShell)
+      ['powershell'] = '\u{e70f}',
+      ['cmd'] = '\u{e629}',       -- nf-fae-windows
+      ['zsh'] = '\u{e795}',       -- nf-dev-terminal
+      ['bash'] = '\u{e795}',
+      ['fish'] = '\u{e795}',
+      ['nvim'] = '\u{e62b}',      -- nf-seti-vim
+      ['vim'] = '\u{e62b}',
+      ['node'] = '\u{e718}',      -- nf-dev-nodejs_small
+      ['python'] = '\u{e73c}',    -- nf-dev-python
+      ['git'] = '\u{e702}',       -- nf-dev-git
+      ['lazygit'] = '\u{e702}',
+      ['claude'] = '\u{e66f}',    -- nf-dev-code
+      ['ssh'] = '\u{f489}',       -- nf-oct-terminal
+      ['docker'] = '\u{e7b0}',    -- nf-dev-docker
+      ['make'] = '\u{e673}',      -- nf-dev-gnu
+      ['cargo'] = '\u{e7a8}',     -- nf-dev-rust
+      ['go'] = '\u{e627}',        -- nf-fae-go
+    }
+
     local pane_title = tab.active_pane.title or ''
-    local title = string.format(' %s %s ', dir_name, pane_title)
+    -- フルパスからファイル名を抽出し、拡張子を除去
+    local process_name = pane_title:match('([^/\\]+)$') or pane_title
+    process_name = process_name:gsub('%.exe$', '')
+    local icon = process_icons[process_name] or process_name
+
+    local title = string.format(' %s %s ', dir_name, icon)
 
     -- 丸角セパレーター (tmux catppuccin rounded風)
     local LEFT_CIRCLE = wezterm.nerdfonts.ple_left_half_circle_thick
