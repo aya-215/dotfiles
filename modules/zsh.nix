@@ -69,6 +69,10 @@
       # npm
       npmd = "npm run dev -- -H 0.0.0.0";
       npms = "npm run storybook -- --host 0.0.0.0";
+
+      # 勤怠打刻（Windows Python経由）
+      ki = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\個人用\\script\\kintai\\kintai_auto_checkin.py'\"";
+      ko = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\個人用\\script\\kintai\\kintai_auto_checkout.py'\"";
     };
 
     # 履歴設定
