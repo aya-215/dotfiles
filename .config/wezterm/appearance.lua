@@ -80,7 +80,6 @@ function M.setup(config)
   config.show_new_tab_button_in_tab_bar = false
   config.show_close_tab_button_in_tabs = false
   config.use_fancy_tab_bar = false
-  config.tab_max_width = 32
   config.tab_bar_at_bottom = false
 
   -- ========================================
@@ -139,30 +138,6 @@ end
 -- タブタイトルのカスタマイズ（PowerLine風）
 -- ========================================
 function M.setup_tab_title()
-  -- プロセス名 → Nerd Fontアイコン
-  local process_icons = {
-    ['zsh']    = wezterm.nerdfonts.md_console,
-    ['bash']   = wezterm.nerdfonts.md_console,
-    ['fish']   = wezterm.nerdfonts.md_console,
-    ['nvim']   = wezterm.nerdfonts.custom_vim,
-    ['vim']    = wezterm.nerdfonts.custom_vim,
-    ['node']   = wezterm.nerdfonts.dev_nodejs_small,
-    ['python'] = wezterm.nerdfonts.dev_python,
-    ['python3'] = wezterm.nerdfonts.dev_python,
-    ['git']    = wezterm.nerdfonts.dev_git,
-    ['claude'] = wezterm.nerdfonts.md_robot,
-    ['docker'] = wezterm.nerdfonts.linux_docker,
-    ['lua']    = wezterm.nerdfonts.seti_lua,
-    ['cargo']  = wezterm.nerdfonts.dev_rust,
-    ['go']     = wezterm.nerdfonts.seti_go,
-    ['make']   = wezterm.nerdfonts.seti_makefile,
-    ['ssh']    = wezterm.nerdfonts.md_server,
-    ['top']    = wezterm.nerdfonts.md_chart_line,
-    ['htop']   = wezterm.nerdfonts.md_chart_line,
-    ['btop']   = wezterm.nerdfonts.md_chart_line,
-  }
-  local default_icon = wezterm.nerdfonts.md_console
-
   wezterm.on('format-tab-title', function(tab, tabs, panes, config, hover, max_width)
     -- カレントディレクトリのパスを取得
     local cwd_uri = tab.active_pane.current_working_dir
@@ -170,12 +145,15 @@ function M.setup_tab_title()
 
     if cwd_uri then
       if type(cwd_uri) == "userdata" then
+        -- Windowsの場合、file_pathプロパティを使用
         cwd = cwd_uri.file_path
       else
+        -- 文字列の場合はそのまま使用
         cwd = cwd_uri
       end
     end
 
+    -- cwdが取得できない場合はタイトルを使用
     if not cwd or cwd == '' then
       cwd = tab.active_pane.title
     end
@@ -183,25 +161,11 @@ function M.setup_tab_title()
     -- 最後のディレクトリ名を抽出（Windows/Unix両対応）
     local dir_name = cwd:gsub('[/\\]$', ''):match("([^/\\]+)$") or cwd
 
-    -- プロセスアイコン
-    local process = tab.active_pane.foreground_process_name or ''
-    process = process:gsub('(.*/)', '')  -- パスを除去
-    local icon = process_icons[process] or default_icon
-
     -- タブ番号（1から始まる）
     local index = tab.tab_index + 1
 
-    -- サフィックス（ペイン数 + ズーム）
-    local suffix = ''
-    local pane_count = #tab.panes_with_info
-    if pane_count > 1 then
-      suffix = suffix .. ' [' .. pane_count .. ']'
-    end
-    if tab.active_pane.is_zoomed then
-      suffix = suffix .. ' ' .. wezterm.nerdfonts.md_arrow_expand_all
-    end
-
-    local title = string.format(' %d: %s %s%s ', index, icon, dir_name, suffix)
+    -- 表示テキスト: "1: Documents" 形式
+    local title = string.format(' %d: %s ', index, dir_name)
 
     -- 丸角セパレーター (tmux catppuccin rounded風)
     local LEFT_CIRCLE = wezterm.nerdfonts.ple_left_half_circle_thick
