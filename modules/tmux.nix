@@ -113,12 +113,6 @@
       set -g @catppuccin_window_current_text " #W #{b:pane_current_path}"
       set -g @catppuccin_window_flags "icon"
 
-      # アクティブウィンドウを目立たせる
-      set -g @catppuccin_window_current_background "#{@thm_lavender}"
-      # 非アクティブウィンドウを暗めに
-      set -g @catppuccin_window_default_background "#{@thm_surface0}"
-      set -g @catppuccin_window_default_color "#{@thm_overlay0}"
-
       # ステータスライン (catppuccin modules)
       set -g status-left "#{E:@catppuccin_status_session}"
       set -g status-right "#{E:@catppuccin_status_application}#{E:@catppuccin_status_directory}#{E:@catppuccin_status_date_time}"

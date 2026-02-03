@@ -81,6 +81,7 @@ function M.setup(config)
   config.show_close_tab_button_in_tabs = false
   config.use_fancy_tab_bar = false
   config.tab_bar_at_bottom = false
+  config.tab_max_width = 60
 
   -- ========================================
   -- タブバーの色設定
@@ -164,8 +165,9 @@ function M.setup_tab_title()
     -- タブ番号（1から始まる）
     local index = tab.tab_index + 1
 
-    -- 表示テキスト: "1: Documents" 形式
-    local title = string.format(' %d: %s ', index, dir_name)
+    -- 表示テキスト: "dir_name pane_title" 形式
+    local pane_title = tab.active_pane.title or ''
+    local title = string.format(' %s %s ', dir_name, pane_title)
 
     -- 丸角セパレーター (tmux catppuccin rounded風)
     local LEFT_CIRCLE = wezterm.nerdfonts.ple_left_half_circle_thick
