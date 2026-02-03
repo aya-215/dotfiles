@@ -64,6 +64,7 @@
 
       # prefix + r で設定リロード
       bind r source-file ~/.config/tmux/tmux.conf \; display "Reloaded!"
+      bind R command-prompt -I "#S" "rename-session '%%'"
 
       # 新しいウィンドウをカレントディレクトリで開く
       bind c new-window -c "#{pane_current_path}"
@@ -111,6 +112,7 @@
       # 既存セッション切替 (C-q f: fzf, C-q F: tree)
       bind f display-popup -E -h 80% -w 80% "$SHELL -ic tsw"
       bind F choose-tree -s
+      bind D display-popup -E -h 80% -w 80% "$SHELL -ic tsd"
 
       # 確認なしでペイン/ウィンドウを閉じる
       bind x kill-pane
