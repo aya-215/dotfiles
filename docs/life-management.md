@@ -1,13 +1,6 @@
-# GitHub で人生管理 - 運用ガイド
+# GitHub人生管理 - リファレンス
 
-## 概要
-
-GitHub Issues + Projects で仕事・私生活のタスク・アイデア・メモを一元管理する。
-nb日報との自動連携、マイクロブログ機能も実装済み。
-
-- **リポジトリ**: https://github.com/aya-215/life (Private)
-- **Project**: Life Dashboard
-- **nbバックアップ**: https://github.com/aya-215/nb (Private)
+> 詳細な設定・運用ガイド。サッと使いたいだけなら [クイックスタート](./life-management-quickstart.md) を参照。
 
 ## アーキテクチャ
 
@@ -16,9 +9,9 @@ nb日報との自動連携、マイクロブログ機能も実装済み。
 │                   GitHub (aya-215/nb) Private                    │
 │  ~/.nb 全体をGit管理（cron で30分ごとに自動sync）                 │
 │  daily/ tasks/ weekly/ notes/ claude/                           │
-└───────────────────────────────┬─────────────────────────────────┘
-                                │ GitHub Actions (翌日12:00)
-                                ↓
+└───────────────────────────┬─────────────────────────────────────┘
+                            │ GitHub Actions (翌日12:00)
+                            ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                   GitHub (aya-215/life) Private                  │
 │  Issues: タスク、日報Issue、アイデア                              │
@@ -29,15 +22,65 @@ nb日報との自動連携、マイクロブログ機能も実装済み。
    iPhone ショートカット / gh CLI
 ```
 
-## 自動化スケジュール
+## リポジトリ構成
+
+| リポジトリ | 用途 | 可視性 |
+|-----------|------|--------|
+| [aya-215/life](https://github.com/aya-215/life) | タスク・アイデア・日報Issue管理 | Private |
+| [aya-215/nb](https://github.com/aya-215/nb) | ~/.nb 全体のバックアップ | Private |
+
+## 自動化詳細
+
+### スケジュール一覧
 
 | 時刻 (JST) | ワークフロー | 内容 |
 |------------|-------------|------|
-| **09:00 毎日** | `daily-issue.yml` | 今日の日報Issue作成 |
-| **09:00 日曜** | `recurring-tasks.yml` | 週次レビューIssue作成 |
-| **12:00 毎日** | `sync-nb-daily.yml` | 前日のnb日報サマリーをIssueに追加 |
-| **13:00 毎日** | `daily-to-blog.yml` | 前日のIssueを`blog/YYYYMMDD.md`に変換 |
-| **30分ごと** | `nb-sync.sh` (cron) | ~/.nb の変更をGitHubにpush |
+| 09:00 毎日 | `daily-issue.yml` | 今日の日報Issue作成 |
+| 09:00 日曜 | `recurring-tasks.yml` | 週次レビューIssue作成 |
+| 12:00 毎日 | `sync-nb-daily.yml` | 前日のnb日報サマリーをIssueに追加 |
+| 13:00 毎日 | `daily-to-blog.yml` | 前日のIssueを`blog/YYYYMMDD.md`に変換 |
+| 30分ごと | `nb-sync.sh` (cron) | ~/.nb の変更をGitHubにpush |
+
+### ワークフロー詳細
+
+#### daily-issue.yml
+毎朝9時に今日の日報Issueを作成。既存チェックあり（重複作成しない）。
+
+- **トリガー**: `cron: '0 0 * * *'` (UTC 0:00 = JST 9:00)
+- **ラベル**: `personal,memo`
+- **タイトル**: `YYYY-MM-DD (Day) の記録`
+
+#### sync-nb-daily.yml
+前日のnb日報から「📝 今日のサマリー」セクションを抽出し、対応するIssueにコメント追加。
+
+- **トリガー**: `cron: '0 3 * * *'` (UTC 3:00 = JST 12:00)
+- **対象**: `~/.nb/daily/YYYY-MM-DD.md`
+- **nbリポジトリ**: `aya-215/nb` を checkout して読み取り
+
+#### daily-to-blog.yml
+前日の日報Issueのコメントを `blog/YYYYMMDD.md` にファイル化。
+
+- **トリガー**: `cron: '0 4 * * *'` (UTC 4:00 = JST 13:00)
+- **出力**: `blog/YYYYMMDD.md`
+
+#### recurring-tasks.yml
+毎週日曜に週次レビューIssueを作成。チェックリスト付き。
+
+- **トリガー**: `cron: '0 0 * * 0'` (毎週日曜)
+- **ラベル**: `personal,task,priority:medium`
+
+#### auto-add-to-project.yml
+Issue作成時に自動でGitHub Projectに追加。
+
+- **トリガー**: `issues: [opened]`
+- **Project**: https://github.com/users/aya-215/projects/1
+
+### Secrets設定
+
+| リポジトリ | Secret名 | 用途 | 必要な権限 |
+|-----------|----------|------|-----------|
+| life | `NB_TOKEN` | nbリポジトリ読み取り + Issue操作 | `repo`, `project` |
+| life | `PROJECT_TOKEN` | Project自動追加用 | `project` |
 
 ## ラベル設計
 
@@ -45,30 +88,30 @@ nb日報との自動連携、マイクロブログ機能も実装済み。
 
 | ラベル | 色 | 用途 |
 |--------|-----|------|
-| `work` | 青 | 仕事関連 |
-| `personal` | 緑 | 私生活 |
-| `study` | 紫 | 学習・自己投資 |
+| `work` | 青 #0052CC | 仕事関連 |
+| `personal` | 緑 #0E8A16 | 私生活 |
+| `study` | 紫 #5319E7 | 学習・自己投資 |
 
 ### 種類（必須・1つ選ぶ）
 
 | ラベル | 色 | 用途 |
 |--------|-----|------|
-| `task` | 黄 | やるべきこと（期限あり） |
-| `idea` | 水色 | アイデア・いつかやりたい |
-| `event` | オレンジ | ライフイベント（車検、更新等） |
-| `memo` | グレー | メモ・ナレッジ |
+| `task` | 黄 #FBCA04 | やるべきこと（期限あり） |
+| `idea` | 水色 #C5DEF5 | アイデア・いつかやりたい |
+| `event` | オレンジ #D93F0B | ライフイベント（車検、更新等） |
+| `memo` | グレー #EDEDED | メモ・ナレッジ |
 
 ### 優先度（任意）
 
 | ラベル | 色 | 用途 |
 |--------|-----|------|
-| `priority:high` | 赤 | 高優先度 |
-| `priority:medium` | 黄 | 中優先度 |
-| `priority:low` | 緑 | 低優先度 |
+| `priority:high` | 赤 #B60205 | 高優先度 |
+| `priority:medium` | 黄 #FBCA04 | 中優先度 |
+| `priority:low` | 緑 #0E8A16 | 低優先度 |
 
 ## 基本操作
 
-### Issue 作成
+### Issue作成
 
 ```bash
 # 仕事タスク（高優先度）
@@ -95,9 +138,16 @@ gh issue create --repo aya-215/life \
 gh issue create --repo aya-215/life \
   --title "おすすめのカフェリスト" \
   --label "personal,memo"
+
+# 本文付き
+gh issue create --repo aya-215/life \
+  --title "新機能実装" \
+  --label "work,task" \
+  --body "## 概要
+詳細な説明をここに"
 ```
 
-### Issue 一覧
+### Issue一覧・検索
 
 ```bash
 # 全件
@@ -107,15 +157,44 @@ gh issue list --repo aya-215/life
 gh issue list --repo aya-215/life --label work
 gh issue list --repo aya-215/life --label "priority:high"
 gh issue list --repo aya-215/life --label "personal,task"
+
+# 状態でフィルタ
+gh issue list --repo aya-215/life --state closed
+gh issue list --repo aya-215/life --state all
+
+# 検索クエリ
+gh issue list --repo aya-215/life --search "in:title 歯医者"
+
+# JSON出力
+gh issue list --repo aya-215/life --json number,title,labels
 ```
 
-### Issue 完了
+### Issue操作
 
 ```bash
-gh issue close <番号> --repo aya-215/life
+# 詳細表示
+gh issue view 123 --repo aya-215/life
+
+# コメント付きで表示
+gh issue view 123 --repo aya-215/life --comments
+
+# コメント追加
+gh issue comment 123 --repo aya-215/life --body "進捗: 50%完了"
+
+# 完了
+gh issue close 123 --repo aya-215/life
+
+# 再オープン
+gh issue reopen 123 --repo aya-215/life
+
+# ラベル追加
+gh issue edit 123 --repo aya-215/life --add-label "priority:high"
+
+# ラベル削除
+gh issue edit 123 --repo aya-215/life --remove-label "priority:low"
 ```
 
-## マイクロブログ（日報Issue）
+## マイクロブログ機能
 
 毎朝9時に自動作成される日報Issueにコメントを追加することで、その日の記録を残せる。
 
@@ -128,11 +207,13 @@ ISSUE_NUM=$(gh issue list --repo aya-215/life --search "in:title ${DATE}" --json
 gh issue comment "$ISSUE_NUM" --repo aya-215/life --body "午後のミーティングでXXが決まった"
 ```
 
-### iPhoneからの追加
+### ワンライナー版
 
-GitHubアプリで日報Issueを開いてコメント追加、または後述のiPhoneショートカットを使用。
+```bash
+gh issue comment $(gh issue list --repo aya-215/life --search "in:title $(date +%Y-%m-%d)" --json number -q '.[0].number') --repo aya-215/life --body "メモ内容"
+```
 
-### 自動処理
+### 自動処理フロー
 
 1. **翌日12:00**: nb日報のサマリーセクションがIssueコメントに自動追加
 2. **翌日13:00**: Issueのコメントが `blog/YYYYMMDD.md` にファイル化
@@ -153,6 +234,12 @@ crontab -e
 */30 * * * * /home/aya/.dotfiles/scripts/nb-sync.sh
 ```
 
+### cron確認
+
+```bash
+crontab -l | grep nb-sync
+```
+
 ### 手動sync
 
 ```bash
@@ -163,6 +250,28 @@ crontab -e
 
 ```bash
 tail -20 ~/.local/log/nb-sync.log
+```
+
+### nb-sync.sh の内容
+
+```bash
+#!/bin/bash
+set -euo pipefail
+
+NB_DIR="$HOME/.nb"
+LOG_FILE="$HOME/.local/log/nb-sync.log"
+
+mkdir -p "$(dirname "$LOG_FILE")"
+cd "$NB_DIR"
+
+if [[ -n $(git status --porcelain) ]]; then
+    git add -A
+    git commit -m "auto sync: $(date +%Y-%m-%d\ %H:%M)"
+    git push
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Synced" >> "$LOG_FILE"
+else
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No changes" >> "$LOG_FILE"
+fi
 ```
 
 ## iPhoneショートカット設定
@@ -221,13 +330,11 @@ gh issue list --repo aya-215/life --state closed \
 gh issue list --repo aya-215/life --label idea --json title,body
 ```
 
-## ビューの使い分け
+### 全アイデアをJSON取得
 
-| ビュー | 用途 |
-|--------|------|
-| **Board** | 日々のタスク管理（Todo → Doing → Done） |
-| **Table** | 一覧表示、ソート・フィルタ |
-| **Roadmap** | 期限付きタスクのスケジュール確認 |
+```bash
+gh issue list --repo aya-215/life --label idea --state all --json number,title,body,createdAt
+```
 
 ## 運用フロー
 
@@ -254,6 +361,14 @@ gh issue list --repo aya-215/life --label task --state open
 - 溜まった idea を見直す
 - 未完了タスクの優先度を見直し
 
+## GitHub Projects ビュー
+
+| ビュー | 用途 |
+|--------|------|
+| **Board** | 日々のタスク管理（Todo → In Progress → Done） |
+| **Table** | 一覧表示、ソート・フィルタ |
+| **Roadmap** | 期限付きタスクのスケジュール確認 |
+
 ## トラブルシューティング
 
 ### nb-syncが動かない
@@ -267,6 +382,9 @@ tail -20 ~/.local/log/nb-sync.log
 
 # cron確認
 crontab -l | grep nb-sync
+
+# upstream未設定エラーの場合
+cd ~/.nb && git push --set-upstream origin main
 ```
 
 ### GitHub Actionsが失敗する
@@ -274,21 +392,30 @@ crontab -l | grep nb-sync
 1. https://github.com/aya-215/life/actions で確認
 2. `NB_TOKEN` シークレットが設定されているか確認
 3. トークンの有効期限を確認
+4. トークンの権限（`repo`, `project`）を確認
 
 ### 日報Issueが重複作成される
 
 既存チェックは日付文字列の検索で行うため、タイトルを手動で変更すると重複する可能性あり。
 
-## 関連ドキュメント
+### ラベルアクセス権限エラー
 
-- [nb 使用方法](./nb-usage.md) - 日報・週報は nb で継続
+`GITHUB_TOKEN` では `Resource not accessible by integration` エラーになる場合、`NB_TOKEN`（PAT）を使用。
 
 ## 関連ファイル
 
 | ファイル | 用途 |
 |----------|------|
 | `~/.dotfiles/scripts/nb-sync.sh` | nb自動sync |
+| `~/.dotfiles/docs/nb-usage.md` | nb使用方法 |
 | `life/.github/workflows/daily-issue.yml` | 日報Issue作成 |
 | `life/.github/workflows/sync-nb-daily.yml` | nb→Issue連携 |
 | `life/.github/workflows/daily-to-blog.yml` | Issue→ファイル化 |
 | `life/.github/workflows/recurring-tasks.yml` | 週次レビュー |
+| `life/.github/workflows/auto-add-to-project.yml` | Project自動追加 |
+
+## 参考記事
+
+- https://zenn.dev/hand_dot/articles/85c9640b7dcc66 - Issue + Projects、画像アップロード、1年運用
+- https://qiita.com/e99h2121/items/45c62307565458964b94 - ラベル分類、年間振り返り
+- https://qiita.com/TaigoKuriyama/items/32f3ef128db2b9344e6a - GTD手法、iPhoneショートカット、GitHub Actions自動化
