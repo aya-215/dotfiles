@@ -100,6 +100,10 @@
       set -g window-style 'fg=#a6adc8'
       set -g window-active-style 'fg=#cdd6f4'
 
+      # Popup透過設定
+      set -g popup-style 'bg=default'
+      set -g popup-border-style 'fg=#7aa2f7'
+
       # ウィンドウ入れ替え
       bind -r "<" swap-window -d -t -1
       bind -r ">" swap-window -d -t +1
