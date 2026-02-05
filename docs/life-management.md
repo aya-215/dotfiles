@@ -37,6 +37,7 @@
 |------------|-------------|------|
 | 09:00 毎日 | `daily-issue.yml` | 今日の日報Issue作成 |
 | 09:00 日曜 | `recurring-tasks.yml` | 週次レビューIssue作成 |
+| 09:00 毎月1日 | `monthly-review.yml` | 月次レビューIssue作成 |
 | 12:00 毎日 | `sync-nb-daily.yml` | 前日のnb日報サマリーをIssueに追加 |
 | 13:00 毎日 | `daily-to-blog.yml` | 前日のIssueを`blog/YYYYMMDD.md`に変換 |
 | 30分ごと | `nb-sync.sh` (cron) | ~/.nb の変更をGitHubにpush |
@@ -74,6 +75,13 @@ Issue作成時に自動でGitHub Projectに追加。
 
 - **トリガー**: `issues: [opened]`
 - **Project**: https://github.com/users/aya-215/projects/1
+
+#### monthly-review.yml
+毎月1日に月次レビューIssueを作成。アイデア棚卸しを促すチェックリスト付き。
+
+- **トリガー**: `cron: '0 0 1 * *'` (毎月1日)
+- **ラベル**: `personal,task,priority:medium`
+- **内容**: 振り返り、アイデア棚卸し、来月の目標設定
 
 ### Secrets設定
 
@@ -356,16 +364,41 @@ gh issue list --repo aya-215/life --label task --state open
 
 ### 週次レビュー（日曜に自動Issue作成）
 
+- Inbox → This Week にタスクを移動
 - GitHub Projects の Board ビューで Done を眺める
 - 達成感を味わう
-- 溜まった idea を見直す
 - 未完了タスクの優先度を見直し
 
-## GitHub Projects ビュー
+### 月次レビュー（毎月1日に自動Issue作成）
+
+- `/monthly-idea-review` でアイデア棚卸し
+  - **ナレッジ化**: nbに書き出し → Issueクローズ
+  - **task昇格**: ideaラベル → taskラベルに変更
+  - **保留**: 来月また確認
+  - **クローズ**: もう不要
+- 先月の振り返り
+- 来月の目標設定
+
+## GitHub Projects
+
+### ステータス
+
+```
+Inbox → This Week → In Progress → Done
+```
+
+| ステータス | 用途 |
+|-----------|------|
+| **Inbox** | 新規Issue全部ここ。ideaも一旦ここ |
+| **This Week** | 週次レビューで今週やるものを移動 |
+| **In Progress** | 今取り組んでるもの |
+| **Done** | 完了 |
+
+### ビュー
 
 | ビュー | 用途 |
 |--------|------|
-| **Board** | 日々のタスク管理（Todo → In Progress → Done） |
+| **Board** | 日々のタスク管理（カンバン形式） |
 | **Table** | 一覧表示、ソート・フィルタ |
 | **Roadmap** | 期限付きタスクのスケジュール確認 |
 
@@ -412,7 +445,9 @@ cd ~/.nb && git push --set-upstream origin main
 | `life/.github/workflows/sync-nb-daily.yml` | nb→Issue連携 |
 | `life/.github/workflows/daily-to-blog.yml` | Issue→ファイル化 |
 | `life/.github/workflows/recurring-tasks.yml` | 週次レビュー |
+| `life/.github/workflows/monthly-review.yml` | 月次レビュー |
 | `life/.github/workflows/auto-add-to-project.yml` | Project自動追加 |
+| `~/.claude/skills/monthly-idea-review/` | アイデア棚卸しスキル |
 
 ## 参考記事
 

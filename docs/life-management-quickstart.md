@@ -97,7 +97,19 @@ gh issue comment "$ISSUE" --repo aya-215/life --body "午後のミーティン�
 | **毎日 12:00** | 前日のnb日報サマリー → Issue連携 |
 | **毎日 13:00** | 前日のIssue → `blog/YYYYMMDD.md` ファイル化 |
 | **毎週日曜 09:00** | 週次レビューIssue作成 |
+| **毎月1日 09:00** | 月次レビューIssue作成 |
 | **30分ごと** | `~/.nb` をGitHubに自動バックアップ |
+
+## Projectステータス
+
+```
+Inbox → This Week → In Progress → Done
+```
+
+- **Inbox**: 新規Issue全部ここ。ideaも一旦ここ
+- **This Week**: 週次レビューで今週やるものを移動
+- **In Progress**: 今取り組んでるもの
+- **Done**: 完了
 
 ## 運用フロー
 
@@ -119,7 +131,16 @@ gh issue list --repo aya-215/life --label task --state open
 ### 週末（日曜）
 
 - 自動作成される週次レビューIssueのチェックリストを消化
+- Inbox → This Week にタスクを移動
 - GitHub Projects の Board ビューで Done を眺めて達成感を得る
+
+### 月初（1日）
+
+- 自動作成される月次レビューIssueのチェックリストを消化
+- `/monthly-idea-review` でアイデア棚卸し
+  - ナレッジ化 → nbに書き出してクローズ
+  - task昇格 → ラベル変更
+  - 不要 → クローズ
 
 ## Web UI
 
