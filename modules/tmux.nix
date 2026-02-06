@@ -31,6 +31,17 @@
         extraConfig = ''
           set -g @catppuccin_flavor 'mocha'
           set -g @catppuccin_window_status_style 'rounded'
+          set -g @catppuccin_window_text " #{b:pane_current_path}"
+          set -g @catppuccin_window_current_text " #{b:pane_current_path}"
+          set -g @catppuccin_window_flags "icon"
+        '';
+      }
+      # fingers: URL/パス/ハッシュ等をラベル表示してコピー
+      {
+        plugin = fingers;
+        extraConfig = ''
+          set -g @fingers-key 'u'
+          set -g @fingers-patterns 'url sha path ip uuid'
         '';
       }
     ];
@@ -79,9 +90,19 @@
       bind-key k select-pane -U
       bind-key l select-pane -R
 
+      # コピーモードへ入る (Spaceで)
+      bind Space copy-mode
+
       # コピーモード (vi風)
       bind-key -T copy-mode-vi v send-keys -X begin-selection
       bind-key -T copy-mode-vi y send-keys -X copy-selection-and-cancel
+      bind-key -T copy-mode-vi Y send-keys -X begin-selection \; send-keys -X end-of-line \; send-keys -X cursor-left \; send-keys -X copy-selection-and-cancel
+      bind-key -T copy-mode-vi V send-keys -X select-line
+      bind-key -T copy-mode-vi r send-keys -X rectangle-toggle
+
+      # インクリメンタル検索
+      bind-key -T copy-mode-vi / command-prompt -i -p "(search down)" "send -X search-forward-incremental \"%%%\""
+      bind-key -T copy-mode-vi ? command-prompt -i -p "(search up)" "send -X search-backward-incremental \"%%%\""
 
       # ステータスバー更新間隔
       set -g status-interval 5
@@ -122,16 +143,12 @@
       bind x kill-pane
       bind X kill-window
 
-      # ウィンドウタブのフォーマット
-      set -g @catppuccin_window_text " #W #{b:pane_current_path}"
-      set -g @catppuccin_window_current_text " #W #{b:pane_current_path}"
-      set -g @catppuccin_window_flags "icon"
-
       # ステータスライン (catppuccin modules)
       set -g status-left "#{E:@catppuccin_status_session}"
       set -g status-right "#{E:@catppuccin_status_application}#{E:@catppuccin_status_directory}#{E:@catppuccin_status_date_time}"
       set -g status-right-length 150
       set -g status-left-length 100
+
     '';
   };
 }
