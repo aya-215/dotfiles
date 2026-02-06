@@ -475,9 +475,10 @@ nbd() {
   # 最新の日報（今日を除く）からサマリーを取得
   local latest_daily=$(_nb_get_latest_daily)
   local yesterday_summary=""
-  if [[ -n "$latest_daily" ]] && nb ${_NB_DAILY}show "$latest_daily.md" &>/dev/null; then
-    yesterday_summary=$(nb ${_NB_DAILY}show "$latest_daily.md" --no-color 2>/dev/null | \
-      awk '/^## 📝 今日のサマリー/{flag=1;next}/^## /{flag=0}flag' | \
+  local daily_file="$HOME/.nb/daily/${latest_daily}.md"
+  if [[ -n "$latest_daily" && -f "$daily_file" ]]; then
+    # nb showは出力時に折り返しで文字化けするため、ファイルを直接読む
+    yesterday_summary=$(awk '/^## 📝 今日のサマリー/{flag=1;next}/^## /{flag=0}flag' "$daily_file" | \
       sed '/^$/d' | sed 's/^/> /')
   fi
   [[ -z "$yesterday_summary" ]] && yesterday_summary="（前日のサマリーなし）"
