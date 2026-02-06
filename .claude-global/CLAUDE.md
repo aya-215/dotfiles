@@ -4,7 +4,8 @@
 
 - WSL + zsh
 - エディタ: Neovim
-- dotfiles: 各種設定ファイルを管理
+- dotfiles: Nix/Home Manager で管理。tmux.conf, .claude.json 等の設定ファイルは生成物なので直接編集しないこと。設定変更は必ず dotfiles 内の Nix ソースファイルを確認・編集すること。
+- GitHub CLI: 2つのアカウント（eBASE-Mori, aya-215）で認証済み。`gh` コマンドが認証エラーで失敗した場合は `gh auth switch` でアカウントを切り替えること。
 
 ## コミュニケーションルール
 

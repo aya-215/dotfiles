@@ -92,10 +92,11 @@ worktreeディレクトリは `../<略称>-<ブランチ名>` の形式にする
      - それ以外 → `npm install --prefix <worktree-path>`
 
 4. 環境設定ファイルのコピー（モノレポ対応）:
-   - リポジトリ内の `.env.local` ファイルを検索: `find . -name '.env.local' -type f 2>/dev/null`
+   - リポジトリ内の `.env.local` と `.env.keys` ファイルを検索: `find . \( -name '.env.local' -o -name '.env.keys' \) -type f 2>/dev/null`
    - 見つかった各ファイルについて、同じ相対パスで新しいworktreeにコピー:
      - 相対パスからディレクトリ部分を抽出し、worktree内に同じディレクトリ構造を作成
      - 例: `./apps/portal-ui/.env.local` → `<worktree-path>/apps/portal-ui/.env.local`
+     - 例: `./.env.keys` → `<worktree-path>/.env.keys`
      - コマンド例: `cp --parents ./apps/portal-ui/.env.local <worktree-path>/` または `mkdir -p` + `cp`
    - コピーした場合は、コピーしたファイルの相対パスをユーザーに通知
 
