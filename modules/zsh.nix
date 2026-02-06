@@ -62,8 +62,8 @@
       l = "eza --icons --group-directories-first";
       ll = "eza -l --icons --group-directories-first --git";
       la = "eza -la --icons --group-directories-first --git";
-      lt = "eza --tree --level=2 --icons";
-      lta = "eza --tree --level=2 --icons -a";
+      tree = "eza --tree --level=2 --icons";
+      treea = "eza --tree --level=2 --icons -a";
       lg = "eza -l --icons --group-directories-first --git --git-ignore";
 
       # npm
@@ -255,6 +255,9 @@
 
       # nb関数（タスク管理）
       [[ -f ~/.config/nb/functions.zsh ]] && source ~/.config/nb/functions.zsh
+
+      # lt-functions（GitHub Issueベースのタスク管理）
+      [[ -f ~/src/github.com/aya-215/life/scripts/lt-functions.zsh ]] && source ~/src/github.com/aya-215/life/scripts/lt-functions.zsh
 
       # ======================
       # Tmux aliases & functions
