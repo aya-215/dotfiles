@@ -253,6 +253,16 @@
       zle -N _gj_widget
       bindkey '^f' _gj_widget
 
+      # auto-pull: 特定リポジトリに移動したらバックグラウンドでpull
+      __auto_pull_on_cd() {
+        case "$PWD" in
+          */eBASE-Mori/meeting|*/.dotfiles)
+            (git pull --ff-only &>/dev/null &)
+            ;;
+        esac
+      }
+      add-zsh-hook chpwd __auto_pull_on_cd
+
       # nb関数（タスク管理）
       [[ -f ~/.config/nb/functions.zsh ]] && source ~/.config/nb/functions.zsh
 
