@@ -256,7 +256,7 @@
       # auto-pull: 特定リポジトリに移動したらバックグラウンドでpull
       __auto_pull_on_cd() {
         case "$PWD" in
-          */eBASE-Mori/meeting|*/.dotfiles)
+          */eBASE-Mori/meeting|*/.dotfiles|*/aya-215/life)
             (git pull --ff-only &>/dev/null &)
             ;;
         esac
@@ -266,8 +266,8 @@
       # nb関数（タスク管理）
       [[ -f ~/.config/nb/functions.zsh ]] && source ~/.config/nb/functions.zsh
 
-      # lt-functions（GitHub Issueベースのタスク管理）
-      [[ -f ~/src/github.com/aya-215/life/scripts/lt-functions.zsh ]] && source ~/src/github.com/aya-215/life/scripts/lt-functions.zsh
+      # j-functions（GitHub Issueベースのパーソナル管理 - journal）
+      [[ -f ~/src/github.com/aya-215/life/scripts/j-functions.zsh ]] && source ~/src/github.com/aya-215/life/scripts/j-functions.zsh
 
       # ======================
       # Tmux aliases & functions
