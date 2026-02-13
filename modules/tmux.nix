@@ -66,6 +66,9 @@
       # OSC 52 クリップボード (WezTerm経由で透過的に動作)
       set -g set-clipboard on
 
+      # OSC 8 ハイパーリンク対応 (tmux 3.4+)
+      set -as terminal-features ",*:hyperlinks"
+
       # ウィンドウ番号を詰める
       set -g renumber-windows on
 

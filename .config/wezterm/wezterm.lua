@@ -39,6 +39,9 @@ appearance.setup_startup()
 -- キーバインディング設定
 keys.setup(config)
 
+-- tmux mouse modeバイパス (Shift押下でWezTermがマウスイベントを直接処理)
+config.bypass_mouse_reporting_modifiers = 'SHIFT'
+
 -- ========================================
 -- 環境変数の読み込み
 -- ========================================

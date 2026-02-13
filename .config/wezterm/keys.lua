@@ -340,10 +340,10 @@ function M.setup(config)
   -- マウスバインディング
   -- ========================================
   config.mouse_bindings = {
-    -- Ctrl+クリックでURLを開く
+    -- Shift+クリックでURLを開く（tmux mouse modeバイパス対応）
     {
       event = { Up = { streak = 1, button = 'Left' } },
-      mods = 'CTRL',
+      mods = 'SHIFT',
       action = act.OpenLinkAtMouseCursor,
     },
   }
