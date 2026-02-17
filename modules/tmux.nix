@@ -87,11 +87,11 @@
       bind v split-window -h -c "#{pane_current_path}"
       bind s split-window -v -c "#{pane_current_path}"
 
-      # ペイン移動 (prefix + hjkl)
-      bind-key h select-pane -L
-      bind-key j select-pane -D
-      bind-key k select-pane -U
-      bind-key l select-pane -R
+      # ペイン移動 (prefix + hjkl / smart-splits.nvim連携)
+      bind-key h if-shell -F "#{@pane-is-vim}" 'send-keys C-h' 'select-pane -L'
+      bind-key j if-shell -F "#{@pane-is-vim}" 'send-keys C-j' 'select-pane -D'
+      bind-key k if-shell -F "#{@pane-is-vim}" 'send-keys C-k' 'select-pane -U'
+      bind-key l if-shell -F "#{@pane-is-vim}" 'send-keys C-l' 'select-pane -R'
 
       # コピーモードへ入る (Spaceで)
       bind Space copy-mode

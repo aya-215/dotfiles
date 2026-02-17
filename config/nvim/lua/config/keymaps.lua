@@ -13,22 +13,6 @@ vim.keymap.set("v", ">", ">gv", { desc = "インデント（選択維持）" })
 -- Normal mode: Escで検索ハイライトを解除
 vim.keymap.set("n", "<Esc>", "<cmd>nohlsearch<CR>", { desc = "検索ハイライトを解除" })
 
--- ===================================================
--- Alt+hjkl: ウィンドウ移動（全モードで動作）
--- Neovim公式ドキュメント推奨の方法
--- ===================================================
-
--- Normalモード（グローバル）
-vim.keymap.set("n", "<A-h>", "<C-w>h", { desc = "左のウィンドウへ移動" })
-vim.keymap.set("n", "<A-j>", "<C-w>j", { desc = "下のウィンドウへ移動" })
-vim.keymap.set("n", "<A-k>", "<C-w>k", { desc = "上のウィンドウへ移動" })
-vim.keymap.set("n", "<A-l>", "<C-w>l", { desc = "右のウィンドウへ移動" })
-
--- Insertモード（グローバル）
-vim.keymap.set("i", "<A-h>", "<C-\\><C-n><C-w>h", { desc = "左のウィンドウへ移動" })
-vim.keymap.set("i", "<A-j>", "<C-\\><C-n><C-w>j", { desc = "下のウィンドウへ移動" })
-vim.keymap.set("i", "<A-k>", "<C-\\><C-n><C-w>k", { desc = "上のウィンドウへ移動" })
-vim.keymap.set("i", "<A-l>", "<C-\\><C-n><C-w>l", { desc = "右のウィンドウへ移動" })
 
 -- ターミナルモード拡張
 vim.api.nvim_create_autocmd("TermOpen", {
@@ -60,12 +44,6 @@ vim.api.nvim_create_autocmd("TermOpen", {
         })
       end
     end, 50)
-
-    -- ターミナルモードでのウィンドウ移動
-    vim.keymap.set("t", "<A-h>", "<C-\\><C-n><C-w>h", { buffer = 0, desc = "左のウィンドウへ移動" })
-    vim.keymap.set("t", "<A-j>", "<C-\\><C-n><C-w>j", { buffer = 0, desc = "下のウィンドウへ移動" })
-    vim.keymap.set("t", "<A-k>", "<C-\\><C-n><C-w>k", { buffer = 0, desc = "上のウィンドウへ移動" })
-    vim.keymap.set("t", "<A-l>", "<C-\\><C-n><C-w>l", { buffer = 0, desc = "右のウィンドウへ移動" })
 
     -- 追加のウィンドウ操作（ターミナルモードのみ）
     vim.keymap.set("t", "<A-w>", "<C-\\><C-n><C-w>w", { buffer = 0, desc = "ウィンドウを順番に切り替え" })
