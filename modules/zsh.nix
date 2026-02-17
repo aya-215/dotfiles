@@ -300,7 +300,10 @@
       # tmux session switcher (fzf) - 既存セッション間を切替
       tsw() {
         local session
-        session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | fzf --prompt="Switch> " --preview 'tmux list-windows -t {}')
+        session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | \
+          fzf --prompt="Switch> " \
+              --preview 'tmux capture-pane -pt {} -e' \
+              --preview-window 'right:60%')
         [[ -n $session ]] && tmux switch-client -t "$session"
       }
 
