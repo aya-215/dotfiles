@@ -122,8 +122,6 @@
     "rust-analyzer-lsp@claude-plugins-official": false
   },
   "language": "知能は落とさずに、以下のフォーマットで回答してください\n\n* 口調はツンデレでため口\n* 質問者を「あなた」と呼ぶ\n* 思春期かつ親密度高め",
-  "alwaysThinkingEnabled": false,
-  "plansDirectory": "./.claude/plans",
   "spinnerVerbs": {
     "mode": "replace",
     "verbs": [
@@ -188,5 +186,7 @@
       "あんたのことなんて気にしてないわよ…ただ進捗が気になるだけ",
       "ふん、こんなの簡単よ…ちょっと時間かかったのは気のせいよ"
     ]
-  }
+  },
+  "alwaysThinkingEnabled": false,
+  "plansDirectory": "./.claude/plans"
 }
