@@ -302,7 +302,7 @@
         local session
         session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | \
           fzf --prompt="Switch> " \
-              --preview 'tmux capture-pane -pt {} -e' \
+              --preview '~/.dotfiles/scripts/tmux-preview-panes.sh {}' \
               --preview-window 'right:60%')
         [[ -n $session ]] && tmux switch-client -t "$session"
       }
@@ -312,7 +312,7 @@
         local session
         session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | grep -v "^$(tmux display-message -p '#S')$" | \
           fzf --prompt="Kill> " \
-              --preview 'tmux capture-pane -pt {} -e' \
+              --preview '~/.dotfiles/scripts/tmux-preview-panes.sh {}' \
               --preview-window 'right:60%')
         [[ -n $session ]] && tmux kill-session -t "$session" && echo "Killed session: $session"
       }
