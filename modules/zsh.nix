@@ -310,7 +310,10 @@
       # tmux session killer (fzf) - セッションを選択して削除
       tsd() {
         local session
-        session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | grep -v "^$(tmux display-message -p '#S')$" | fzf --prompt="Kill> " --preview 'tmux list-windows -t {}')
+        session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | grep -v "^$(tmux display-message -p '#S')$" | \
+          fzf --prompt="Kill> " \
+              --preview 'tmux capture-pane -pt {} -e' \
+              --preview-window 'right:60%')
         [[ -n $session ]] && tmux kill-session -t "$session" && echo "Killed session: $session"
       }
 
