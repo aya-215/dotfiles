@@ -263,6 +263,11 @@
       }
       add-zsh-hook chpwd __auto_pull_on_cd
 
+      # entire CLI補完
+      if command -v entire &>/dev/null; then
+        eval "$(entire completion zsh)"
+      fi
+
       # nb関数（タスク管理）
       [[ -f ~/.config/nb/functions.zsh ]] && source ~/.config/nb/functions.zsh
 
