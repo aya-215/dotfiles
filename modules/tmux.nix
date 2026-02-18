@@ -12,7 +12,12 @@
     historyLimit = 50000;
 
     plugins = with pkgs.tmuxPlugins; [
-      yank
+      {
+        plugin = yank;
+        extraConfig = ''
+          set -g @yank_with_mouse 'off'
+        '';
+      }
       {
         plugin = resurrect;
         extraConfig = ''
@@ -102,6 +107,9 @@
       bind-key -T copy-mode-vi Y send-keys -X begin-selection \; send-keys -X end-of-line \; send-keys -X cursor-left \; send-keys -X copy-selection-and-cancel
       bind-key -T copy-mode-vi V send-keys -X select-line
       bind-key -T copy-mode-vi r send-keys -X rectangle-toggle
+
+      # マウスドラッグ選択→OSC 52経由でシステムクリップボードへ (clip.exe文字化け回避)
+      bind-key -T copy-mode-vi MouseDragEnd1Pane send-keys -X copy-selection-and-cancel
 
       # インクリメンタル検索
       bind-key -T copy-mode-vi / command-prompt -i -p "(search down)" "send -X search-forward-incremental \"%%%\""
