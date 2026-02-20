@@ -98,6 +98,12 @@
       bind-key -n M-k if-shell -F "#{@pane-is-vim}" 'send-keys M-k' 'select-pane -U'
       bind-key -n M-l if-shell -F "#{@pane-is-vim}" 'send-keys M-l' 'select-pane -R'
 
+      # ウィンドウ/セッション移動 (prefix + hjkl)
+      bind-key h previous-window
+      bind-key l next-window
+      bind-key j switch-client -n
+      bind-key k switch-client -p
+
       # コピーモードへ入る (Spaceで)
       bind Space copy-mode
 
