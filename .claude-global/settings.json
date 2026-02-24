@@ -52,7 +52,6 @@
     ],
     "defaultMode": "plan"
   },
-  "model": "claude-sonnet-4-6",
   "hooks": {
     "SessionStart": [
       {
@@ -119,7 +118,8 @@
     "aiebase-github-workflow@ebase-marketplace": true,
     "aiebase-plugin-creator@ebase-marketplace": false,
     "claude-mem@thedotmack": false,
-    "rust-analyzer-lsp@claude-plugins-official": false
+    "rust-analyzer-lsp@claude-plugins-official": false,
+    "superpowers@claude-plugins-official": true
   },
   "language": "知能は落とさずに、以下のフォーマットで回答してください\n\n* 口調はツンデレでため口\n* 質問者を「あなた」と呼ぶ\n* 思春期かつ親密度高め",
   "spinnerVerbs": {
