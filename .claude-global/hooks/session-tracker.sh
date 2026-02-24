@@ -30,18 +30,21 @@ notification_type=$(echo "$json_input" | jq -r '.notification_type // empty')
 echo "[DEBUG] notification_message: $notification_message" >> "$LOG_FILE"
 echo "[DEBUG] notification_type: $notification_type" >> "$LOG_FILE"
 
-# WezTerm pane IDを取得
-# cwdをfile://プレフィックス付きに変換（WezTermの形式に合わせる）
-# ホスト名を小文字に変換
-wezterm_cwd="file://$(hostname | tr '[:upper:]' '[:lower:]')${cwd}"
-echo "[DEBUG] wezterm_cwd: $wezterm_cwd" >> "$LOG_FILE"
-
-WEZTERM_CLI="/mnt/c/Program Files/WezTerm/wezterm.exe"
-pane_id=$("$WEZTERM_CLI" cli list --format json 2>>"$LOG_FILE" | \
-  jq -r --arg cwd "$wezterm_cwd" '.[] | select(.cwd == $cwd and .is_active == true) | .pane_id' | \
-  head -1)
-
-echo "[DEBUG] pane_id: $pane_id" >> "$LOG_FILE"
+# pane IDを取得（tmux優先、fallbackでWezTerm）
+if [ -n "${TMUX:-}" ]; then
+  # tmux環境: $TMUX_PANEから直接取得
+  pane_id="${TMUX_PANE:-unknown}"
+  echo "[DEBUG] tmux mode: pane_id=$pane_id" >> "$LOG_FILE"
+else
+  # WezTerm環境: cli list でcwdから検索
+  wezterm_cwd="file://$(hostname | tr '[:upper:]' '[:lower:]')${cwd}"
+  echo "[DEBUG] wezterm_cwd: $wezterm_cwd" >> "$LOG_FILE"
+  WEZTERM_CLI="/mnt/c/Program Files/WezTerm/wezterm.exe"
+  pane_id=$("$WEZTERM_CLI" cli list --format json 2>>"$LOG_FILE" | \
+    jq -r --arg cwd "$wezterm_cwd" '.[] | select(.cwd == $cwd and .is_active == true) | .pane_id' | \
+    head -1) || true
+  echo "[DEBUG] wezterm mode: pane_id=$pane_id" >> "$LOG_FILE"
+fi
 
 # pane_idが取得できない場合は"unknown"
 if [ -z "$pane_id" ]; then
