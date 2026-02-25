@@ -24,7 +24,7 @@ builtin_box_drawing = true
 
 [font.normal]
 family = "HackGen Console NF"
-style = "Bold"
+style = "Regular"
 
 [font.bold]
 family = "HackGen Console NF"
