@@ -40,12 +40,10 @@ family = "HackGen Console NF"
 style = "Bold"
 
 [font.offset]
-# 行間調整（セルサイズを広げる）
-y = 2
+y = 0
 
 [font.glyph_offset]
-# グリフをセル内で上方向に移動（offset.yで広げた分を補正）
-y = 1
+y = 0
 
 # ========================================
 # カーソル設定
