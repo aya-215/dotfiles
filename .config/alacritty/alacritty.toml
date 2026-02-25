@@ -19,7 +19,8 @@ y = 8
 # フォント設定
 # ========================================
 [font]
-size = 10.5
+size = 11.0
+builtin_box_drawing = true
 
 [font.normal]
 family = "HackGen Console NF"
@@ -39,8 +40,8 @@ family = "HackGen Console NF"
 style = "Bold"
 
 [font.offset]
-# 行間 1.2相当（フォントサイズ10.5 × 0.2 ≈ 2px）
-y = 2
+# 行間調整（0=デフォルト、正=広げる、負=縮める）
+y = 0
 
 # ========================================
 # カーソル設定
