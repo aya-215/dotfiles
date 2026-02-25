@@ -23,7 +23,7 @@ size = 10.5
 
 [font.normal]
 family = "HackGen Console NF"
-style = "Regular"
+style = "Bold"
 
 [font.bold]
 family = "HackGen Console NF"
