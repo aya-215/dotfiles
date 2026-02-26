@@ -11,7 +11,7 @@ function M.setup(config)
   -- ウィンドウ設定
   -- ========================================
   -- 透明度（0.85に設定）
-  config.window_background_opacity = 0.5
+  config.window_background_opacity = 0.25
 
   -- ウィンドウ装飾（タイトルバー非表示、リサイズ可能）
   config.window_decorations = "RESIZE"
