@@ -46,7 +46,7 @@ model: opus
 | 既存サマリー | 日報 Issue body 内の「📝 サマリー」セクション | 入力ソースとして統合 |
 | 完了タスク | `aya-215/life` の当日 close された Issue（label: `task`） | サマリーに反映 |
 | gitログ（Work） | `~/src/github.com/ebase-dev/*` 配下 | サマリーに反映 |
-| gitログ（Personal） | `~/.dotfiles` | サマリーに反映 |
+| gitログ（Personal） | `~/.dotfiles`, `~/src/github.com/aya-215/*` | サマリーに反映 |
 | Claude会話履歴 | `~/.nb/claude/YYYY-MM-DD.md` | サマリーに反映 + レビュー対象 |
 | agent-memory | `~/.claude/skills/agent-memory/memories/` | 整理・更新確認 |
 
@@ -72,11 +72,16 @@ GH_TOKEN=$(gh auth token --user aya-215 2>/dev/null)
 
 ```bash
 GH_TOKEN=$(gh auth token --user aya-215 2>/dev/null)
-issue_json=$(GH_TOKEN="$GH_TOKEN" gh issue list --repo aya-215/life \
+# issue_num は --jq で直接取得する（echo "$var" | jq は JSON内の\nを改行に展開してパースエラーになるため）
+issue_num=$(GH_TOKEN="$GH_TOKEN" gh issue list --repo aya-215/life \
   --search "in:title $(TZ=Asia/Tokyo date +%Y-%m-%d) の記録" \
-  --label memo --json number,title,body --jq '.[0]' 2>/dev/null)
-issue_num=$(echo "$issue_json" | jq -r '.number')
+  --label memo --json number --jq '.[0].number' 2>/dev/null)
+# body が必要な場合は別途取得する
+issue_body=$(GH_TOKEN="$GH_TOKEN" gh issue view "$issue_num" --repo aya-215/life --json body --jq '.body' 2>/dev/null)
 ```
+
+> **注意:** `echo "$json_var" | jq` は Issue body 内の `\n` をリテラル改行に展開してJSONパースエラーになる。
+> シェル変数にJSON全体を入れて後でパースする場合は `printf '%s\n' "$json_var" | jq` を使うこと。
 
 ### 日報の💡メモ取得
 
@@ -117,7 +122,12 @@ done'
 ### gitログ取得（Personal）
 
 ```bash
-git -C ~/.dotfiles log --oneline --since="2026-01-15 00:00" --until="2026-01-16 00:00" --author="$(git config user.email)" 2>/dev/null
+git -C ~/.dotfiles log --oneline --since="$DATE 00:00" --until="$NEXT_DATE 00:00" --author="$(git config user.email)" 2>/dev/null
+
+for repo in ~/src/github.com/aya-215/*/; do
+  author_email=$(git -C "$repo" config user.email 2>/dev/null || git config user.email)
+  git -C "$repo" log --oneline --since="$DATE 00:00" --until="$NEXT_DATE 00:00" --author="$author_email" 2>/dev/null
+done
 ```
 
 ### コミット数の集計
@@ -136,6 +146,13 @@ done
 # Personal側の集計例
 count=$(git -C ~/.dotfiles log --oneline --since="$DATE 00:00" --until="$NEXT_DATE 00:00" --author="$(git config user.email)" 2>/dev/null | wc -l)
 [ "$count" -gt 0 ] && echo "dotfiles: $count commits"
+
+for repo in ~/src/github.com/aya-215/*/; do
+  repo_name=$(basename "$repo")
+  author_email=$(git -C "$repo" config user.email 2>/dev/null || git config user.email)
+  count=$(git -C "$repo" log --oneline --since="$DATE 00:00" --until="$NEXT_DATE 00:00" --author="$author_email" 2>/dev/null | wc -l)
+  [ "$count" -gt 0 ] && echo "$repo_name: $count commits"
+done
 ```
 
 集計結果をサマリーに反映する形式:
