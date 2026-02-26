@@ -29,9 +29,8 @@ function M.setup(config)
     active_titlebar_bg = "none",
   }
 
-  config.window_background_gradient = {
-    colors = { "#000000" },
-  }
+  -- Acrylicぼかし（Windows 11）
+  config.win32_system_backdrop = "Acrylic"
 
   -- ========================================
   -- フォント設定
