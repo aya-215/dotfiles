@@ -11,7 +11,7 @@ function M.setup(config)
   -- ウィンドウ設定
   -- ========================================
   -- 透明度（0.85に設定）
-  config.window_background_opacity = 0.4
+  config.window_background_opacity = 0.45
 
   -- 黒ベースの半透明グラデーション（Acrylicぼかしの上に重ねる）
   config.window_background_gradient = {
