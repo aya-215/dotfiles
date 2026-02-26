@@ -36,6 +36,7 @@ function M.setup(config)
 
   -- Acrylicぼかし（Windows 11）
   config.win32_system_backdrop = "Acrylic"
+  config.win32_acrylic_accent_color = "#000000"
 
   -- ========================================
   -- フォント設定
