@@ -36,8 +36,7 @@ appearance.setup_tab_title()
 -- 起動時動作（ウィンドウ最大化）
 appearance.setup_startup()
 
--- フォーカス変更時の透明度調整
-appearance.setup_focus_handler()
+
 
 -- キーバインディング設定
 keys.setup(config)
