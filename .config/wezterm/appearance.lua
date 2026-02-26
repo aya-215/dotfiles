@@ -241,6 +241,25 @@ function M.setup_tab_title()
 end
 
 -- ========================================
+-- フォーカス変更時の透明度調整
+-- Acrylic非フォーカス時の明るさ変化を軽減する
+-- ========================================
+function M.setup_focus_handler()
+  local focused_opacity = 0.3
+  local unfocused_opacity = 0.7
+
+  wezterm.on('window-focus-changed', function(window, pane)
+    local overrides = window:get_config_overrides() or {}
+    if window:is_focused() then
+      overrides.window_background_opacity = focused_opacity
+    else
+      overrides.window_background_opacity = unfocused_opacity
+    end
+    window:set_config_overrides(overrides)
+  end)
+end
+
+-- ========================================
 -- 起動時動作（ウィンドウを最大化）
 -- ========================================
 function M.setup_startup()
