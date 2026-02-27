@@ -6,6 +6,7 @@ return {
       "nvim-treesitter/nvim-treesitter-textobjects",
     },
     event = "VeryLazy",
+    main = "nvim-treesitter.configs",
     opts = {
         -- Windows環境でのビルド設定
         prefer_git = false,
