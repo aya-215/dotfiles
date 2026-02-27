@@ -7,6 +7,8 @@
     VISUAL = "nvim";
     LANG = "ja_JP.UTF-8";
     BROWSER = "wslview";
+    CLAUDE_CODE_SKIP_WINDOWS_PROFILE = "1";
+    USERPROFILE = "/mnt/c/Users/368";
   };
 
   # PATH設定（shell.nixから移行）
