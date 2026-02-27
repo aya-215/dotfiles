@@ -17,14 +17,18 @@ model: opus
 ### フェーズ1: 日報サマリー生成
 
 1. 今日の日報 Issue を特定（`aya-215/life` リポジトリ）
+   - **Issue が見つかった場合（当日分）**: そのまま Issue body を使う
+   - **Issue が見つからない場合（昨日以前の分）**: close済みでmd化されている。`blog/YYYYMMDD.md` をローカルで編集する（後述「close済み日報の更新手順」参照）
 2. 対象日のgitコミットログを取得
 3. 対象日の完了タスク（当日 close された task Issue）を取得
 4. claude-nb-sync.py を手動実行して最新の会話を同期
 5. 対象日のClaude会話履歴を取得
 6. Work/Personalに分類してサマリー生成（Claude会話も含む）
 7. ユーザーに確認表示
-8. 承認後、日報 Issue の body の「📝 サマリー」セクションを更新（`gh issue edit`）
-8.5. 日報 Issue の「💡 メモ」セクションに「調子: /5」が未記入（「調子: /5」のまま）の場合、ユーザーに「今日の調子は5段階で？」と質問し、回答を日報 Issue に反映する
+8. 承認後、日報を更新
+   - **Issue が open の場合**: `gh issue edit` で body の「📝 サマリー」セクションを更新
+   - **Issue が close 済みの場合**: ローカルの `blog/YYYYMMDD.md` を編集 → commit → push
+8.5. 日報の「💡 メモ」セクションに「調子: /5」が未記入（「調子: /5」のまま）の場合、ユーザーに「今日の調子は5段階で？」と質問し、回答を反映する
 
 ### フェーズ2: メモリ整理
 
@@ -42,8 +46,9 @@ model: opus
 
 | ソース | 取得先 | 用途 |
 |--------|--------|------|
-| 今日の日報 | `aya-215/life` の日報 Issue（`in:title YYYY-MM-DD の記録`） | 💡メモを取り込む |
-| 既存サマリー | 日報 Issue body 内の「📝 サマリー」セクション | 入力ソースとして統合 |
+| 今日の日報（open） | `aya-215/life` の日報 Issue（`in:title YYYY-MM-DD の記録`） | 💡メモを取り込む |
+| 過去の日報（closed） | `~/src/github.com/aya-215/life/blog/YYYYMMDD.md` | 💡メモを取り込む |
+| 既存サマリー | 日報 Issue body または blog md 内の「📝 サマリー」セクション | 入力ソースとして統合 |
 | 完了タスク | `aya-215/life` の当日 close された Issue（label: `task`） | サマリーに反映 |
 | gitログ（Work） | `~/src/github.com/ebase-dev/*` 配下 | サマリーに反映 |
 | gitログ（Personal） | `~/.dotfiles`, `~/src/github.com/aya-215/*` | サマリーに反映 |
@@ -225,7 +230,7 @@ grep -E "^✅|^- ✅" ~/.nb/claude/2026-01-15.md | head -10
 rg "^summary:" ~/.claude/skills/agent-memory/memories/ --no-ignore --hidden
 ```
 
-### 日報 Issue body の更新
+### 日報 Issue body の更新（Issue が open の場合）
 
 ```bash
 # 1. 現在の body を取得
@@ -248,6 +253,45 @@ rm -f "$awkscript"
 
 # 3. Issue を更新
 GH_TOKEN="$GH_TOKEN" gh issue edit "$issue_num" --repo aya-215/life --body "$new_body"
+```
+
+### close済み日報の更新手順（Issue が見つからない場合）
+
+日報Issueがcloseされmd化済みの場合は、`blog/YYYYMMDD.md` をローカルで編集してpushする。
+gh API経由のファイル更新は base64エンコード/JSONパースの問題があるため使わない。
+
+```bash
+LIFE_REPO=~/src/github.com/aya-215/life
+TARGET_DATE="2026-02-26"
+BLOG_FILE="blog/$(echo $TARGET_DATE | tr -d '-').md"
+
+# 1. aya-215 アカウントで認証を切り替え
+gh auth switch --user aya-215
+
+# 2. 最新を取得
+git -C "$LIFE_REPO" pull --rebase
+
+# 3. ファイルの存在確認
+cat "$LIFE_REPO/$BLOG_FILE"
+```
+
+ファイルの内容を確認したら、Edit ツールで「📝 サマリー」セクションを編集する。
+
+```bash
+# 4. コミット＆プッシュ
+git -C "$LIFE_REPO" add "$BLOG_FILE"
+git -C "$LIFE_REPO" commit -m "docs: $TARGET_DATE 日次レビューサマリーを追加"
+git -C "$LIFE_REPO" push
+```
+
+> **注意:** `gh auth switch` した後は、他のリポジトリ操作で認証エラーが出る場合がある。
+> 完了後に必要に応じて `gh auth switch --user eBASE-Mori` で戻すこと。
+
+### 💡メモの取得（close済み日報の場合）
+
+```bash
+# blog mdファイルから💡メモセクションを抽出
+sed -n '/^## 💡 メモ$/,$ { /^## 💡 メモ$/d; /^## /q; p }' "$LIFE_REPO/$BLOG_FILE"
 ```
 
 ---
@@ -330,7 +374,9 @@ GH_TOKEN="$GH_TOKEN" gh issue edit "$issue_num" --repo aya-215/life --body "$new
 
 | 状況 | 対応 |
 |------|------|
-| 日報 Issue が見つからない | 「日報 Issue が見つかりません。daily-issue.yml で毎朝自動作成されます」と表示して終了 |
+| 日報 Issue が見つからない（当日分） | 「日報 Issue が見つかりません。daily-issue.yml で毎朝自動作成されます」と表示して終了 |
+| 日報 Issue が見つからない（過去分） | close済みでmd化されている。`blog/YYYYMMDD.md` をローカルで編集する |
+| blog md も見つからない | 「日報が見つかりません」と表示して終了 |
 | gitリポジトリなし | スキップして他のソースで生成 |
 | Claude会話履歴なし | スキップして他のソースで生成 |
 | 入力ソースがすべて空 | 「サマリーを生成する情報がありません」と表示して終了 |
