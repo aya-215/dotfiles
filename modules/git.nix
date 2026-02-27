@@ -51,6 +51,8 @@
       credential."https://gist.github.com".helper = "!${pkgs.gh}/bin/gh auth git-credential";
       coderabbit.machineId = "cli/96c13c10b3db406c9ed1d8b2fb783b2c";
       ghq.root = "~/src";
+      # aya-215アカウント用SSHエイリアスへの自動書き換え
+      "url \"git@github-aya215:aya-215/\"".insteadOf = "git@github.com:aya-215/";
     };
   };
 }
