@@ -65,33 +65,30 @@ return {
       })
     end,
     keys = {
-      -- AI/Claude Code グループ
-      { "<leader>a", nil, desc = "🤖 AI/Claude Code" },
-
       -- 基本操作
-      { "<leader>ac", "<cmd>ClaudeCode<cr>", desc = "Toggle Claude" },
-      { "<leader>af", "<cmd>ClaudeCodeFocus<cr>", desc = "Focus Claude" },
+      { "<leader>ac", "<cmd>ClaudeCode<cr>", desc = "Claudeの表示切替" },
+      { "<leader>af", "<cmd>ClaudeCodeFocus<cr>", desc = "Claudeにフォーカス" },
 
       -- セッション管理
-      { "<leader>ar", "<cmd>ClaudeCode --resume<cr>", desc = "Resume Claude" },
-      { "<leader>aC", "<cmd>ClaudeCode --continue<cr>", desc = "Continue Claude" },
+      { "<leader>ar", "<cmd>ClaudeCode --resume<cr>", desc = "セッション再開" },
+      { "<leader>aC", "<cmd>ClaudeCode --continue<cr>", desc = "セッション続行" },
 
       -- モデル選択
-      { "<leader>am", "<cmd>ClaudeCodeSelectModel<cr>", desc = "Select Claude model" },
+      { "<leader>am", "<cmd>ClaudeCodeSelectModel<cr>", desc = "モデル選択" },
 
       -- コンテキスト追加
-      { "<leader>ab", "<cmd>ClaudeCodeAdd %<cr>", desc = "Add current buffer" },
-      { "<leader>as", "<cmd>ClaudeCodeSend<cr>", mode = "v", desc = "Send to Claude" },
+      { "<leader>ab", "<cmd>ClaudeCodeAdd %<cr>", desc = "現在のバッファを追加" },
+      { "<leader>as", "<cmd>ClaudeCodeSend<cr>", mode = "v", desc = "選択範囲をClaudeに送信" },
       {
         "<leader>as",
         "<cmd>ClaudeCodeTreeAdd<cr>",
-        desc = "Add file",
+        desc = "ファイルを追加",
         ft = { "NvimTree", "neo-tree", "oil", "minifiles", "netrw" },
       },
 
       -- Diff管理
-      { "<leader>aa", "<cmd>ClaudeCodeDiffAccept<cr>", desc = "Accept diff" },
-      { "<leader>ad", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "Deny diff" },
+      { "<leader>aa", "<cmd>ClaudeCodeDiffAccept<cr>", desc = "Diffを承認" },
+      { "<leader>ad", "<cmd>ClaudeCodeDiffDeny<cr>", desc = "Diffを拒否" },
     },
   },
 }

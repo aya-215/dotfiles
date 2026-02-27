@@ -3,9 +3,6 @@
 -- 追加のキーマップをここに記述します
 
 
--- ファイルエクスプローラー
-vim.keymap.set("n", "<leader>e", ":NvimTreeToggle<CR>", { desc = "ファイルエクスプローラーの表示切替" })
-
 -- Visual mode: インデント後も選択を維持
 vim.keymap.set("v", "<", "<gv", { desc = "インデント（選択維持）" })
 vim.keymap.set("v", ">", ">gv", { desc = "インデント（選択維持）" })
@@ -86,3 +83,20 @@ vim.keymap.set('n', 'P', function()
   require('undo-glow').highlight_changes()
   vim.cmd('normal! ]P`]')
 end, { desc = 'ペースト上（インデント調整＋末尾＋glow）' })
+
+-- ===================================================
+-- UIトグル (<leader>u)
+-- ===================================================
+vim.keymap.set('n', '<leader>uw', '<cmd>set wrap!<cr>', { desc = '折り返し表示の切替' })
+vim.keymap.set('n', '<leader>un', '<cmd>set number!<cr>', { desc = '行番号の切替' })
+vim.keymap.set('n', '<leader>ur', '<cmd>set relativenumber!<cr>', { desc = '相対行番号の切替' })
+vim.keymap.set('n', '<leader>us', '<cmd>set spell!<cr>', { desc = 'スペルチェックの切替' })
+vim.keymap.set('n', '<leader>ul', '<cmd>set list!<cr>', { desc = '不可視文字の切替' })
+vim.keymap.set('n', '<leader>uc', '<cmd>set cursorline!<cr>', { desc = 'カーソル行ハイライトの切替' })
+
+-- ===================================================
+-- 診断/Quickfix (<leader>x)
+-- ===================================================
+vim.keymap.set('n', '<leader>xq', '<cmd>copen<cr>', { desc = 'Quickfixリストを開く' })
+vim.keymap.set('n', '<leader>xl', '<cmd>lopen<cr>', { desc = 'Locationリストを開く' })
+vim.keymap.set('n', '<leader>xx', vim.diagnostic.setloclist, { desc = '診断をLocationリストに送る' })

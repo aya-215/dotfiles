@@ -51,6 +51,6 @@ return {
     })
   end,
   keys = {
-    { "<leader>ts", "<cmd>AutoSaveToggle<cr>", desc = "Toggle Auto Save" },
+    { "<leader>ua", "<cmd>AutoSaveToggle<cr>", desc = "自動保存の切替" },
   },
 }

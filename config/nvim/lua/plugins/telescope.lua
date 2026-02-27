@@ -22,26 +22,31 @@ return {
     },
     cmd = "Telescope",
     keys = {
-      -- ファイル検索
+      -- ファイル (<leader>f)
       { "<leader>ff", "<cmd>Telescope find_files<cr>", desc = "ファイル検索" },
-      { "<leader>fg", "<cmd>Telescope live_grep<cr>", desc = "文字列検索 (Grep)" },
       { "<leader>fb", "<cmd>Telescope buffers<cr>", desc = "バッファ一覧" },
-      { "<leader>fh", "<cmd>Telescope help_tags<cr>", desc = "ヘルプタグ検索" },
       { "<leader>fr", "<cmd>Telescope oldfiles<cr>", desc = "最近使用したファイル" },
 
-      -- Git関連
+      -- 検索 (<leader>s)
+      { "<leader>sg", "<cmd>Telescope live_grep<cr>", desc = "文字列検索 (Grep)" },
+      { "<leader>sh", "<cmd>Telescope help_tags<cr>", desc = "ヘルプタグ検索" },
+      { "<leader>sc", "<cmd>Telescope commands<cr>", desc = "コマンド一覧" },
+      { "<leader>sk", "<cmd>Telescope keymaps<cr>", desc = "キーマップ一覧" },
+      { "<leader>sw", "<cmd>Telescope grep_string<cr>", desc = "カーソル下の単語を検索" },
+      { "<leader>sr", "<cmd>Telescope resume<cr>", desc = "前回の検索を再開" },
+
+      -- Git (<leader>g)
       { "<leader>gc", "<cmd>Telescope git_commits<cr>", desc = "Gitコミット履歴" },
       { "<leader>gs", "<cmd>Telescope git_status<cr>", desc = "Git変更状態" },
       { "<leader>gb", "<cmd>Telescope git_branches<cr>", desc = "Gitブランチ" },
 
-      -- LSP関連
-      { "<leader>ld", "<cmd>Telescope diagnostics<cr>", desc = "診断情報" },
+      -- LSP (<leader>l)
       { "<leader>lr", "<cmd>Telescope lsp_references<cr>", desc = "LSP参照" },
       { "<leader>ls", "<cmd>Telescope lsp_document_symbols<cr>", desc = "ドキュメントシンボル" },
 
-      -- その他
-      { "<leader>fc", "<cmd>Telescope commands<cr>", desc = "コマンド一覧" },
-      { "<leader>fk", "<cmd>Telescope keymaps<cr>", desc = "キーマップ一覧" },
+      -- 診断/Quickfix (<leader>x)
+      { "<leader>xd", "<cmd>Telescope diagnostics<cr>", desc = "全診断情報" },
+      { "<leader>xD", "<cmd>Telescope diagnostics bufnr=0<cr>", desc = "バッファ内の診断" },
     },
     config = function()
       local telescope = require("telescope")
