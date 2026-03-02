@@ -1,3 +1,6 @@
+repoPaths:
+  "*/*": ~/src/github.com/*/*
+
 keybindings:
   prs:
     - key: d
