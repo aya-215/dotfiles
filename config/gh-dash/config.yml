@@ -8,7 +8,8 @@ keybindings:
         tmux new-window -c {{.RepoPath}} '
           tmux rename-window {{.RepoName}}#{{.PrNumber}} &&
           gh pr checkout {{.PrNumber}} &&
-          nvim -c ":DiffviewOpen origin/..."
+          BASE=$(git merge-base HEAD origin/HEAD) &&
+          nvim -c ":DiffviewOpen $BASE"
         '
     - key: C
       command: |-
