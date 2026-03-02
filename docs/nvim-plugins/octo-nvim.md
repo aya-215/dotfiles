@@ -15,6 +15,11 @@ Neovim内でGitHubのPR / Issue / Discussionを操作するプラグイン。
 | `<Space>goi` | Issue一覧 |
 | `<Space>goc` | PR作成 |
 | `<Space>gor` | レビュー開始 |
+| `<Space>gos` | レビュー送信 |
+| `<Space>gov` | レビュー再開 |
+| `<Space>gok` | PRチェックアウト |
+| `<Space>gox` | CIチェック確認 |
+| `<Space>goe` | PR再読込 |
 | `:Octo pr list` | PR一覧表示 |
 | `:Octo issue list` | Issue一覧表示 |
 | `:Octo review start` | レビュー開始 |
@@ -66,17 +71,18 @@ Neovim内でGitHubのPR / Issue / Discussionを操作するプラグイン。
 
 - `:Octo comment add` — コメント追加
 - `:Octo comment delete` — コメント削除
-- `\ca` — カーソル行にインラインコメント追加（レビューモード）
+- `\c` — コメント追加（`\ca` の短縮）
+- `\d` — コメント削除（`\cd` の短縮）
+- `\w` — スレッドに返信（`\cr` の短縮）
+- `\t` — スレッド解決（`\rt` の短縮）
 - `\sa` — コード修正提案（suggestion）追加
-- `\cr` — スレッドに返信
-- `\cd` — コメント削除
-- `\rt` — スレッド解決
 
 ### レビュー送信
 
 - `<C-a>` — Approve（承認）して送信
 - `<C-r>` — Request Changes（変更要求）して送信
-- `<C-m>` — Comment（コメントのみ）で送信
+- `<C-p>` — Comment（コメントのみ）で送信
+- `<C-c>` — レビュータブを閉じる
 
 ### ラベル・アサイン
 
@@ -115,7 +121,7 @@ Neovim内でGitHubのPR / Issue / Discussionを操作するプラグイン。
 
 ### リアクション
 
-- `:Octo reaction thumbs_up` / `\r+` — 👍
+- `:Octo reaction thumbs_up` / `\g` — 👍
 - `:Octo reaction thumbs_down` / `\r-` — 👎
 - `:Octo reaction laugh` / `\rl` — 😄
 - `:Octo reaction hooray` / `\rp` — 🎉
@@ -141,7 +147,7 @@ Neovim内でGitHubのPR / Issue / Discussionを操作するプラグイン。
 4. `\ca` でインラインコメント記入
 5. `:w` でコメント保存（まだpending状態）
 6. 必要なだけ 3〜5 を繰り返す
-7. `<C-a>` でApproveして全コメント送信（または `<C-r>` でRequest Changes、`<C-m>` でCommentのみ）
+7. `<C-a>` でApproveして全コメント送信（または `<C-r>` でRequest Changes、`<C-p>` でCommentのみ）
 
 ### コード修正提案（Suggestion）の書き方
 
