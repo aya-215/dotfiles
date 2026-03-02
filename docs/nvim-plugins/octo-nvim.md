@@ -14,9 +14,8 @@ Neovim内でGitHubのPR / Issue / Discussionを操作するプラグイン。
 | `<Space>gop` | PR一覧 |
 | `<Space>goi` | Issue一覧 |
 | `<Space>goc` | PR作成 |
-| `<Space>gor` | レビュー開始 |
+| `<Space>gor` | レビュー開始/再開 |
 | `<Space>gos` | レビュー送信 |
-| `<Space>gov` | レビュー再開 |
 | `<Space>gok` | PRチェックアウト |
 | `<Space>gox` | CIチェック確認 |
 | `<Space>goe` | PR再読込 |
