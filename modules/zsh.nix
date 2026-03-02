@@ -56,6 +56,9 @@
       c = "claude";
       cw = "claude-watch";
 
+      # gh-dash（eBASE-Moriアカウントに切り替えてから起動）
+      ghd = "gh auth switch --user eBASE-Mori && gh-dash";
+
       # バックアップ
       bak = "~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh";
 
