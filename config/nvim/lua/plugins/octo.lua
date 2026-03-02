@@ -17,6 +17,14 @@ return {
     enable_builtin = true,
     default_merge_method = 'squash',
     snippet_context_lines = 4,
+    mappings = {
+      submit_win = {
+        approve_review   = { lhs = '<C-a>',  desc = 'approve review',         mode = { 'n', 'i' } },
+        comment_review   = { lhs = '<C-CR>', desc = 'comment review',         mode = { 'n', 'i' } },
+        request_changes  = { lhs = '<C-r>',  desc = 'request changes review', mode = { 'n', 'i' } },
+        close_review_tab = { lhs = '<C-c>',  desc = 'close review tab',       mode = { 'n', 'i' } },
+      },
+    },
   },
   config = function(_, opts)
     require('octo').setup(opts)
