@@ -42,6 +42,9 @@ return {
         resolve_thread  = { lhs = '<localleader>t', desc = 'resolve thread' },
         react_thumbs_up = { lhs = '<localleader>g', desc = 'react thumbs up' },
       },
+      review_diff = {
+        add_review_comment = { lhs = '<localleader>c', desc = 'add review comment', mode = { 'n', 'x' } },
+      },
       submit_win = {
         approve_review   = { lhs = '<C-a>',  desc = 'approve review',         mode = { 'n', 'i' } },
         comment_review   = { lhs = '<C-p>',  desc = 'comment review',         mode = { 'n', 'i' } },

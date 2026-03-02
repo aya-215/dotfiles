@@ -75,6 +75,7 @@ Neovim内でGitHubのPR / Issue / Discussionを操作するプラグイン。
 - `\d` — コメント削除（`\cd` の短縮）
 - `\w` — スレッドに返信（`\cr` の短縮）
 - `\t` — スレッド解決（`\rt` の短縮）
+- `\g` — 👍 リアクション（`\r+` の短縮）
 - `\sa` — コード修正提案（suggestion）追加
 
 ### レビュー送信
@@ -144,7 +145,7 @@ Neovim内でGitHubのPR / Issue / Discussionを操作するプラグイン。
 1. `:Octo pr list` でPRを選択
 2. `:Octo review start` でレビューモード開始（diffが表示される）
 3. カーソルを該当行に移動
-4. `\ca` でインラインコメント記入
+4. `\c` でインラインコメント記入
 5. `:w` でコメント保存（まだpending状態）
 6. 必要なだけ 3〜5 を繰り返す
 7. `<C-a>` でApproveして全コメント送信（または `<C-r>` でRequest Changes、`<C-p>` でCommentのみ）
