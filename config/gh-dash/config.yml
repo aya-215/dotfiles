@@ -1,5 +1,5 @@
 repoPaths:
-  "*/*": ~/src/github.com/*/*
+  ":owner/:repo": ~/src/github.com/:owner/:repo
 
 keybindings:
   prs:
