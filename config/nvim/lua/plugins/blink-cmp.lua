@@ -9,6 +9,7 @@ return {
         "L3MON4D3/LuaSnip",
         version = "v2.*",
       },
+      "Kaiser-Yang/blink-cmp-git",
     },
     opts = {
       keymap = {
@@ -44,11 +45,39 @@ return {
 
       sources = {
         default = { "lsp", "path", "snippets", "buffer" },
+        per_filetype = {
+          octo = { "lsp", "path", "snippets", "buffer", "git" },
+          gitcommit = { "lsp", "path", "snippets", "buffer", "git" },
+        },
         providers = {
           buffer = {
             max_items = 4,
             min_keyword_length = 4,
             score_offset = -3,
+          },
+          git = {
+            module = "blink-cmp-git",
+            name = "Git",
+            score_offset = 100,
+            async = true,
+            opts = {
+              -- octo.nvim のコメントバッファ(buftype=prompt)でもキャッシュリロードを許可
+              should_reload_cache = function()
+                local utils = require("blink-cmp-git.utils")
+                if not utils.source_provider_enabled() then
+                  return false
+                end
+                -- octo バッファでは常にリロード許可
+                if vim.bo.filetype == "octo" then
+                  return true
+                end
+                -- prompt バッファはデフォルト通りスキップ
+                if vim.bo.buftype == "prompt" then
+                  return false
+                end
+                return true
+              end,
+            },
           },
         },
       },
