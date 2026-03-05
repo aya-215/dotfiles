@@ -118,6 +118,6 @@ ShowTip(msg) {
 ; Thunderbird: Shift+J/K でフォルダ移動
 ; ──────────────────────────────────────────────
 #HotIf WinActive("ahk_exe thunderbird.exe")
-+j::Send("{F6}")
-+k::Send("+{F6}")
++l::Send("{F6}")
++h::Send("+{F6}")
 #HotIf
