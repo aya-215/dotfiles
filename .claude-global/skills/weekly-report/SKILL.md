@@ -135,7 +135,9 @@ prev_weekly=~/src/github.com/aya-215/life/weekly/${prev_monday}-weekly.md
 |------|---------|--------|
 | 🌙 筋トレ | X/Y日 | XX% |
 | 🌅 朝食 | X/Y日 | XX% |
+| 🌅 お弁当 | X/Y日 | XX% |
 | 🌅 肌ケア（3点セット） | X/Y日 | XX% |
+| 🏠 家事 | X/Y日 | XX% |
 | 🧹 部屋の片づけ | X/Y日 | XX% |
 | **全項目完遂** | X/Y日 | XX% |
 
