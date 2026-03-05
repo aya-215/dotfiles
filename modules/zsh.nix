@@ -139,6 +139,16 @@
       # fast-syntax-highlighting（zeno.zshの後に読み込む）
       source ${pkgs.zsh-fast-syntax-highlighting}/share/zsh/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh
 
+      # yazi (ターミナルファイルマネージャー) - 終了時にディレクトリ追従
+      yy() {
+        local tmp="$(mktemp -t "yazi-cwd.XXXXXX")"
+        yazi "$@" --cwd-file="$tmp"
+        if cwd="$(cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+          builtin cd -- "$cwd"
+        fi
+        rm -f -- "$tmp"
+      }
+
       # カスタム関数
       # fn - ファイル検索→nvim
       fn() {

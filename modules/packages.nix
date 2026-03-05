@@ -12,6 +12,7 @@
     eza        # ls代替（モダン）
     jq         # JSON処理
     lazygit    # Git TUI
+    yazi       # ターミナルファイルマネージャー
     zoxide     # スマートcd
     nb         # ノート管理
     delta      # Git diff viewer

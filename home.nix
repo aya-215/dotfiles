@@ -12,6 +12,7 @@
     ./modules/zeno.nix
     ./modules/tmux.nix
     ./modules/gh-dash.nix
+    ./modules/yazi.nix
   ];
 
   # Home Managerのバージョン
