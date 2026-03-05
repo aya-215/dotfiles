@@ -113,3 +113,11 @@ ShowTip(msg) {
     ToolTip(msg)
     SetTimer(() => ToolTip(), -2000)
 }
+
+; ──────────────────────────────────────────────
+; Thunderbird: Shift+J/K でフォルダ移動
+; ──────────────────────────────────────────────
+#HotIf WinActive("ahk_exe thunderbird.exe")
++j::Send("{F6}")
++k::Send("+{F6}")
+#HotIf
