@@ -80,7 +80,92 @@ if [ -n "$transcript" ] && [ -f "$transcript" ]; then
   [ "$todo_count" -lt 0 ] && todo_count=0
 fi
 
-# Output with colors
+# --- Usage API (rate limit display) ---
+
+CACHE_FILE="$HOME/.cache/claude-statusline/usage.json"
+CACHE_TTL=360
+
+# Get OAuth token from WSL credentials file
+get_access_token() {
+  local creds="$HOME/.claude/.credentials.json"
+  [ -f "$creds" ] || return
+  command -v jq &>/dev/null || return
+  jq -r '.claudeAiOauth.accessToken // empty' "$creds" 2>/dev/null
+}
+
+# Fetch usage with caching (network I/O runs in background)
+get_usage_cached() {
+  if [ -f "$CACHE_FILE" ]; then
+    local age
+    age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) ))
+    if [ "$age" -lt "$CACHE_TTL" ]; then
+      cat "$CACHE_FILE"
+      return
+    fi
+  fi
+
+  local token
+  token=$(get_access_token)
+  if [ -z "$token" ]; then
+    [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
+    return
+  fi
+
+  # Fetch in background to avoid blocking status line
+  (
+    mkdir -p "$(dirname "$CACHE_FILE")"
+    local result
+    result=$(curl -s -m 5 \
+      -H "Authorization: Bearer $token" \
+      -H "anthropic-beta: oauth-2025-04-20" \
+      "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
+    if echo "$result" | jq -e '.five_hour' &>/dev/null; then
+      printf '%s' "$result" > "$CACHE_FILE"
+    fi
+  ) &
+
+  [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
+}
+
+# Color by percentage (Catppuccin Mocha)
+color_for_pct() {
+  local pct=$1
+  if   [ "$pct" -ge 80 ] 2>/dev/null; then printf '\033[38;2;243;139;168m'  # Red #F38BA8
+  elif [ "$pct" -ge 50 ] 2>/dev/null; then printf '\033[38;2;249;226;175m'  # Yellow #F9E2AF
+  else                                      printf '\033[38;2;166;227;161m'  # Green #A6E3A1
+  fi
+}
+
+# 10-segment progress bar
+progress_bar() {
+  local pct=$1
+  local filled=$(( pct / 10 ))
+  local empty=$(( 10 - filled ))
+  local bar=""
+  local i
+  for i in $(seq 1 $filled); do bar="${bar}█"; done
+  for i in $(seq 1 $empty);  do bar="${bar}░"; done
+  printf '%s' "$bar"
+}
+
+# Format ISO 8601 reset time to human-readable (Asia/Tokyo)
+format_reset_time() {
+  local iso="$1"
+  local window="$2"  # "5h" or "7d"
+  if [ -z "$iso" ]; then
+    echo "unknown"
+    return
+  fi
+  if [ "$window" = "5h" ]; then
+    # Show HH:MM in JST
+    TZ=Asia/Tokyo date -d "$iso" '+%H:%M' 2>/dev/null || echo "$iso"
+  else
+    # Show weekday in JST
+    TZ=Asia/Tokyo date -d "$iso" '+%a %d日' 2>/dev/null || echo "$iso"
+  fi
+}
+
+# Output line 1: existing info
 printf "${B}%s %s${R}" "$icon_folder" "$current_dir"
 printf " ${S}|${R} "
 printf "${L}%s %s${R}${Y}%s${R}" "$icon_branch" "$git_branch" "$git_dirty"
@@ -93,3 +178,27 @@ if [ "$todo_count" -gt 0 ] 2>/dev/null; then
   printf "${G}%s %s${R}" "$icon_todo" "$todo_count"
 fi
 echo
+
+# Output lines 2-3: usage (only if jq available and cache/API succeeds)
+if command -v jq &>/dev/null; then
+  usage_json=$(get_usage_cached)
+  if [ -n "$usage_json" ] && echo "$usage_json" | jq -e '.five_hour' &>/dev/null; then
+    # 5h window
+    pct_5h=$(echo "$usage_json" | jq -r '.five_hour.utilization | floor | tostring' 2>/dev/null)
+    reset_5h=$(echo "$usage_json" | jq -r '.five_hour.resets_at // ""' 2>/dev/null)
+    pct_5h=${pct_5h:-0}
+    bar_5h=$(progress_bar "$pct_5h")
+    col_5h=$(color_for_pct "$pct_5h")
+    time_5h=$(format_reset_time "$reset_5h" "5h")
+    printf "${col_5h}[%s] %3d%%${R} ${S}│${R} 5h reset: %s\n" "$bar_5h" "$pct_5h" "$time_5h"
+
+    # 7d window
+    pct_7d=$(echo "$usage_json" | jq -r '.seven_day.utilization | floor | tostring' 2>/dev/null)
+    reset_7d=$(echo "$usage_json" | jq -r '.seven_day.resets_at // ""' 2>/dev/null)
+    pct_7d=${pct_7d:-0}
+    bar_7d=$(progress_bar "$pct_7d")
+    col_7d=$(color_for_pct "$pct_7d")
+    time_7d=$(format_reset_time "$reset_7d" "7d")
+    printf "${col_7d}[%s] %3d%%${R} ${S}│${R} 7d reset: %s\n" "$bar_7d" "$pct_7d" "$time_7d"
+  fi
+fi
