@@ -149,6 +149,20 @@
         rm -f -- "$tmp"
       }
 
+      # gw3ネットワーク共有マウント
+      gw3() {
+        net.exe use W: '\\gw3\all' 2>/dev/null
+        sudo mkdir -p /mnt/w
+        sudo mount -t drvfs W: /mnt/w 2>/dev/null
+        echo "gw3 mounted at /mnt/w"
+      }
+
+      gw3off() {
+        sudo umount /mnt/w 2>/dev/null
+        net.exe use W: /delete 2>/dev/null
+        echo "gw3 unmounted"
+      }
+
       # カスタム関数
       # fn - ファイル検索→nvim
       fn() {

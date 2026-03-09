@@ -58,6 +58,11 @@
       unbind -T root C-k
       unbind -T root C-l
 
+      # 画像プロトコルのパススルー (Yazi等の画像プレビュー用)
+      set -g allow-passthrough on
+      set -ga update-environment TERM
+      set -ga update-environment TERM_PROGRAM
+
       # True Color対応 (WezTerm + WSL)
       set -ag terminal-overrides ",xterm-256color:RGB"
 
