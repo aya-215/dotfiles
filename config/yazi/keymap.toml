@@ -1,2 +1,6 @@
-# デフォルトのVim風キーバインドを使用
-# カスタムが必要な場合はここに追加
+[mgr]
+prepend_keymap = [
+  { on = ["g", "w"], run = "cd /mnt/c/Users/368", desc = "Go to Windows home" },
+  { on = ["g", "3"], run = "cd /mnt/w", desc = "Go to gw3 share" },
+  { on = ["g", "d"], run = "cd /mnt/d", desc = "Go to D drive" },
+]
