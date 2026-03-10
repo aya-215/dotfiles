@@ -83,7 +83,8 @@ fi
 # --- Usage API (rate limit display) ---
 
 CACHE_FILE="$HOME/.cache/claude-statusline/usage.json"
-CACHE_TTL=360
+SOFT_TTL=180   # 3分: BG更新トリガー
+HARD_TTL=600   # 10分: FG更新トリガー（古すぎるデータ防止）
 
 # Get OAuth token from WSL credentials file
 get_access_token() {
@@ -93,12 +94,13 @@ get_access_token() {
   jq -r '.claudeAiOauth.accessToken // empty' "$creds" 2>/dev/null
 }
 
-# Fetch usage with caching (network I/O runs in background)
+# Fetch usage with two-tier caching
+# soft TTL: BG update (no blocking), hard TTL: FG update (max 5s block)
 get_usage_cached() {
+  local age=999999
   if [ -f "$CACHE_FILE" ]; then
-    local age
     age=$(( $(date +%s) - $(stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0) ))
-    if [ "$age" -lt "$CACHE_TTL" ]; then
+    if [ "$age" -lt "$SOFT_TTL" ]; then
       cat "$CACHE_FILE"
       return
     fi
@@ -111,8 +113,8 @@ get_usage_cached() {
     return
   fi
 
-  # Fetch in background to avoid blocking status line
-  (
+  if [ "$age" -ge "$HARD_TTL" ]; then
+    # Hard TTL exceeded: fetch in foreground for immediate display
     mkdir -p "$(dirname "$CACHE_FILE")"
     local result
     result=$(curl -s -m 5 \
@@ -121,10 +123,25 @@ get_usage_cached() {
       "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
     if echo "$result" | jq -e '.five_hour' &>/dev/null; then
       printf '%s' "$result" > "$CACHE_FILE"
+      cat "$CACHE_FILE"
+    else
+      [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
     fi
-  ) &
-
-  [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
+  else
+    # Soft TTL exceeded: show stale cache + background refresh
+    [ -f "$CACHE_FILE" ] && cat "$CACHE_FILE"
+    (
+      mkdir -p "$(dirname "$CACHE_FILE")"
+      local result
+      result=$(curl -s -m 5 \
+        -H "Authorization: Bearer $token" \
+        -H "anthropic-beta: oauth-2025-04-20" \
+        "https://api.anthropic.com/api/oauth/usage" 2>/dev/null)
+      if echo "$result" | jq -e '.five_hour' &>/dev/null; then
+        printf '%s' "$result" > "$CACHE_FILE"
+      fi
+    ) &
+  fi
 }
 
 # Color by percentage (Catppuccin Mocha)
