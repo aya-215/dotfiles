@@ -15,6 +15,8 @@ return {
     { '<leader>gok', '<cmd>Octo pr checkout<cr>',    desc = 'PRチェックアウト' },
     { '<leader>gox', '<cmd>Octo pr checks<cr>',      desc = 'CIチェック確認' },
     { '<leader>goe', '<cmd>Octo pr reload<cr>',      desc = 'PR再読込' },
+    { '<leader>gom', '<cmd>Octo pr merge commit delete<cr>', desc = 'PRマージ(commit+削除)' },
+    { '<leader>goa', '<cmd>Octo comment add<cr>',            desc = 'コメント追加' },
   },
   opts = {
     picker = 'telescope',
