@@ -272,10 +272,19 @@ BLOG_FILE="blog/$(echo $TARGET_DATE | tr -d '-').md"
 gh auth switch --user aya-215
 
 # 2. 最新を取得
-git -C "$LIFE_REPO" pull --rebase
+git -C "$LIFE_REPO" pull --rebase 2>&1
 
-# 3. ファイルの存在確認
-cat "$LIFE_REPO/$BLOG_FILE"
+# 3. ファイルの存在確認（pull不完全時のフォールバック）
+if [ ! -f "$LIFE_REPO/$BLOG_FILE" ]; then
+  echo "WARN: pull後にファイルが見つからない。fetch + mergeで再試行..."
+  git -C "$LIFE_REPO" fetch origin
+  git -C "$LIFE_REPO" merge origin/main --ff-only
+fi
+
+# 4. それでもファイルが見つからない場合はエラー
+if [ ! -f "$LIFE_REPO/$BLOG_FILE" ]; then
+  echo "ERROR: $BLOG_FILE が origin/main にも存在しません"
+fi
 ```
 
 ファイルの内容を確認したら、Edit ツールで「📝 サマリー」セクションを編集する。
