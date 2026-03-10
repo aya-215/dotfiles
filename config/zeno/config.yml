@@ -16,6 +16,102 @@ snippets:
     keyword: gp
     snippet: git push origin {{branch}}
 
+  # エディタ
+  - name: nvim (vim)
+    keyword: vim
+    snippet: nvim
+
+  - name: nvim (vi)
+    keyword: vi
+    snippet: nvim
+
+  - name: nvim (v)
+    keyword: v
+    snippet: nvim
+
+  # CLI
+  - name: claude
+    keyword: c
+    snippet: claude
+
+  - name: claude-watch
+    keyword: cw
+    snippet: claude-watch
+
+  # gh-dash
+  - name: gh-dash
+    keyword: ghd
+    snippet: gh auth switch --user eBASE-Mori && gh-dash
+
+  # バックアップ
+  - name: backup
+    keyword: bak
+    snippet: ~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh
+
+  # eza (ls replacement)
+  - name: ls
+    keyword: ls
+    snippet: eza --icons --group-directories-first
+
+  - name: ls (l)
+    keyword: l
+    snippet: eza --icons --group-directories-first
+
+  - name: ls long
+    keyword: ll
+    snippet: eza -l --icons --group-directories-first --git
+
+  - name: ls all
+    keyword: la
+    snippet: eza -la --icons --group-directories-first --git
+
+  - name: tree
+    keyword: tree
+    snippet: eza --tree --level=2 --icons
+
+  - name: tree all
+    keyword: treea
+    snippet: eza --tree --level=2 --icons -a
+
+  - name: ls git-ignore
+    keyword: lg
+    snippet: eza -l --icons --group-directories-first --git --git-ignore
+
+  # npm
+  - name: npm dev
+    keyword: npmd
+    snippet: npm run dev -- -H 0.0.0.0
+
+  - name: npm storybook
+    keyword: npms
+    snippet: npm run storybook -- --host 0.0.0.0
+
+  # 勤怠打刻
+  - name: kintai in
+    keyword: ki
+    snippet: /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "python 'D:\\個人用\\script\\kintai\\kintai_auto_checkin.py'"
+
+  - name: kintai out
+    keyword: ko
+    snippet: /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "python 'D:\\個人用\\script\\kintai\\kintai_auto_checkout.py'"
+
+  # tmux
+  - name: tmux attach
+    keyword: ta
+    snippet: tmux attach -t
+
+  - name: tmux list sessions
+    keyword: tl
+    snippet: tmux list-sessions
+
+  - name: tmux kill session
+    keyword: tks
+    snippet: tmux kill-session -t
+
+  - name: tmux kill server
+    keyword: tkss
+    snippet: tmux kill-server
+
   # nb関連のスニペット（プレースホルダ付きのみ残す）
   - name: nb search
     keyword: nbs

@@ -26,13 +26,6 @@
       export PATH="$HOME/.nix-profile/bin:$PATH"
     '';
 
-    # Oh My Zsh設定
-    oh-my-zsh = {
-      enable = true;
-      plugins = [ "git" ];  # 組み込みプラグインのみ
-      theme = "";  # Starshipを使用するため無効化
-    };
-
     # Nixパッケージ経由のプラグイン
     plugins = [
       {
@@ -47,38 +40,11 @@
       }
     ];
 
-    # エイリアス
-    shellAliases = {
-      # エディタ
-      vim = "nvim";
-      vi = "nvim";
-      v = "nvim";
-      c = "claude";
-      cw = "claude-watch";
+    # エイリアスは zeno.zsh abbr に移行済み（config/zeno/config.yml）
+    shellAliases = {};
 
-      # gh-dash（eBASE-Moriアカウントに切り替えてから起動）
-      ghd = "gh auth switch --user eBASE-Mori && gh-dash";
-
-      # バックアップ
-      bak = "~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh";
-
-      # eza (ls replacement)
-      ls = "eza --icons --group-directories-first";
-      l = "eza --icons --group-directories-first";
-      ll = "eza -l --icons --group-directories-first --git";
-      la = "eza -la --icons --group-directories-first --git";
-      tree = "eza --tree --level=2 --icons";
-      treea = "eza --tree --level=2 --icons -a";
-      lg = "eza -l --icons --group-directories-first --git --git-ignore";
-
-      # npm
-      npmd = "npm run dev -- -H 0.0.0.0";
-      npms = "npm run storybook -- --host 0.0.0.0";
-
-      # 勤怠打刻（Windows Python経由）
-      ki = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\個人用\\script\\kintai\\kintai_auto_checkin.py'\"";
-      ko = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\個人用\\script\\kintai\\kintai_auto_checkout.py'\"";
-    };
+    # 補完初期化（-C: セキュリティチェックスキップで高速化）
+    completionInit = "autoload -Uz compinit && compinit -C";
 
     # 履歴設定
     history = {
@@ -89,8 +55,29 @@
 
     # .zshrcに追加（メイン部分）
     initContent = ''
-      # compauditスキップ（起動高速化）
-      export ZSH_DISABLE_COMPFIX=true
+      # ======================
+      # Zsh options
+      # ======================
+      setopt INTERACTIVE_COMMENTS # コメント許可
+      setopt NO_BEEP              # ビープ音なし
+      setopt HIST_REDUCE_BLANKS   # ヒストリの余分な空白を削除
+      setopt HIST_VERIFY          # !展開を確認
+
+      # ======================
+      # Completion styles
+      # ======================
+      zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}'  # case-insensitive
+      zstyle ':completion:*' menu select
+      zstyle ':completion:*' list-colors "''${(s.:.)LS_COLORS}"
+
+      # ======================
+      # Key bindings（ターミナル基本操作）
+      # ======================
+      bindkey '^[[H'    beginning-of-line   # Home: 行頭へ
+      bindkey '^[[F'    end-of-line         # End: 行末へ
+      bindkey '^[[3~'   delete-char         # Delete: カーソル右の文字削除
+      bindkey '^[[1;5C' forward-word        # Ctrl+Right: 単語単位で右へ
+      bindkey '^[[1;5D' backward-word       # Ctrl+Left: 単語単位で左へ
 
       # fnm (Node version manager)
       eval "$(fnm env --use-on-cd)"
@@ -130,10 +117,14 @@
         export ZENO_GIT_CAT="bat --color=always"
         export ZENO_GIT_TREE="eza --tree"
         source ~/src/github.com/yuki-yano/zeno.zsh/zeno.zsh
-        bindkey '^ ' zeno-auto-snippet            # Ctrl+Space: スニペット展開
-        bindkey '^i' zeno-completion              # Tab: 補完
-        bindkey '^r' zeno-history-selection       # Ctrl-R: 履歴検索
-        bindkey '^x^s' zeno-insert-snippet        # Ctrl-X Ctrl-S: スニペット挿入
+        bindkey ' '    zeno-auto-snippet                 # Space: abbr展開
+        bindkey '^m'   zeno-auto-snippet-and-accept-line  # Enter: abbr展開+実行
+        bindkey '^x '  zeno-insert-space                  # Ctrl-X Space: 展開せずスペース挿入
+        bindkey '^x^m' accept-line                        # Ctrl-X Enter: 展開せず実行
+        bindkey '^x^z' zeno-toggle-auto-snippet           # Ctrl-X Ctrl-Z: 自動展開on/off切替
+        bindkey '^i'   zeno-completion                    # Tab: 補完
+        bindkey '^r'   zeno-history-selection             # Ctrl-R: 履歴検索
+        bindkey '^xx'  zeno-insert-snippet                # Ctrl-X X: スニペット選択挿入
       fi
 
       # fast-syntax-highlighting（zeno.zshの後に読み込む）
@@ -258,9 +249,9 @@
         fi
       }
 
-      # falias - エイリアス閲覧
+      # falias - zeno abbr一覧閲覧
       falias() {
-        alias | fzf --prompt="Alias> "
+        cat "$ZENO_HOME/config.yml" | grep -E '^\s+(keyword|snippet):' | paste - - | sed 's/keyword://;s/snippet:/→/' | fzf --prompt="Abbr> "
       }
 
       # gj - ghqリポジトリ選択→cd
@@ -304,12 +295,9 @@
       [[ -f ~/src/github.com/aya-215/life/scripts/j-functions.zsh ]] && source ~/src/github.com/aya-215/life/scripts/j-functions.zsh
 
       # ======================
-      # Tmux aliases & functions
+      # Tmux functions
       # ======================
-      alias ta='tmux attach -t'
-      alias tl='tmux list-sessions'
-      alias tks='tmux kill-session -t'
-      alias tkss='tmux kill-server'
+      # tmux aliases は zeno.zsh abbr に移行済み（config/zeno/config.yml）
 
       # tmux session picker (fzf) - プロジェクトディレクトリからセッション作成/切替
       tms() {
