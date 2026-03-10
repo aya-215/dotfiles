@@ -217,6 +217,16 @@ return {
   },
   config = function(_, opts)
     require("oil").setup(opts)
-    require("oil-git-status").setup()
+    require("oil-git-status").setup({
+      show_ignored = true,
+      symbols = {
+        index = {
+          ["!"] = "",
+        },
+        working_tree = {
+          ["!"] = "",
+        },
+      },
+    })
   end,
 }
