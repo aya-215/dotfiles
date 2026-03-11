@@ -7,7 +7,7 @@
 - dotfiles: Nix/Home Manager で管理。tmux.conf, .claude.json 等の設定ファイルは生成物なので直接編集しないこと。設定変更は必ず dotfiles 内の Nix ソースファイルを確認・編集すること。
 - GitHub CLI: 2つのアカウント（eBASE-Mori, aya-215）で認証済み。`gh` コマンドが認証エラーで失敗した場合は `gh auth switch` でアカウントを切り替えること。
 - SSH: デフォルトキーは`~/.ssh/id_ed25519_ebase`（eBASE-Mori）。aya-215用は`github-aya215`エイリアス（`~/.ssh/id_ed25519_aya215`）を使用。dotfilesリポジトリのremoteは`git@github-aya215:aya-215/dotfiles.git`に設定すること。push失敗時は`git remote set-url origin git@github-aya215:aya-215/dotfiles.git`で修正すること。
-- Git on /mnt/: `/mnt/` 配下のリポジトリで `index.lock` エラーが発生した場合、`index.lock` を削除して同じコマンドを即座にリトライすること（例: `rm /path/to/.git/index.lock && git ...`）。
+- Git on /mnt/: `/mnt/` 配下のリポジトリで `index.lock` エラーが発生した場合、`rm -f` で削除して同じコマンドを即座にリトライすること（例: `rm -f /path/to/.git/index.lock && git ...`）。
 
 ## コミュニケーションルール
 
