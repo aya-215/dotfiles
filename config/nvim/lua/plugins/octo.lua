@@ -57,5 +57,17 @@ return {
   config = function(_, opts)
     require('octo').setup(opts)
     vim.treesitter.language.register('markdown', 'octo')
+
+    -- review submit windowでもblink-cmp-gitのメンション補完を有効にする
+    vim.api.nvim_create_autocmd('BufWinEnter', {
+      pattern = '*',
+      callback = function(ev)
+        local bufnr = ev.buf
+        -- submit windowは syntax=octo だが filetype が未設定
+        if vim.bo[bufnr].syntax == 'octo' and vim.bo[bufnr].filetype == '' then
+          vim.bo[bufnr].filetype = 'octo'
+        end
+      end,
+    })
   end,
 }
