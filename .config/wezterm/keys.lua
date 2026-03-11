@@ -7,6 +7,21 @@ local act = wezterm.action
 
 local M = {}
 
+-- ========================================
+-- スマートペインナビゲーション
+-- 該当方向にWezTermペインがあればWezTerm内移動、
+-- なければキーを中のアプリ(tmux/nvim)に渡す
+-- ========================================
+local function smart_pane_navigate(direction, key)
+  return wezterm.action_callback(function(win, pane)
+    if pane:tab():get_pane_direction(direction) then
+      win:perform_action(act.ActivatePaneDirection(direction), pane)
+    else
+      win:perform_action(act.SendKey { key = key, mods = 'ALT' }, pane)
+    end
+  end)
+end
+
 function M.setup(config)
   -- ========================================
   -- Leaderキー設定 (tmux/Vim風)
@@ -156,6 +171,15 @@ function M.setup(config)
       mods = 'LEADER',
       action = act.QuickSelect
     },
+
+    -- ========================================
+    -- スマートペイン移動 (Alt+hjkl)
+    -- WezTermペインがあればWezTerm内移動、なければtmux/nvimへ
+    -- ========================================
+    { key = 'h', mods = 'ALT', action = smart_pane_navigate('Left', 'h') },
+    { key = 'j', mods = 'ALT', action = smart_pane_navigate('Down', 'j') },
+    { key = 'k', mods = 'ALT', action = smart_pane_navigate('Up', 'k') },
+    { key = 'l', mods = 'ALT', action = smart_pane_navigate('Right', 'l') },
 
     -- ========================================
     -- タブ直接移動 (Alt+数字)
