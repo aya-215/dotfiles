@@ -284,6 +284,17 @@ function M.setup(config)
       mods = 'CTRL|SHIFT',
       action = act.ShowDebugOverlay
     },
+
+    -- ========================================
+    -- Shift+Enter → 改行 (Claude Code用)
+    -- ターミナルはデフォルトでShift+EnterとEnterを区別できないため、
+    -- CSI uシーケンスを明示的に送信する
+    -- ========================================
+    {
+      key = 'Enter',
+      mods = 'SHIFT',
+      action = act.SendString('\x1b[13;2u')
+    },
   }
 
   -- ========================================
