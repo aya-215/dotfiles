@@ -121,3 +121,9 @@ ShowTip(msg) {
 +l::Send("{F6}")
 +h::Send("+{F6}")
 #HotIf
+
+; ctrl + shift + hjklでwindowの移動
+<^<+h::Send "#{Left}"
+<^<+j::Send "#{Down}"
+<^<+k::Send "#{Up}"
+<^<+l::Send "#{Right}"
