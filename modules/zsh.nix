@@ -125,6 +125,7 @@
         bindkey '^i'   zeno-completion                    # Tab: 補完
         bindkey '^r'   zeno-history-selection             # Ctrl-R: 履歴検索
         bindkey '^xx'  zeno-insert-snippet                # Ctrl-X X: スニペット選択挿入
+        bindkey '^xn'  zeno-snippet-next-placeholder     # Ctrl-X N: 次のプレースホルダーへジャンプ
       fi
 
       # fast-syntax-highlighting（zeno.zshの後に読み込む）
