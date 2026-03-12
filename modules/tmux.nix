@@ -22,6 +22,8 @@
         plugin = resurrect;
         extraConfig = ''
           set -g @resurrect-strategy-nvim 'session'
+          set -g @resurrect-save 'W'
+          set -g @resurrect-restore 'E'
         '';
       }
       {
