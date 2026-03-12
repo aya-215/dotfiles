@@ -121,9 +121,11 @@ git commit -m "好きなメッセージ"
 ### Step 5: push（リモートに共有する）
 
 ```bash
-git push origin [自分のブランチ名]
-# 例: git push origin tanaka
+git push -u origin [自分のブランチ名]
+# 例: git push -u origin tanaka
 ```
+
+`-u` をつけると次回から `git push` だけで送れるようになる。
 
 > **つまずきポイント**
 > 認証エラーが出たら → GitBucketのユーザー名・パスワードを確認。
