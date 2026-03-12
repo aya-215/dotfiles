@@ -54,6 +54,11 @@
     ];
 
     extraConfig = ''
+      # Extended keys (Shift+Enter等の修飾キー付きキーをCSI uで転送)
+      set -s extended-keys on
+      set -as terminal-features 'tmux-256color:extkeys'
+      bind-key -n S-Enter send-keys Escape "[13;2u"
+
       # vim-tmux-navigatorの残骸バインド除去 (resurrectセッション対策)
       unbind -T root C-h
       unbind -T root C-j
