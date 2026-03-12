@@ -17,16 +17,8 @@ snippets:
     snippet: git push origin {{branch}}
 
   # エディタ
-  - name: nvim (vim)
-    keyword: vim
-    snippet: nvim
-
   - name: nvim (vi)
     keyword: vi
-    snippet: nvim
-
-  - name: nvim (v)
-    keyword: v
     snippet: nvim
 
   # CLI
@@ -53,17 +45,21 @@ snippets:
     keyword: ls
     snippet: eza --icons --group-directories-first
 
-  - name: ls (l)
-    keyword: l
-    snippet: eza --icons --group-directories-first
-
-  - name: ls long
-    keyword: ll
-    snippet: eza -l --icons --group-directories-first --git
-
   - name: ls all
     keyword: la
-    snippet: eza -la --icons --group-directories-first --git
+    snippet: eza -a --icons --group-directories-first
+
+  - name: ls by time
+    keyword: lt
+    snippet: eza -l --sort=time --icons --group-directories-first
+
+  - name: ls by size
+    keyword: lz
+    snippet: eza -l --sort=size --icons --group-directories-first
+
+  - name: ls git-ignore
+    keyword: lg
+    snippet: eza -l --icons --group-directories-first --git --git-ignore
 
   - name: tree
     keyword: tree
@@ -72,10 +68,6 @@ snippets:
   - name: tree all
     keyword: treea
     snippet: eza --tree --level=2 --icons -a
-
-  - name: ls git-ignore
-    keyword: lg
-    snippet: eza -l --icons --group-directories-first --git --git-ignore
 
   # npm
   - name: npm dev
