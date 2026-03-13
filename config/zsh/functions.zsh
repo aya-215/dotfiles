@@ -136,9 +136,30 @@ fenv() {
   fi
 }
 
-# falias - zeno abbr一覧閲覧
+# falias - zeno abbr + カスタム関数の統合検索（fzfプレビュー付き）
 falias() {
-  grep -E '^\s+(keyword|snippet):' "$ZENO_HOME/config.yml" | paste - - | sed 's/keyword://;s/snippet:/→/' | fzf --prompt="Abbr> "
+  {
+    # zeno abbr一覧（[abbr] keyword → snippet 形式）
+    grep -E '^\s+(keyword|snippet):' "$ZENO_HOME/config.yml" \
+      | paste - - \
+      | sed 's/^\s*keyword:\s*/[abbr] /; s/\s*snippet:\s*/ → /'
+
+    # カスタム関数一覧（[func] name - description 形式）
+    grep -E '^# [a-zA-Z_]+ - ' ~/.dotfiles/config/zsh/functions.zsh \
+      | sed 's/^# /[func] /'
+  } | fzf \
+      --prompt="Commands> " \
+      --preview '
+        entry="{}"
+        if echo "$entry" | grep -q "^\[func\]"; then
+          fn_name=$(echo "$entry" | sed "s/\[func\] //; s/ -.*//" | xargs)
+          functions "$fn_name" 2>/dev/null || echo "Function not found: $fn_name"
+        else
+          abbr_key=$(echo "$entry" | sed "s/\[abbr\] //; s/ →.*//" | xargs)
+          grep -A2 "keyword: $abbr_key" "$ZENO_HOME/config.yml" 2>/dev/null
+        fi
+      ' \
+      --preview-window=right:50%
 }
 
 # ======================
