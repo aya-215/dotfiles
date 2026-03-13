@@ -136,8 +136,8 @@ fenv() {
   fi
 }
 
-# falias - zeno abbr + カスタム関数の統合検索（fzfプレビュー付き）
-falias() {
+# fh / falias - zeno abbr + カスタム関数の統合検索（fzfプレビュー付き）
+fh() {
   {
     # zeno abbr一覧（[abbr] keyword → snippet 形式）
     grep -E '^\s+(keyword|snippet):' "$ZENO_HOME/config.yml" \
