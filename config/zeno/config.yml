@@ -32,6 +32,10 @@ snippets:
     keyword: glo
     snippet: git log --oneline -20
 
+  - name: lazygit
+    keyword: lzg
+    snippet: lazygit
+
   # Git関連のスニペット (Weekly)
   - name: git fetch prune
     keyword: gf
