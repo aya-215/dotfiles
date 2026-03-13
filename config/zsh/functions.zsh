@@ -192,7 +192,7 @@ tsw() {
   local session
   session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | \
     fzf --prompt="Switch> " \
-        --preview '~/.dotfiles/scripts/tmux-preview-panes.sh {}' \
+        --preview 'tmux capture-pane -pt {} -e -p' \
         --preview-window 'right:60%')
   [[ -n $session ]] && tmux switch-client -t "$session"
 }
@@ -202,7 +202,7 @@ tsd() {
   local session
   session=$(tmux list-sessions -F "#{session_name}" 2>/dev/null | grep -v "^$(tmux display-message -p '#S')$" | \
     fzf --prompt="Kill> " \
-        --preview '~/.dotfiles/scripts/tmux-preview-panes.sh {}' \
+        --preview 'tmux capture-pane -pt {} -e -p' \
         --preview-window 'right:60%')
   [[ -n $session ]] && tmux kill-session -t "$session" && echo "Killed session: $session"
 }
