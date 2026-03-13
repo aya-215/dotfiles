@@ -11,5 +11,5 @@ PROMPT="${1:-おはよう}"
 TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
 echo "[$TIMESTAMP] Sending: $PROMPT" >> "$LOG_FILE"
-claude -p "$PROMPT" >> "$LOG_FILE" 2>&1
+/home/aya/.local/bin/claude -p "$PROMPT" >> "$LOG_FILE" 2>&1
 echo "[$TIMESTAMP] Done" >> "$LOG_FILE"
