@@ -52,7 +52,6 @@
     ],
     "defaultMode": "plan"
   },
-  "model": "opus",
   "hooks": {
     "SessionStart": [
       {
