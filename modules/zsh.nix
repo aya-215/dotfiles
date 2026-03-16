@@ -108,6 +108,8 @@
         export ZENO_GIT_CAT="bat --color=always"
         export ZENO_GIT_TREE="eza --tree"
         source ~/src/github.com/yuki-yano/zeno.zsh/zeno.zsh
+        # zeno の Enter ウィジェットをサジェストクリア対象に登録（表示バグ防止）
+        ZSH_AUTOSUGGEST_CLEAR_WIDGETS+=(zeno-auto-snippet-and-accept-line)
         bindkey ' '    zeno-auto-snippet                 # Space: abbr展開
         bindkey '^m'   zeno-auto-snippet-and-accept-line  # Enter: abbr展開+実行
         bindkey '^x '  zeno-insert-space                  # Ctrl-X Space: 展開せずスペース挿入
