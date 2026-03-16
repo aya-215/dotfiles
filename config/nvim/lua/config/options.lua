@@ -58,8 +58,15 @@ end
 
 -- ターミナル透過設定
 vim.api.nvim_create_autocmd("TermOpen", {
-	callback = function()
-		vim.cmd("setlocal winblend=15")
+	callback = function(ev)
+		-- lazygitバッファはwinblend=0が必要なので除外（filetype設定が遅延するためscheduleで確認）
+		vim.schedule(function()
+			if vim.bo[ev.buf].filetype == 'lazygit' then
+				vim.wo.winblend = 0
+				return
+			end
+			vim.cmd("setlocal winblend=15")
+		end)
 		-- ターミナル背景を透明に設定
 		vim.cmd("highlight Terminal guibg=NONE ctermbg=NONE")
 		vim.cmd("highlight TerminalNormal guibg=NONE ctermbg=NONE")
