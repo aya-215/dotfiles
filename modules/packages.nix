@@ -13,6 +13,7 @@
     jq         # JSON処理
     lazygit    # Git TUI
     yazi       # ターミナルファイルマネージャー
+    poppler-utils  # PDFプレビュー用 (pdftoppm)
     zoxide     # スマートcd
     nb         # ノート管理
     delta      # Git diff viewer
