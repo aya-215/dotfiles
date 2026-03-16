@@ -69,6 +69,8 @@
       set -g allow-passthrough on
       set -ga update-environment TERM
       set -ga update-environment TERM_PROGRAM
+      set -ga update-environment WEZTERM_UNIX_SOCKET
+      set -ga update-environment WEZTERM_PANE
 
       # True Color対応 (WezTerm + WSL)
       set -ag terminal-overrides ",xterm-256color:RGB"
