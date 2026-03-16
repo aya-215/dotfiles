@@ -201,5 +201,16 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "plansDirectory": "./.claude/plans"
+  "plansDirectory": "./.claude/plans",
+  "mcpServers": {
+    "gitbucket": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/aya/.dotfiles/scripts/gitbucket-mcp",
+        "run",
+        "server.py"
+      ]
+    }
+  }
 }

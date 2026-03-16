@@ -11,6 +11,10 @@ PowerShell/secrets.ps1
 # WezTerm environment-specific settings
 .config/wezterm/.env
 
+# GitBucket MCP secrets and generated files
+scripts/gitbucket-mcp/.env.local
+scripts/gitbucket-mcp/.venv/
+
 # Home Manager managed directories (config source is in config/)
 .config/nvim/
 .config/lazygit/
