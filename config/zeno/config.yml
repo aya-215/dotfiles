@@ -103,14 +103,6 @@ snippets:
     snippet: ~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh
 
   # eza (ls replacement)
-  - name: ls
-    keyword: ls
-    snippet: eza --icons --group-directories-first
-
-  - name: ls all
-    keyword: la
-    snippet: eza -a --icons --group-directories-first
-
   - name: ls by time
     keyword: lt
     snippet: eza -l --sort=time --icons --group-directories-first

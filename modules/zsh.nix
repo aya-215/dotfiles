@@ -43,6 +43,8 @@
     shellAliases = {
       ki = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\\\個人用\\\\script\\\\kintai\\\\kintai_auto_checkin.py'\"";
       ko = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\\\個人用\\\\script\\\\kintai\\\\kintai_auto_checkout.py'\"";
+      ls = "eza --icons --group-directories-first";
+      la = "eza -a --icons --group-directories-first";
     };
 
     # 補完初期化（-C: セキュリティチェックスキップで高速化）
