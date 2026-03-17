@@ -40,8 +40,10 @@
       }
     ];
 
-    # エイリアスは zeno.zsh abbr に移行済み（config/zeno/config.yml）
-    shellAliases = {};
+    shellAliases = {
+      ki = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\\\個人用\\\\script\\\\kintai\\\\kintai_auto_checkin.py'\"";
+      ko = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\\\個人用\\\\script\\\\kintai\\\\kintai_auto_checkout.py'\"";
+    };
 
     # 補完初期化（-C: セキュリティチェックスキップで高速化）
     completionInit = "autoload -Uz compinit && compinit -C";

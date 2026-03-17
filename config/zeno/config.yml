@@ -140,15 +140,6 @@ snippets:
     keyword: npms
     snippet: npm run storybook -- --host 0.0.0.0
 
-  # 勤怠打刻
-  - name: kintai in
-    keyword: ki
-    snippet: /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "python 'D:\\個人用\\script\\kintai\\kintai_auto_checkin.py'"
-
-  - name: kintai out
-    keyword: ko
-    snippet: /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command "python 'D:\\個人用\\script\\kintai\\kintai_auto_checkout.py'"
-
   # tmux
   - name: tmux attach
     keyword: ta
