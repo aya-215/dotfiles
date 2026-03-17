@@ -45,6 +45,11 @@
       ko = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -Command \"python 'D:\\\\個人用\\\\script\\\\kintai\\\\kintai_auto_checkout.py'\"";
       ls = "eza --icons --group-directories-first";
       la = "eza -a --icons --group-directories-first";
+      lt = "eza -l --sort=time --icons --group-directories-first";
+      lz = "eza -l --sort=size --icons --group-directories-first";
+      lg = "eza -l --icons --group-directories-first --git --git-ignore";
+      tree = "eza --tree --level=2 --icons";
+      treea = "eza --tree --level=2 --icons -a";
     };
 
     # 補完初期化（-C: セキュリティチェックスキップで高速化）

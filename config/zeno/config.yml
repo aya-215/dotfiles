@@ -102,27 +102,6 @@ snippets:
     keyword: bak
     snippet: ~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh
 
-  # eza (ls replacement)
-  - name: ls by time
-    keyword: lt
-    snippet: eza -l --sort=time --icons --group-directories-first
-
-  - name: ls by size
-    keyword: lz
-    snippet: eza -l --sort=size --icons --group-directories-first
-
-  - name: ls git-ignore
-    keyword: lg
-    snippet: eza -l --icons --group-directories-first --git --git-ignore
-
-  - name: tree
-    keyword: tree
-    snippet: eza --tree --level=2 --icons
-
-  - name: tree all
-    keyword: treea
-    snippet: eza --tree --level=2 --icons -a
-
   # npm
   - name: npm dev
     keyword: npmd
