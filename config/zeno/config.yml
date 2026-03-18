@@ -92,6 +92,10 @@ snippets:
     keyword: cw
     snippet: claude-watch
 
+  - name: glauncher
+    keyword: gla
+    snippet: glauncher
+
   # gh-dash
   - name: gh-dash
     keyword: ghd
