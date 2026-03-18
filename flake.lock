@@ -1,5 +1,25 @@
 {
   "nodes": {
+    "glauncher": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1773743920,
+        "narHash": "sha256-hKmWZKdAUTpxZg1gH/lOawrXnL6R57E/wAHIaekLzzo=",
+        "ref": "refs/heads/main",
+        "rev": "ac7aa4ca82cb3a80ceb99020ddb07e1aa5840c98",
+        "revCount": 22,
+        "type": "git",
+        "url": "ssh://git@github-aya215/aya-215/glauncher"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github-aya215/aya-215/glauncher"
+      }
+    },
     "home-manager": {
       "inputs": {
         "nixpkgs": [
@@ -38,6 +58,7 @@
     },
     "root": {
       "inputs": {
+        "glauncher": "glauncher",
         "home-manager": "home-manager",
         "nixpkgs": "nixpkgs"
       }

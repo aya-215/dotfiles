@@ -8,9 +8,14 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    glauncher = {
+      url = "git+ssh://git@github-aya215/aya-215/glauncher";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs, home-manager }:
+  outputs = { self, nixpkgs, home-manager, glauncher }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
@@ -19,10 +24,13 @@
       homeConfigurations."aya" = home-manager.lib.homeManagerConfiguration {
         inherit pkgs;
 
+        extraSpecialArgs = {
+          inherit glauncher;
+        };
+
         modules = [
           ./home.nix
         ];
       };
     };
 }
-
