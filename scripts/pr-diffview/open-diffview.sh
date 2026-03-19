@@ -13,28 +13,55 @@ HOST="${2:?ホストが必要}"
 PR_NUMBER="${3:?PR番号が必要}"
 HEAD_REF="${4:-}"
 
-TMUX_SOCKET="/tmp/tmux-$(id -u)/default"
+# tmuxソケットを自動検出（WSLg対応）
+_find_tmux_socket() {
+    local uid
+    uid=$(id -u)
+    # WSLg環境: /mnt/wslg/runtime-dir/tmux-{uid}/default
+    if [[ -S "/mnt/wslg/runtime-dir/tmux-${uid}/default" ]]; then
+        echo "/mnt/wslg/runtime-dir/tmux-${uid}/default"
+        return
+    fi
+    # 通常環境: /tmp/tmux-{uid}/default
+    if [[ -S "/tmp/tmux-${uid}/default" ]]; then
+        echo "/tmp/tmux-${uid}/default"
+        return
+    fi
+    # フォールバック: 最初に見つかったソケット
+    find "/mnt/wslg/runtime-dir/tmux-${uid}" "/tmp/tmux-${uid}" \
+        -maxdepth 1 -type s 2>/dev/null | head -1
+}
 
-if [[ ! -S "$TMUX_SOCKET" ]]; then
-    echo "Error: tmuxソケットが見つかりません: $TMUX_SOCKET" >&2
+TMUX_SOCKET=$(_find_tmux_socket)
+
+if [[ -z "$TMUX_SOCKET" ]]; then
+    echo "Error: tmuxソケットが見つかりません" >&2
     exit 1
 fi
 
 REPO_NAME=$(basename "$REPO_PATH")
+OWNER=$(basename "$(dirname "$REPO_PATH")")
+HOST_OWNER_REPO="${OWNER}/${REPO_NAME}"
 WINDOW_NAME="${REPO_NAME}#${PR_NUMBER}"
 
 # tmuxの新しいウィンドウでチェックアウト＋DiffView起動
 tmux -S "$TMUX_SOCKET" new-window -c "$REPO_PATH" -n "$WINDOW_NAME" "
     set -euo pipefail
     export PATH=\"$HOME/.nix-profile/bin:/usr/local/bin:/usr/bin:/bin:\$PATH\"
+    HOST_OWNER_REPO='$HOST_OWNER_REPO'
     cd '$REPO_PATH'
 
     if [[ '$HOST' == 'github' ]]; then
         # GitHubの場合: worktreeチェックまたはgh pr checkout
-        if [[ -n '$HEAD_REF' ]]; then
-            WT=\$(git worktree list --porcelain | grep -B2 \"^branch refs/heads/$HEAD_REF\$\" | grep '^worktree ' | sed 's/^worktree //' || true)
-        else
-            WT=''
+        # PRのhead_refをgh APIで取得（引数がnullでも対応）
+        _HEAD_REF='$HEAD_REF'
+        if [[ -z \"\$_HEAD_REF\" ]]; then
+            _HEAD_REF=\$(gh pr view '$PR_NUMBER' --repo '$HOST_OWNER_REPO' --json headRefName -q '.headRefName' 2>/dev/null || true)
+        fi
+
+        WT=''
+        if [[ -n \"\$_HEAD_REF\" ]]; then
+            WT=\$(git worktree list --porcelain | grep -B2 \"^branch refs/heads/\${_HEAD_REF}\$\" | grep '^worktree ' | sed 's/^worktree //' || true)
         fi
 
         if [[ -n \"\$WT\" ]]; then
@@ -64,5 +91,5 @@ tmux -S "$TMUX_SOCKET" new-window -c "$REPO_PATH" -n "$WINDOW_NAME" "
 
     BASE=\$(git merge-base HEAD origin/HEAD 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || git merge-base HEAD origin/master 2>/dev/null)
     nvim -c \":DiffviewOpen \$BASE\"
-    bash --login
+    exec zsh
 "

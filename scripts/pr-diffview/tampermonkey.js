@@ -133,17 +133,17 @@
       });
     });
 
-    // GitHub: .gh-header-actions
-    const ghActions = document.querySelector('.gh-header-actions');
-    if (ghActions) {
-      ghActions.prepend(btn);
+    // GitHub (新UI): prc-PageHeader-Actions
+    const ghActionsNew = document.querySelector('[class*="prc-PageHeader-Actions"]');
+    if (ghActionsNew) {
+      ghActionsNew.prepend(btn);
       return true;
     }
 
-    // GitHub (新UI): [data-testid="pr-header-actions"]
-    const ghActionsNew = document.querySelector('[data-testid="pr-header-actions"]');
-    if (ghActionsNew) {
-      ghActionsNew.prepend(btn);
+    // GitHub (旧UI): .gh-header-actions
+    const ghActions = document.querySelector('.gh-header-actions');
+    if (ghActions) {
+      ghActions.prepend(btn);
       return true;
     }
 
