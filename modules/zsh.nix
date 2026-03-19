@@ -163,6 +163,18 @@
       if [[ -z "$TMUX" ]] && [[ $- == *i* ]] && [[ "$TERM_PROGRAM" != "vscode" ]]; then
         tmux attach 2>/dev/null || tmux new-session -s main
       fi
+
+      # ======================
+      # pr-diffview サーバー自動起動（tmuxペイン0のみ）
+      # ======================
+      if [[ -n "$TMUX" ]] && [[ "$(tmux display-message -p '#P')" == "0" ]]; then
+        if ! curl -sf http://localhost:8765/health &>/dev/null; then
+          mkdir -p ~/.local/log
+          (cd ~/.dotfiles/scripts/pr-diffview && \
+            uv run uvicorn server:app --host 127.0.0.1 --port 8765 \
+              --log-level warning >> ~/.local/log/pr-diffview.log 2>&1 &)
+        fi
+      fi
     '';
   };
 }
