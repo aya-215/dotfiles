@@ -134,8 +134,8 @@ return {
         },
       })
 
-      -- fzf-native拡張を読み込み (cmake未インストールのためコメントアウト)
-      -- telescope.load_extension("fzf")
+      -- fzf-native拡張を読み込み
+      telescope.load_extension("fzf")
     end,
   },
 }

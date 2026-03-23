@@ -36,6 +36,9 @@
     zsh-you-should-use
     zsh-autosuggestions
 
+    # ビルドツール
+    cmake          # telescope-fzf-native.nvim のビルドに必要
+
     # Nix開発ツール
     nixpkgs-fmt    # フォーマッタ
     statix         # Linter
