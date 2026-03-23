@@ -40,7 +40,8 @@ dotfiles/
 │   ├── lazygit/          # → Home Managerがシンボリックリンク作成
 │   └── starship.toml     # → Home Managerがシンボリックリンク作成
 ├── docs/                  # ドキュメント
-│   └── nix-guide/        # Nix学習ガイド
+│   ├── nix-guide/        # Nix学習ガイド
+│   └── nvim-plugins/     # Neovimプラグインドキュメント
 ├── PowerShell/            # PowerShell設定（Windows用）
 │   ├── Modules/          # PowerShellモジュール
 │   └── Scripts/          # PowerShellスクリプト
@@ -283,7 +284,7 @@ nb-daily-view       # 日報閲覧
 
 - **プラグイン管理**: lazy.nvim
 - **LSP**: nvim-lspconfig + Mason
-- **補完**: nvim-cmp
+- **補完**: blink.cmp
 - **Git統合**: gitsigns.nvim
 - **ファイラー**: neo-tree.nvim
 
