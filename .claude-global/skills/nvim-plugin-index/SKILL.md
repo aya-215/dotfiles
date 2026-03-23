@@ -38,12 +38,12 @@ ls /home/aya/.dotfiles/docs/nvim-plugins/*.md | grep -v '_template\|INDEX'
 
 | カテゴリ | 対象プラグイン（例） |
 |---------|-------------------|
-| **Git** | gitsigns, lazygit, diffview |
+| **Git** | gitsigns, lazygit, diffview, octo |
 | **ファイル操作** | oil, neo-tree |
 | **検索・ナビゲーション** | telescope, flash |
 | **LSP・補完** | nvim-lspconfig, blink-cmp, mason, conform, render-markdown |
 | **UI・表示** | lualine, barbar, noice, colorscheme, nvim-web-devicons, undo-glow, snacks |
-| **エディタ操作・ユーティリティ** | nvim-treesitter, mini-pairs, which-key, persistence, vim-auto-save, neoconf, claudecode |
+| **エディタ操作・ユーティリティ** | nvim-treesitter, mini-pairs, smart-splits, which-key, persistence, vim-auto-save, neoconf, claudecode |
 
 **新規プラグインの分類ルール:**
 - Git 操作・差分・blame → Git
