@@ -9,6 +9,15 @@
 - SSH: デフォルトキーは`~/.ssh/id_ed25519_ebase`（eBASE-Mori）。aya-215用は`github-aya215`エイリアス（`~/.ssh/id_ed25519_aya215`）を使用。dotfilesリポジトリのremoteは`git@github-aya215:aya-215/dotfiles.git`に設定すること。push失敗時は`git remote set-url origin git@github-aya215:aya-215/dotfiles.git`で修正すること。
 - Git on /mnt/: `/mnt/` 配下のリポジトリで `index.lock` エラーが発生した場合、`rm -f` で削除して同じコマンドを即座にリトライすること（例: `rm -f /path/to/.git/index.lock && git ...`）。
 
+## Git操作のツール選択
+
+**必ず `git remote -v` でリモートURLを確認してからツールを選ぶこと。**
+
+| リモートURL | 使うツール |
+|---|---|
+| `github.com` | `gh` コマンド（GitHub CLI） |
+| 社内GitBucket URL | `mcp__gitbucket__*` ツール |
+
 ## コミュニケーションルール
 
 不明点がある場合は、解消されるまで `AskUserQuestion` で再帰的に質問すること。
