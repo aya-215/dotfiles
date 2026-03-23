@@ -69,35 +69,50 @@ dot_config/wezterm
 
 ### Neovim設定共有の仕組み
 
-`.chezmoitemplates/nvim/` に設定ファイル本体を置き、OS別ディレクトリから参照する。
-編集は `.chezmoitemplates/nvim/` のみ行えばWSL/Windows両方に反映される。
+Neovim設定は多数のファイルを持つため、`.chezmoitemplates/` によるファイル単位のテンプレート参照は現実的でない。代わりに以下の方針を採用する。
 
-```
-# AppData/Local/nvim/init.lua.tmpl（Windows向け）
-{{ template "nvim/init.lua" . }}
+**方針: `run_once_` スクリプトによるシンボリックリンク作成**
 
-# dot_config/nvim/init.lua.tmpl（Linux/WSL向け）
-{{ template "nvim/init.lua" . }}
+chezmoiの `run_once_` スクリプトでWindows側に `AppData\Local\nvim` → `chezmoi/.chezmoitemplates/nvim/` へのシンボリックリンクを作成する。
+
+```powershell
+# chezmoi/run_once_setup-nvim-symlink.ps1.tmpl（Windowsのみ実行）
+{{- if eq .chezmoi.os "windows" -}}
+$nvimConfig = "$env:LOCALAPPDATA\nvim"
+$source = "{{ .chezmoi.sourceDir }}\.chezmoitemplates\nvim"
+if (-not (Test-Path $nvimConfig)) {
+    New-Item -ItemType SymbolicLink -Path $nvimConfig -Target $source
+}
+{{- end -}}
 ```
+
+WSL側は `neovim.nix` の `mkOutOfStoreSymlink` が `~/.dotfiles/chezmoi/.chezmoitemplates/nvim` を指すよう更新する（移行時に対応）。
 
 ### `bootstrap/install.ps1`
 
 ```powershell
 #!/usr/bin/env pwsh
 # Windows初期セットアップスクリプト
-# 使い方: .\bootstrap\install.ps1
+# 使い方: iwr https://raw.githubusercontent.com/aya-215/dotfiles/main/bootstrap/install.ps1 | iex
+#      または: git clone してから .\bootstrap\install.ps1
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 Write-Host "=== dotfiles Windows セットアップ ===" -ForegroundColor Cyan
 
-# 1. wingetでchezmoiをインストール
+# 1. リポジトリのクローン（未クローンの場合）
+$dotfilesPath = "$env:USERPROFILE\.dotfiles"
+if (-not (Test-Path $dotfilesPath)) {
+    Write-Host "dotfilesをクローン中..." -ForegroundColor Yellow
+    git clone git@github-aya215:aya-215/dotfiles.git $dotfilesPath
+}
+
+# 2. wingetでchezmoiをインストール
 Write-Host "chezmoiをインストール中..." -ForegroundColor Yellow
 winget install twpayne.chezmoi --silent
 
-# 2. chezmoiでdotfilesを適用
-$dotfilesPath = Split-Path -Parent $PSScriptRoot
+# 3. chezmoiでdotfilesを適用
 Write-Host "dotfilesを適用中..." -ForegroundColor Yellow
 chezmoi init --source "$dotfilesPath\chezmoi" --apply
 
@@ -109,9 +124,11 @@ Write-Host "セットアップ完了！" -ForegroundColor Green
 | 既存パス | 移行先 | 対応 |
 |---------|--------|------|
 | `PowerShell/Microsoft.PowerShell_profile.ps1` | `chezmoi/Documents/PowerShell/` | 移動 |
+| `PowerShell/Modules/` | `chezmoi/Documents/PowerShell/Modules/` | 移動（PSFzf等のモジュール） |
+| `PowerShell/kubectl_completion.ps1` | `chezmoi/Documents/PowerShell/` | 移動 |
 | `AutoHotkey/AutoHotkey.ahk` | `chezmoi/AutoHotkey/` | 移動 |
-| `.config/wezterm/` | `chezmoi/dot_config/wezterm/` | コピー（WSL側はNixで別管理） |
-| `.config/nvim/` | `chezmoi/.chezmoitemplates/nvim/` | 移動（共通テンプレート化） |
+| `config/wezterm/` | `chezmoi/dot_config/wezterm/` | コピー（WSL側はNixで別管理） |
+| `config/nvim/` | `chezmoi/.chezmoitemplates/nvim/` | 移動（共通テンプレート化）、`neovim.nix`のパスも更新 |
 
 ## 推奨追加ツール
 
@@ -128,4 +145,6 @@ Write-Host "セットアップ完了！" -ForegroundColor Green
 - `chezmoi init` は Windows 側で実行する（`%USERPROFILE%` パスが必要）
 - WezTerm設定は Windows/WSL で共通化できるが、WSL側はNixで管理しているため chezmoi 側は Windows専用にする
 - 既存の `PowerShell/` `AutoHotkey/` ディレクトリは移行後に削除する
-- Neovim設定の `.chezmoitemplates/` 化により、既存の `.config/nvim/` はWSL側ではNixの `home.nix` でのシンボリックリンク設定が不要になる可能性あり（要確認）
+- Neovim設定を `chezmoi/.chezmoitemplates/nvim/` に移動後、`modules/neovim.nix` の `mkOutOfStoreSymlink` のパスを `~/.dotfiles/chezmoi/.chezmoitemplates/nvim` に更新すること
+- OneDriveが有効な環境では `Documents/PowerShell/` パスが `OneDrive\Documents\PowerShell\` になる場合がある。その場合はchezmoi適用後にPowerShell profileのパスを確認すること（`$PROFILE` で確認可能）
+- 初回セットアップ時はSSHキー設定が先に必要（`github-aya215` エイリアスを使用）。SSHキーがない場合は `install.ps1` のgit cloneをHTTPS URLに変更すること
