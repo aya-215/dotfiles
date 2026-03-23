@@ -30,7 +30,6 @@
 
     # Python
     python3    # Python 3.x
-    pipx       # Pythonツール管理
 
     # Oh My Zsh プラグイン
     zsh-you-should-use
