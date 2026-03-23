@@ -1,0 +1,11 @@
+# Windows専用ファイル（Linux/WSLでは無視）
+{{- if ne .chezmoi.os "windows" }}
+AppData
+Documents/PowerShell
+AutoHotkey
+{{- end }}
+# WezTerm設定はWindowsのみchezmoi管理（WSL側はNixで管理）
+# dot_config/wezterm はWindowsでのみ適用、Linuxでは無視
+{{- if ne .chezmoi.os "windows" }}
+dot_config/wezterm
+{{- end }}

@@ -1,0 +1,10 @@
+{{- $isWSL := false }}
+{{- if eq .chezmoi.os "linux" }}
+  {{- if contains "microsoft" (lower .chezmoi.kernel.osrelease) }}
+    {{- $isWSL = true }}
+  {{- end }}
+{{- end }}
+
+[data]
+  isWSL = {{ $isWSL }}
+  isWindows = {{ eq .chezmoi.os "windows" }}
