@@ -26,7 +26,6 @@
     fnm        # Node.jsバージョン管理
     deno       # Deno JavaScript runtime
     bun        # Bun JavaScript runtime
-    go         # Go言語
 
     # Python
     python3    # Python 3.x
