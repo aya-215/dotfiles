@@ -428,6 +428,68 @@ git push
 
 ---
 
+## Task 8: WSL側 — PowerShell profileにpwsh-abbrを追加
+
+> zsh側のzeno.zshと同等のabbreviation機能をPowerShellに導入する。
+
+**Files:**
+- Modify: `PowerShell/Microsoft.PowerShell_profile.ps1`
+- Modify: `bootstrap/install.ps1`（Task 5で作成済み）
+
+- [ ] **Step 1: `bootstrap/install.ps1` に `Install-Module pwsh-abbr` を追加する**
+
+Task 5で作成した `bootstrap/install.ps1` の `chezmoi init` の前に以下を追加：
+
+```powershell
+# pwsh-abbrをインストール（未インストールの場合のみ）
+if (-not (Get-Module -ListAvailable -Name pwsh-abbr)) {
+    Write-Host "pwsh-abbrをインストール中..." -ForegroundColor Yellow
+    Install-Module pwsh-abbr -Scope CurrentUser -Force
+}
+```
+
+- [ ] **Step 2: PowerShell profileの末尾にabbr設定を追加する**
+
+`PowerShell/Microsoft.PowerShell_profile.ps1` の末尾に以下を追加：
+
+```powershell
+# ======================
+# Abbreviations (pwsh-abbr)
+# スペース/Enterで展開される（zsh zeno.zsh相当）
+# ======================
+if (Get-Module -ListAvailable -Name pwsh-abbr) {
+    Import-Module pwsh-abbr
+
+    # Git（既存fzf関数との重複を回避）
+    # gs=git stash fzf関数、ga=git add fzf関数、gco=git checkout fzf関数のため別名使用
+    New-Abbreviation -Name gst  -Value 'git status'
+    New-Abbreviation -Name gd   -Value 'git diff'
+    New-Abbreviation -Name gp   -Value 'git push'
+    New-Abbreviation -Name gpl  -Value 'git pull'
+    New-Abbreviation -Name gcm  -Value 'git commit -m'
+    New-Abbreviation -Name gaa  -Value 'git add -A'
+
+    # chezmoi
+    New-Abbreviation -Name cza  -Value 'chezmoi apply --source .\chezmoi'
+    New-Abbreviation -Name czd  -Value 'chezmoi diff --source .\chezmoi'
+
+    # ナビゲーション
+    New-Abbreviation -Name ..   -Value 'cd ..'
+    New-Abbreviation -Name ...  -Value 'cd ../..'
+}
+```
+
+- [ ] **Step 3: コミット**
+
+```bash
+cd /home/aya/.dotfiles
+git add PowerShell/Microsoft.PowerShell_profile.ps1 bootstrap/install.ps1
+git commit -m "feat: PowerShell profileにpwsh-abbrを追加"
+git push
+```
+
+---
+
 ## 完了チェックリスト
 
 - [ ] WSL側でNeovimが正常に起動する（`nvim` コマンド）
@@ -436,3 +498,4 @@ git push
 - [ ] Windows側でAutoHotkeyスクリプトが配置される
 - [ ] Windows側でWezTerm設定が配置される
 - [ ] `bootstrap/install.ps1` で新PCセットアップが一発で完了する
+- [ ] Windows側で `gst` + スペースが `git status ` に展開される（pwsh-abbr動作確認）
