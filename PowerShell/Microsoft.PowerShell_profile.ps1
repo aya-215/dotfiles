@@ -31,11 +31,14 @@ Set-Alias -Name vim -Value nvim
 Set-Alias -Name vi -Value nvim
 Set-Alias -Name v -Value nvim
 Set-Alias -Name c -Value claude
+# cc - claudeを会話継続モードで起動
 function cc { claude -c @args }
+# cr - claudeを再開モードで起動
 function cr { claude -r @args }
 
-# 勤怠打刻
+# ki - 勤怠自動チェックイン
 function ki { python "D:\個人用\script\kintai\kintai_auto_checkin.py" }
+# ko - 勤怠自動チェックアウト
 function ko { python "D:\個人用\script\kintai\kintai_auto_checkout.py" }
 
 # ======================
@@ -45,7 +48,7 @@ $global:__PSFzfLoaded = $false
 $global:__ZLocationLoaded = $false
 $global:__kubectlCompletionLoaded = $false
 
-# PSFzf初期化関数
+# __InitPSFzf - PSFzfモジュールを遅延初期化する
 function __InitPSFzf {
     if (-not $global:__PSFzfLoaded) {
         Import-Module PSFzf -ErrorAction SilentlyContinue
@@ -56,7 +59,7 @@ function __InitPSFzf {
     }
 }
 
-# ZLocation初期化関数
+# __InitZLocation - ZLocationモジュールを遅延初期化する
 function __InitZLocation {
     if (-not $global:__ZLocationLoaded) {
         Import-Module ZLocation -ErrorAction SilentlyContinue
@@ -64,7 +67,7 @@ function __InitZLocation {
     }
 }
 
-# kubectl補完
+# kubectl - kubectl補完を遅延ロードしてkubectl.exeを実行する
 function kubectl {
     if (-not $global:__kubectlCompletionLoaded) {
         $kubectlCompPath = "$PSScriptRoot\kubectl_completion.ps1"
@@ -80,6 +83,7 @@ function kubectl {
 # カスタム関数（遅延初期化付き）
 # ======================
 
+# zf - ZLocationの履歴をfzfで選択してディレクトリ移動する
 function zf {
     __InitZLocation
     $locations = Get-ZLocation 2>$null
@@ -101,6 +105,7 @@ function zf {
 }
 Set-Alias -Name zi -Value zf
 
+# gb - fzfでGitブランチを選択してcheckoutする
 function gb {
     __InitPSFzf
     $branch = git branch --all | ForEach-Object { $_.Trim('* ').Trim() } | fzf --prompt="Branch> "
@@ -110,12 +115,14 @@ function gb {
     }
 }
 
+# fn - fzfでファイルを選択してNeovimで開く
 function fn {
     __InitPSFzf
     $file = fzf --prompt="File> " --preview 'type {}'
     if ($file) { nvim $file }
 }
 
+# fd - fzfでディレクトリを選択して移動する
 function fd {
     __InitPSFzf
     $dir = Get-ChildItem -Directory -Recurse -Depth 3 -ErrorAction SilentlyContinue |
@@ -123,12 +130,14 @@ function fd {
     if ($dir) { Set-Location $dir }
 }
 
+# fe - fzfでファイルを選択してVS Codeで開く
 function fe {
     __InitPSFzf
     $file = fzf --prompt="VS Code> " --preview 'type {}'
     if ($file) { code $file }
 }
 
+# ga - fzfでGit管理ファイルを選択してgit addする
 function ga {
     __InitPSFzf
     $files = git status -s | fzf -m --prompt="Git Add> " | ForEach-Object { ($_ -split '\s+', 2)[1] }
@@ -138,6 +147,7 @@ function ga {
     }
 }
 
+# gl - fzfでGitログを選択してコミットハッシュを表示する
 function gl {
     __InitPSFzf
     git log --oneline --color=always |
@@ -145,6 +155,7 @@ function gl {
     ForEach-Object { ($_ -split ' ')[0] }
 }
 
+# gco - fzfでGitコミットを選択してcheckoutする
 function gco {
     __InitPSFzf
     $commit = git log --oneline --color=always |
@@ -155,6 +166,7 @@ function gco {
     }
 }
 
+# gs - fzfでGit stashを選択してapplyする
 function gs {
     __InitPSFzf
     $stash = git stash list | fzf --prompt="Git Stash> " --preview 'git stash show -p {1}'
@@ -164,6 +176,7 @@ function gs {
     }
 }
 
+# pk - fzfでプロセスを選択してkillする
 function pk {
     __InitPSFzf
     $process = Get-Process | Out-String -Stream | Select-Object -Skip 3 |
@@ -174,6 +187,7 @@ function pk {
     }
 }
 
+# fenv - fzfで環境変数を選択して表示する
 function fenv {
     __InitPSFzf
     $env = Get-ChildItem env: | ForEach-Object { "$($_.Name)=$($_.Value)" } |
@@ -181,6 +195,7 @@ function fenv {
     if ($env) { Write-Host $env }
 }
 
+# falias - fzfでエイリアスを検索して表示する
 function falias {
     __InitPSFzf
     Get-Alias | ForEach-Object { "$($_.Name) -> $($_.Definition)" } |

@@ -1,5 +1,7 @@
 #!/bin/bash
-# claude-prompt.sh - Claude Codeに定期プロンプトを送信してリセットサイクルを管理
+# claude-prompt.sh - Claude Code定期プロンプト実行スクリプト
+# 使用方法: このスクリプトはcronまたはtmuxから自動実行される
+# 環境変数: CLAUDECODE が設定されていること
 set -euo pipefail
 
 LOG_FILE="$HOME/.local/log/claude-prompt.log"

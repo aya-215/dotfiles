@@ -1,6 +1,7 @@
 #!/bin/bash
-# nb-sync.sh - Automatically sync ~/.nb to GitHub
-# Run via cron: */30 * * * * /home/aya/.dotfiles/scripts/nb-sync.sh
+# nb-sync.sh - nbリポジトリをGitHubと同期するスクリプト
+# 使用方法: ./nb-sync.sh
+# 前提条件: nb が初期化済みで $NB_DIR が設定されていること
 
 set -euo pipefail
 
@@ -10,7 +11,7 @@ LOG_FILE="$HOME/.local/log/nb-sync.log"
 # Ensure log directory exists
 mkdir -p "$(dirname "$LOG_FILE")"
 
-cd "$NB_DIR"
+cd "$NB_DIR" || { echo "エラー: $NB_DIR に移動できません" >&2; exit 1; }
 
 # Check if there are changes
 if [[ -n $(git status --porcelain) ]]; then

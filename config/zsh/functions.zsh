@@ -230,6 +230,7 @@ gw3() {
   echo "gw3 mounted at /mnt/w"
 }
 
+# gw3off - Windows共有ドライブ（gw3）のアンマウント
 gw3off() {
   sudo umount /mnt/w 2>/dev/null
   net.exe use W: /delete 2>/dev/null
