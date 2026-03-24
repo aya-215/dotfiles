@@ -1,0 +1,24 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Neovim設定のシンボリックリンクを作成（~\.config\nvim → chezmoi source の nvim）
+$nvimConfig = "$env:XDG_CONFIG_HOME\nvim"
+$source = "{{ .chezmoi.sourceDir }}\.chezmoitemplates\nvim"
+
+# 古い%LOCALAPPDATA%\nvimのシンボリックリンクが残っていれば削除
+$oldLink = "$env:LOCALAPPDATA\nvim"
+if ((Test-Path $oldLink) -and (Get-Item $oldLink).LinkType -eq "SymbolicLink") {
+    Remove-Item $oldLink
+    Write-Host "古いシンボリックリンクを削除しました: $oldLink"
+}
+
+if (Test-Path $nvimConfig) {
+    if ((Get-Item $nvimConfig).LinkType -eq "SymbolicLink") {
+        Write-Host "Neovimシンボリックリンクは既に存在します: $nvimConfig"
+    } else {
+        Write-Host "既存のNeovim設定が見つかりました（シンボリックリンクではない）: $nvimConfig"
+        Write-Host "スキップします。手動で確認してください。"
+    }
+} else {
+    New-Item -ItemType SymbolicLink -Path $nvimConfig -Target $source
+    Write-Host "Neovimシンボリックリンクを作成しました: $nvimConfig -> $source"
+}
+{{- end -}}

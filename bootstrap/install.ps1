@@ -28,6 +28,19 @@ if (-not (Get-Command chezmoi -ErrorAction SilentlyContinue)) {
     Write-Host "chezmoi は既にインストール済みです" -ForegroundColor Green
 }
 
+# XDG_CONFIG_HOMEを設定（未設定の場合のみ）
+if (-not [System.Environment]::GetEnvironmentVariable("XDG_CONFIG_HOME", "User")) {
+    [System.Environment]::SetEnvironmentVariable(
+        "XDG_CONFIG_HOME",
+        ":USERPROFILE.config",
+        "User"
+    )
+    :XDG_CONFIG_HOME = ":USERPROFILE.config"
+    Write-Host "XDG_CONFIG_HOMEを設定しました: :USERPROFILE.config" -ForegroundColor Yellow
+} else {
+    Write-Host "XDG_CONFIG_HOME は設定済みです: :XDG_CONFIG_HOME" -ForegroundColor Green
+}
+
 # Abbrをインストール（未インストールの場合のみ）
 if (-not (Get-Module -ListAvailable -Name Abbr)) {
     Write-Host "Abbrをインストール中..." -ForegroundColor Yellow
