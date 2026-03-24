@@ -120,33 +120,48 @@ ln -s ~/.dotfiles/.config/wezterm ~/.config/wezterm
 
 ### Windows
 
-Windows向けセットアップ（PowerShell、WezTerm、Neovim等）。
+Windows向けセットアップ（PowerShell、AutoHotkey、WezTerm、Neovim等）をchezmoiで管理。
 
-詳細な手順は [`scripts/setup/`](scripts/setup/) を参照してください。
+#### 前提条件
 
-#### クイックスタート
+- Windows 11 + PowerShell 7+ (pwsh)
+- winget が使えること
+- SSHキー（github-aya215 エイリアス）が設定済みであること
+
+#### 手順
+
+1. **SSHキーを設定する**（初回のみ）
+2. **リポジトリをクローンする**
+   ```powershell
+   git clone git@github-aya215:aya-215/dotfiles.git $env:USERPROFILE\.dotfiles
+   ```
+3. **bootstrap スクリプトを実行する**
+   ```powershell
+   cd $env:USERPROFILE\.dotfiles
+   pwsh -ExecutionPolicy Bypass -File .\bootstrap\install.ps1
+   ```
+
+#### 管理対象ファイル
+
+| ファイル | Windowsパス |
+|---------|------------|
+| PowerShell profile | `%USERPROFILE%\Documents\PowerShell\Microsoft.PowerShell_profile.ps1` |
+| AutoHotkey | `%USERPROFILE%\AutoHotkey\AutoHotkey.ahk` |
+| WezTerm | `%USERPROFILE%\.config\wezterm\` |
+| Neovim | `%LOCALAPPDATA%\nvim\`（シンボリックリンク） |
+
+#### 設定を更新するとき
 
 ```powershell
-# 管理者権限のPowerShellで実行
-cd D:\git
-git clone git@github.com:aya-215/dotfiles.git
-cd dotfiles
-.\scripts\install.ps1 -InstallAll
+cd $env:USERPROFILE\.dotfiles
+chezmoi apply --source .\chezmoi
 ```
 
-**インストールされるもの:**
-- シンボリックリンク（WezTerm、Neovim、PowerShell）
-- fzf、Neovim
-- PowerShellモジュール（PSFzf、ZLocation、BurntToast）
-- HackGen Nerd Font
+#### WezTerm設定を変更するとき
 
-**オプション:**
-```powershell
-.\scripts\install.ps1 -DryRun      # 実行内容確認
-.\scripts\install.ps1 -Force       # 確認なしで実行
-```
-
-詳細は [scripts/setup/README.md](scripts/setup/README.md) を参照。
+WezTerm設定は2箇所に存在する（WSL/Windows二重管理）。**両方を更新すること：**
+- WSL用: `~/.dotfiles/.config/wezterm/`
+- Windows用: `~/.dotfiles/chezmoi/dot_config/wezterm/`
 
 ---
 
