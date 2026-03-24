@@ -33,15 +33,6 @@ Remove-Alias gc  -Force -ErrorAction SilentlyContinue
 Remove-Alias gci -Force -ErrorAction SilentlyContinue
 Remove-Alias gcm -Force -ErrorAction SilentlyContinue
 
-Set-Alias -Name vim -Value nvim
-Set-Alias -Name vi -Value nvim
-Set-Alias -Name v -Value nvim
-Set-Alias -Name c -Value claude
-# cc - claudeを会話継続モードで起動
-function cc { claude -c @args }
-# cr - claudeを再開モードで起動
-function cr { claude -r @args }
-
 # ki - 勤怠自動チェックイン
 function ki { python "D:\個人用\script\kintai\kintai_auto_checkin.py" }
 # ko - 勤怠自動チェックアウト
@@ -89,8 +80,8 @@ function kubectl {
 # カスタム関数（遅延初期化付き）
 # ======================
 
-# zf - ZLocationの履歴をfzfで選択してディレクトリ移動する
-function zf {
+# zi - ZLocationの履歴をfzfで選択してディレクトリ移動する
+function zi {
     __InitZLocation
     $locations = Get-ZLocation 2>$null
     if ($locations) {
@@ -109,7 +100,6 @@ function zf {
         }
     }
 }
-Set-Alias -Name zi -Value zf
 
 # gb - fzfでGitブランチを選択してcheckoutする
 function gb {
@@ -301,6 +291,10 @@ if (Get-Module -ListAvailable -Name Abbr) {
     abbr grbc 'git rebase --continue'
     abbr grba 'git rebase --abort'
     abbr grs  'git restore --staged'
+
+    # エディタ・ツール
+    abbr vi  'nvim'
+    abbr c   'claude'
 
     # chezmoi (Windows固有)
     abbr cza  'chezmoi apply --source .\chezmoi'
