@@ -72,3 +72,11 @@ vim.api.nvim_create_autocmd("TermOpen", {
 		vim.cmd("highlight TerminalNormal guibg=NONE ctermbg=NONE")
 	end,
 })
+
+-- octo.nvimのnullバッファ作成時のスワップファイル競合を自動解決
+vim.api.nvim_create_autocmd("SwapExists", {
+	pattern = "*/octo/null",
+	callback = function()
+		vim.v.swapchoice = "e"
+	end,
+})
