@@ -32,13 +32,13 @@ if (-not (Get-Command chezmoi -ErrorAction SilentlyContinue)) {
 if (-not [System.Environment]::GetEnvironmentVariable("XDG_CONFIG_HOME", "User")) {
     [System.Environment]::SetEnvironmentVariable(
         "XDG_CONFIG_HOME",
-        ":USERPROFILE.config",
+        "$env:USERPROFILE\.config",
         "User"
     )
-    :XDG_CONFIG_HOME = ":USERPROFILE.config"
-    Write-Host "XDG_CONFIG_HOMEを設定しました: :USERPROFILE.config" -ForegroundColor Yellow
+    $env:XDG_CONFIG_HOME = "$env:USERPROFILE\.config"
+    Write-Host "XDG_CONFIG_HOMEを設定しました: $env:USERPROFILE\.config" -ForegroundColor Yellow
 } else {
-    Write-Host "XDG_CONFIG_HOME は設定済みです: :XDG_CONFIG_HOME" -ForegroundColor Green
+    Write-Host "XDG_CONFIG_HOME は設定済みです: $env:XDG_CONFIG_HOME" -ForegroundColor Green
 }
 
 # Abbrをインストール（未インストールの場合のみ）
