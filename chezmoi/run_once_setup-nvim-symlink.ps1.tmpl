@@ -1,0 +1,13 @@
+{{- if eq .chezmoi.os "windows" -}}
+# Neovim設定のシンボリックリンクを作成（AppData\Local\nvim → chezmoi source の nvim）
+$nvimConfig = "$env:LOCALAPPDATA\nvim"
+$source = "{{ .chezmoi.sourceDir }}\.chezmoitemplates\nvim"
+
+if (Test-Path $nvimConfig) {
+    Write-Host "既存のNeovim設定が見つかりました: $nvimConfig"
+    Write-Host "スキップします。手動で確認してください。"
+} else {
+    New-Item -ItemType SymbolicLink -Path $nvimConfig -Target $source
+    Write-Host "Neovimシンボリックリンクを作成しました: $nvimConfig -> $source"
+}
+{{- end -}}
