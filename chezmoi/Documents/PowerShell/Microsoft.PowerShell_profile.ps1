@@ -27,6 +27,12 @@ if (Test-Path $miseCache) {
 # ======================
 # エイリアス（即座に設定）
 # ======================
+# git用abbrと衝突する組み込みReadOnlyエイリアスを削除
+Remove-Alias gp  -Force -ErrorAction SilentlyContinue
+Remove-Alias gc  -Force -ErrorAction SilentlyContinue
+Remove-Alias gci -Force -ErrorAction SilentlyContinue
+Remove-Alias gcm -Force -ErrorAction SilentlyContinue
+
 Set-Alias -Name vim -Value nvim
 Set-Alias -Name vi -Value nvim
 Set-Alias -Name v -Value nvim
@@ -275,7 +281,7 @@ if (Get-Module -ListAvailable -Name Abbr) {
     # Git (Daily) - gs/ga/gl はfzf関数と競合のため別名使用
     abbr gst  'git status --short --branch'   # gs はfzf stash関数と競合
     abbr gaa  'git add .'                     # ga はfzf add関数と競合
-    abbr gci  'git commit -m'                 # gc はGet-Contentと衝突
+    abbr gc   'git commit -m'                 # zenoと統一（Get-ContentはRemove-Alias済み）
     abbr gp   'git push'
     abbr gpl  'git pull'                      # gl はfzf log関数と競合
     abbr gd   'git diff'
