@@ -264,3 +264,28 @@ Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock {
         }
     }
 }
+
+# ======================
+# Abbreviations (pwsh-abbr)
+# スペース/Enterで展開される（zsh zeno.zsh相当）
+# ======================
+if (Get-Module -ListAvailable -Name pwsh-abbr) {
+    Import-Module pwsh-abbr
+
+    # Git（既存fzf関数との重複を回避）
+    # gs=git stash fzf関数、ga=git add fzf関数、gco=git checkout fzf関数のため別名使用
+    New-Abbreviation -Name gst  -Value 'git status'
+    New-Abbreviation -Name gd   -Value 'git diff'
+    New-Abbreviation -Name gp   -Value 'git push'
+    New-Abbreviation -Name gpl  -Value 'git pull'
+    New-Abbreviation -Name gcm  -Value 'git commit -m'
+    New-Abbreviation -Name gaa  -Value 'git add -A'
+
+    # chezmoi
+    New-Abbreviation -Name cza  -Value 'chezmoi apply --source .\chezmoi'
+    New-Abbreviation -Name czd  -Value 'chezmoi diff --source .\chezmoi'
+
+    # ナビゲーション
+    New-Abbreviation -Name ..   -Value 'cd ..'
+    New-Abbreviation -Name ...  -Value 'cd ../..'
+}
