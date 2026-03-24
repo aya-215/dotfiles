@@ -272,20 +272,36 @@ Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock {
 if (Get-Module -ListAvailable -Name Abbr) {
     Import-Module Abbr
 
-    # Git（既存fzf関数との重複を回避）
-    # gs=git stash fzf関数、ga=git add fzf関数、gco=git checkout fzf関数のため別名使用
-    abbr gst  'git status'
-    abbr gd   'git diff'
+    # Git (Daily) - gs/ga/gl はfzf関数と競合のため別名使用
+    abbr gst  'git status --short --branch'   # gs はfzf stash関数と競合
+    abbr gaa  'git add .'                     # ga はfzf add関数と競合
+    abbr gci  'git commit -m'                 # gc はGet-Contentと衝突
     abbr gp   'git push'
-    abbr gpl  'git pull'
-    abbr gcm  'git commit -m'
-    abbr gaa  'git add -A'
+    abbr gpl  'git pull'                      # gl はfzf log関数と競合
+    abbr gd   'git diff'
+    abbr gds  'git diff --staged'
+    abbr glo  'git log --oneline -20'
+    abbr lzg  'lazygit'
 
-    # chezmoi
+    # Git (Weekly)
+    abbr gf   'git fetch --prune'
+    abbr gca  'git commit --amend --no-edit'
+    abbr gcam 'git commit --amend'
+    abbr gpf  'git push --force-with-lease'
+    abbr gsc  'git switch -c'
+    abbr grb  'git rebase'
+
+    # Git (Occasional)
+    abbr grbc 'git rebase --continue'
+    abbr grba 'git rebase --abort'
+    abbr grs  'git restore --staged'
+
+    # chezmoi (Windows固有)
     abbr cza  'chezmoi apply --source .\chezmoi'
     abbr czd  'chezmoi diff --source .\chezmoi'
 
     # ナビゲーション
     abbr ..   'cd ..'
     abbr ...  'cd ../..'
+    abbr .... 'cd ../../..'
 }
