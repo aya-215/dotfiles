@@ -28,10 +28,10 @@ if (-not (Get-Command chezmoi -ErrorAction SilentlyContinue)) {
     Write-Host "chezmoi は既にインストール済みです" -ForegroundColor Green
 }
 
-# pwsh-abbrをインストール（未インストールの場合のみ）
-if (-not (Get-Module -ListAvailable -Name pwsh-abbr)) {
-    Write-Host "pwsh-abbrをインストール中..." -ForegroundColor Yellow
-    Install-Module pwsh-abbr -Scope CurrentUser -Force
+# Abbrをインストール（未インストールの場合のみ）
+if (-not (Get-Module -ListAvailable -Name Abbr)) {
+    Write-Host "Abbrをインストール中..." -ForegroundColor Yellow
+    Install-Module Abbr -Scope CurrentUser -Force
 }
 
 # chezmoiでdotfilesを適用

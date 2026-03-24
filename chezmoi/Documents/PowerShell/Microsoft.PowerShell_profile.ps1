@@ -266,11 +266,11 @@ Set-PSReadLineKeyHandler -Key Ctrl+r -ScriptBlock {
 }
 
 # ======================
-# Abbreviations (pwsh-abbr)
+# Abbreviations (Abbr)
 # スペース/Enterで展開される（zsh zeno.zsh相当）
 # ======================
-if (Get-Module -ListAvailable -Name pwsh-abbr) {
-    Import-Module pwsh-abbr
+if (Get-Module -ListAvailable -Name Abbr) {
+    Import-Module Abbr
 
     # Git（既存fzf関数との重複を回避）
     # gs=git stash fzf関数、ga=git add fzf関数、gco=git checkout fzf関数のため別名使用
