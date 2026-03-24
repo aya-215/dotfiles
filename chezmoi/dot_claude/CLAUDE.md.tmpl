@@ -1,0 +1,28 @@
+# User CLAUDE.md (Windows)
+
+## 環境
+
+- Windows + PowerShell
+- エディタ: Neovim
+- dotfiles: chezmoi で管理（Nix/Home Managerは使わない）
+  - 設定変更は `chezmoi\` 配下のファイルを編集する
+  - 反映: PowerShellで `chezmoi apply --source <dotfilesのパス>\chezmoi`
+  - 差分確認: `chezmoi diff --source <dotfilesのパス>\chezmoi`
+- GitHub CLI: 2つのアカウント（eBASE-Mori, aya-215）で認証済み
+
+## Git操作のツール選択
+
+**必ず `git remote -v` でリモートURLを確認してからツールを選ぶこと。**
+
+| リモートURL | 使うツール |
+|---|---|
+| `github.com` | `gh` コマンド（GitHub CLI） |
+| 社内GitBucket URL | `mcp__gitbucket__*` ツール |
+
+## コミュニケーションルール
+
+不明点がある場合は、解消されるまで `AskUserQuestion` で再帰的に質問すること。
+
+## Memory 管理ルール
+
+記憶・メモリに関連する操作は **必ず `agent-memory` スキルを使用する**。

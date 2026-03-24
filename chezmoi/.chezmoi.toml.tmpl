@@ -5,6 +5,9 @@
   {{- end }}
 {{- end }}
 
+{{- $hasDriveD := stat "D:\\" | not | not }}
+
 [data]
   isWSL = {{ $isWSL }}
   isWindows = {{ eq .chezmoi.os "windows" }}
+  hasDriveD = {{ $hasDriveD }}

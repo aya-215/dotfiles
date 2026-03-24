@@ -9,3 +9,7 @@ AutoHotkey
 {{- if ne .chezmoi.os "windows" }}
 dot_config/wezterm
 {{- end }}
+# Claude Code設定はWindowsのみchezmoi管理（WSL側はNixのシンボリックリンクで管理）
+{{- if ne .chezmoi.os "windows" }}
+dot_claude
+{{- end }}

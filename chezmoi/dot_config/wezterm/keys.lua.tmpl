@@ -45,7 +45,9 @@ function M.setup(config)
       action = act.SpawnCommandInNewTab {
         args = { 'pwsh.exe', '-NoLogo' },
         domain = { DomainName = 'local' },
+{{ if .hasDriveD }}
         cwd = 'D:\\',
+{{ end }}
       },
     },
 
@@ -63,7 +65,9 @@ function M.setup(config)
       action = act.SpawnCommandInNewTab {
         args = { 'pwsh.exe', '-NoLogo' },
         domain = { DomainName = 'local' },
+{{ if .hasDriveD }}
         cwd = 'D:\\',
+{{ end }}
       },
     },
     {

@@ -64,7 +64,11 @@ ToggleWezterm() {
 ; ──────────────────────────────────────────────
 ; WSL クリップボード画像ペースト (Alt+V)
 ; ──────────────────────────────────────────────
+{{- if .hasDriveD }}
 global gTempDir := "D:\wsl_clipboard_temp"
+{{- else }}
+global gTempDir := "C:\wsl_clipboard_temp"
+{{- end }}
 global gLastNotifyTime := 0
 
 ; 起動時にtempディレクトリ作成

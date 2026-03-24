@@ -33,10 +33,12 @@ Remove-Alias gc  -Force -ErrorAction SilentlyContinue
 Remove-Alias gci -Force -ErrorAction SilentlyContinue
 Remove-Alias gcm -Force -ErrorAction SilentlyContinue
 
+{{- if .hasDriveD }}
 # ki - 勤怠自動チェックイン
 function ki { python "D:\個人用\script\kintai\kintai_auto_checkin.py" }
 # ko - 勤怠自動チェックアウト
 function ko { python "D:\個人用\script\kintai\kintai_auto_checkout.py" }
+{{- end }}
 
 # ======================
 # モジュール遅延読み込み
