@@ -274,18 +274,18 @@ if (Get-Module -ListAvailable -Name Abbr) {
 
     # Git（既存fzf関数との重複を回避）
     # gs=git stash fzf関数、ga=git add fzf関数、gco=git checkout fzf関数のため別名使用
-    New-Abbreviation -Name gst  -Value 'git status'
-    New-Abbreviation -Name gd   -Value 'git diff'
-    New-Abbreviation -Name gp   -Value 'git push'
-    New-Abbreviation -Name gpl  -Value 'git pull'
-    New-Abbreviation -Name gcm  -Value 'git commit -m'
-    New-Abbreviation -Name gaa  -Value 'git add -A'
+    abbr gst  'git status'
+    abbr gd   'git diff'
+    abbr gp   'git push'
+    abbr gpl  'git pull'
+    abbr gcm  'git commit -m'
+    abbr gaa  'git add -A'
 
     # chezmoi
-    New-Abbreviation -Name cza  -Value 'chezmoi apply --source .\chezmoi'
-    New-Abbreviation -Name czd  -Value 'chezmoi diff --source .\chezmoi'
+    abbr cza  'chezmoi apply --source .\chezmoi'
+    abbr czd  'chezmoi diff --source .\chezmoi'
 
     # ナビゲーション
-    New-Abbreviation -Name ..   -Value 'cd ..'
-    New-Abbreviation -Name ...  -Value 'cd ../..'
+    abbr ..   'cd ..'
+    abbr ...  'cd ../..'
 }
