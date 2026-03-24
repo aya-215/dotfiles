@@ -24,6 +24,32 @@ dotfiles/
 └── README.md             # プロジェクトドキュメント
 ```
 
+## dotfiles管理の仕組み
+
+このリポジトリはWSLとWindowsで役割が分かれとる：
+
+| 環境 | ツール | 対象ファイル |
+|---|---|---|
+| WSL (Linux) | Nix / Home Manager | `modules/*.nix`, `flake.nix` |
+| Windows | chezmoi | `chezmoi/` 配下 |
+
+### WSL（Nix管理）
+
+- 設定変更は `modules/*.nix` や `flake.nix` を編集する
+- 反映するには `home-manager switch --flake .` を実行する
+- `chezmoi` コマンドはWSLでは**使わない**
+
+### Windows（chezmoi管理）
+
+- 設定変更は `chezmoi/` 配下のファイルを編集する
+- 反映するには `chezmoi apply` を実行する（Windowsで）
+
+### Neovim設定（特殊）
+
+- `chezmoi/.chezmoitemplates/nvim/` がソースファイル
+- Home Managerが `~/.config/nvim` → `.dotfiles/chezmoi/.chezmoitemplates/nvim/` のシンボリックリンクを作成
+- そのため **nvimの設定変更はシンボリックリンク経由で即座に反映**される（home-manager switch不要）
+
 ## Git操作
 
 ### コミット後の動作
