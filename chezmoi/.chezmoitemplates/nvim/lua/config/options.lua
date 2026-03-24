@@ -73,10 +73,11 @@ vim.api.nvim_create_autocmd("TermOpen", {
 	end,
 })
 
--- octo.nvimのnullバッファ作成時のスワップファイル競合を自動解決
-vim.api.nvim_create_autocmd("SwapExists", {
-	pattern = "*/octo/null",
-	callback = function()
-		vim.v.swapchoice = "e"
+-- octo.nvimのnullバッファのswapfile無効化（E325防止）
+vim.api.nvim_create_autocmd("BufNew", {
+	pattern = "octo/null",
+	callback = function(ev)
+		vim.bo[ev.buf].swapfile = false
+		vim.bo[ev.buf].buftype = "nofile"
 	end,
 })
