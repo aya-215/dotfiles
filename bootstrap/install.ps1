@@ -49,7 +49,7 @@ if (-not (Get-Module -ListAvailable -Name Abbr)) {
 
 # chezmoiでdotfilesを適用
 Write-Host "dotfilesを適用中..." -ForegroundColor Yellow
-chezmoi init --source "$dotfilesPath\chezmoi" --apply
+chezmoi init --source "$dotfilesPath\windows" --apply
 
 Write-Host ""
 Write-Host "=== セットアップ完了！ ===" -ForegroundColor Green

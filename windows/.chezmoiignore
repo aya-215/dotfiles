@@ -4,11 +4,6 @@ AppData
 Documents/PowerShell
 AutoHotkey
 {{- end }}
-# WezTerm設定はWindowsのみchezmoi管理（WSL側はNixで管理）
-# dot_config/wezterm はWindowsでのみ適用、Linuxでは無視
-{{- if ne .chezmoi.os "windows" }}
-dot_config/wezterm
-{{- end }}
 # Claude Code設定はWindowsのみchezmoi管理（WSL側はNixのシンボリックリンクで管理）
 {{- if ne .chezmoi.os "windows" }}
 dot_claude
