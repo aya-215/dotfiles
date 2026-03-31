@@ -4,22 +4,27 @@
 
 ```
 dotfiles/
-├── .claude/                 # Claude Code設定
-├── .config/                 # 各種設定ファイル
+├── nvim -> config/nvim/    # Neovim設定（ショートカット）
+├── config/                 # 手書き設定ファイルをすべてここに集約
 │   ├── nvim/               # Neovim設定
 │   │   ├── after/          # ftplugin, syntax
 │   │   ├── lua/            # Lua設定
 │   │   │   ├── config/    # 設定ファイル
 │   │   │   └── plugins/   # プラグイン設定
 │   │   └── tools/          # 補助ツール
-│   └── wezterm/            # WezTerm設定
-├── AutoHotkey/             # AutoHotkey設定
-├── PowerShell/             # PowerShell設定
-│   ├── Modules/           # PowerShellモジュール
-│   │   ├── BurntToast/   # 通知モジュール
-│   │   ├── PSFzf/        # Fzf統合
-│   │   └── ZLocation/    # ディレクトリジャンプ
-│   └── Scripts/           # PowerShellスクリプト
+│   ├── wezterm/            # WezTerm設定
+│   ├── starship/           # Starshipプロンプト
+│   ├── lazygit/            # LazyGit
+│   ├── yazi/               # Yaziファイラー
+│   ├── zeno/               # Zenoスニペット
+│   ├── zsh/                # Zshカスタム関数
+│   ├── nb/                 # nbノート管理
+│   └── gh-dash/            # GitHub Dashboard
+├── modules/               # Nixモジュール（WSL/Nix管理）
+├── windows/               # Windows専用設定（chezmoi管理）
+│   ├── Documents/PowerShell/  # PowerShell設定
+│   ├── AutoHotkey/            # AutoHotkey設定
+│   └── dot_config/            # その他Windows設定
 ├── scripts/               # 各種スクリプト
 └── README.md             # プロジェクトドキュメント
 ```
@@ -31,7 +36,7 @@ dotfiles/
 | 環境 | ツール | 対象ファイル |
 |---|---|---|
 | WSL (Linux) | Nix / Home Manager | `modules/*.nix`, `flake.nix` |
-| Windows | chezmoi | `chezmoi/` 配下 |
+| Windows | chezmoi | `windows/` 配下 |
 
 ### WSL（Nix管理）
 
@@ -41,14 +46,20 @@ dotfiles/
 
 ### Windows（chezmoi管理）
 
-- 設定変更は `chezmoi/` 配下のファイルを編集する
-- 反映するには `chezmoi apply` を実行する（Windowsで）
+- 設定変更は `windows/` 配下のファイルを編集する
+- 反映するには `chezmoi apply --source .\windows` を実行する（Windowsで）
 
-### Neovim設定（特殊）
+### Neovim設定
 
-- `chezmoi/.chezmoitemplates/nvim/` がソースファイル
-- Home Managerが `~/.config/nvim` → `.dotfiles/chezmoi/.chezmoitemplates/nvim/` のシンボリックリンクを作成
-- そのため **nvimの設定変更はシンボリックリンク経由で即座に反映**される（home-manager switch不要）
+- `config/nvim/` がソースファイル（WSL/Windows共通）
+- Home Managerが `~/.config/nvim` → `.dotfiles/config/nvim/` のシンボリックリンクを作成
+- **nvimの設定変更はシンボリックリンク経由で即座に反映**される（home-manager switch不要）
+- リポジトリルートの `nvim` → `config/nvim/` のショートカットでも直接アクセス可能
+
+### WezTerm設定
+
+- `config/wezterm/` がソースファイル（WSL/Windows共通）
+- chezmoiテンプレート変数は使わずLuaのランタイムチェックで環境差異を吸収している
 
 ## Git操作
 

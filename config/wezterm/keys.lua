@@ -7,6 +7,13 @@ local act = wezterm.action
 
 local M = {}
 
+-- Dドライブの存在チェック
+local function has_drive_d()
+  local f = io.open('D:\\', 'r')
+  if f then f:close() return true end
+  return false
+end
+
 -- ========================================
 -- スマートペインナビゲーション
 -- 該当方向にWezTermペインがあればWezTerm内移動、
@@ -42,13 +49,14 @@ function M.setup(config)
     {
       key = 'p',
       mods = 'CTRL|ALT',
-      action = act.SpawnCommandInNewTab {
+      action = act.SpawnCommandInNewTab(has_drive_d() and {
         args = { 'pwsh.exe', '-NoLogo' },
         domain = { DomainName = 'local' },
-{{ if .hasDriveD }}
         cwd = 'D:\\',
-{{ end }}
-      },
+      } or {
+        args = { 'pwsh.exe', '-NoLogo' },
+        domain = { DomainName = 'local' },
+      }),
     },
 
     -- ========================================
@@ -62,13 +70,14 @@ function M.setup(config)
     {
       key = 'p',
       mods = 'LEADER',
-      action = act.SpawnCommandInNewTab {
+      action = act.SpawnCommandInNewTab(has_drive_d() and {
         args = { 'pwsh.exe', '-NoLogo' },
         domain = { DomainName = 'local' },
-{{ if .hasDriveD }}
         cwd = 'D:\\',
-{{ end }}
-      },
+      } or {
+        args = { 'pwsh.exe', '-NoLogo' },
+        domain = { DomainName = 'local' },
+      }),
     },
     {
       key = '&',

@@ -1,7 +1,7 @@
 {{- if eq .chezmoi.os "windows" -}}
 # Neovim設定のシンボリックリンクを作成（~\.config\nvim → chezmoi source の nvim）
 $nvimConfig = "$env:XDG_CONFIG_HOME\nvim"
-$source = "{{ .chezmoi.sourceDir }}\.chezmoitemplates\nvim"
+$source = "{{ .chezmoi.sourceDir }}\..\config\nvim"
 
 # 古い%LOCALAPPDATA%\nvimのシンボリックリンクが残っていれば削除
 $oldLink = "$env:LOCALAPPDATA\nvim"

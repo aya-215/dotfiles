@@ -78,16 +78,25 @@ config.wsl_domains = {
   },
 }
 
+-- Dドライブの存在チェック
+local function has_drive_d()
+  local f = io.open('D:\\', 'r')
+  if f then f:close() return true end
+  return false
+end
+
 -- 複数のシェル環境を選択可能にする
+local powershell_entry = {
+  label = 'PowerShell 7',
+  args = { 'pwsh.exe', '-NoLogo' },
+  domain = { DomainName = 'local' },
+}
+if has_drive_d() then
+  powershell_entry.cwd = 'D:\\'
+end
+
 config.launch_menu = {
-  {
-    label = 'PowerShell 7',
-    args = { 'pwsh.exe', '-NoLogo' },
-    domain = { DomainName = 'local' },
-{{ if .hasDriveD }}
-    cwd = 'D:\\',
-{{ end }}
-  },
+  powershell_entry,
   {
     label = 'WSL Ubuntu',
     domain = { DomainName = 'WSL:Ubuntu-22.04' },
