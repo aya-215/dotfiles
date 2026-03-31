@@ -1,0 +1,14 @@
+# AutoHotkey.ahk をStartupフォルダにコピーする
+# このスクリプトはAutoHotkey.ahk.tmplの内容が変わった時だけ再実行される
+#
+# ahk source hash (for change detection): {{ include "AutoHotkey/AutoHotkey.ahk.tmpl" | sha256sum }}
+
+$src = "$env:USERPROFILE\AutoHotkey\AutoHotkey.ahk"
+$dst = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\AutoHotkey.ahk"
+
+# 既存のシンボリックリンクを削除してリンク先を更新
+if (Test-Path $dst) {
+    Remove-Item -Path $dst -Force
+}
+New-Item -ItemType SymbolicLink -Path $dst -Target $src | Out-Null
+Write-Host "AutoHotkey.ahk のシンボリックリンクを更新しました: $dst -> $src"

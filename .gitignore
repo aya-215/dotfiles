@@ -19,3 +19,8 @@ scripts/gitbucket-mcp/.venv/
 .config/nvim/
 .config/lazygit/
 .config/starship.toml
+
+# chezmoi展開ファイル（チェックイン対象外）
+/AutoHotkey/
+/PowerShell/
+/.config/
