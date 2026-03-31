@@ -23,4 +23,3 @@ scripts/gitbucket-mcp/.venv/
 # chezmoi展開ファイル（チェックイン対象外）
 /AutoHotkey/
 /PowerShell/
-/.config/
