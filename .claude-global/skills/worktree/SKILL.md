@@ -21,27 +21,38 @@ version: 1.0.0
 
 **$1, $2 両方が指定されていない場合:**
 1. 質問に必要な情報を取得:
-   - `git fetch origin` (リモートの最新情報を取得)
+   - `git fetch --prune` (リモートの最新情報を取得＋削除済みリモートブランチを整理)
    - `git branch -r --sort=-committerdate` (ブランチ一覧)
    - `git worktree list` (worktree一覧)
+   - `git branch -vv` (gone ブランチ検出用、rm時のみ使用)
 2. AskUserQuestionで以下を**一度に**質問:
    - 操作 (add / rm)
-   - ブランチ名（addの場合: リモートブランチ上位5個 + 新規作成、rmの場合: 既存worktree）
+   - ブランチ名（addの場合: リモートブランチ上位5個 + 新規作成、rmの場合: 下記「rm選択肢の作成」参照）
 
 **$1 のみ指定されている場合:**
-- add: `git fetch origin` を実行後、`git branch -r --sort=-committerdate` を実行し、ブランチを質問
-- rm: `git worktree list` を実行し、削除対象を質問
+- add: `git fetch --prune` を実行後、`git branch -r --sort=-committerdate` を実行し、ブランチを質問
+- rm: `git fetch --prune` → `git worktree list` + `git branch -vv` を実行し、削除対象を質問
 
-**ブランチ選択肢の作成:**
+**add のブランチ選択肢の作成:**
 - 結果から HEAD を除外し、`origin/` プレフィックスを除去して最大5個を提示
 - 「新しいブランチを作成」オプションも追加 → 選択されたら手動入力
+
+**rm 選択肢の作成:**
+- 既存 worktree（メイン worktree を除く）を個別選択肢として列挙
+- `git branch -vv` の出力から `[origin/...: gone]` のブランチを検出し、該当が1件以上あれば「リモート削除済みブランチをまとめて削除 (N件)」を選択肢に追加
+- 選択肢の表示例:
+  ```
+  1. feat/some-feature (worktree: ../epc-feat-some-feature)
+  2. fix/bug-123 (worktree: ../epc-fix-bug-123)
+  3. リモート削除済みブランチをまとめて削除 (3件)
+  ```
 
 ### 2. コンテキスト取得と事前確認
 
 質問への回答を得た後、以下のコマンドを実行してコンテキストを取得:
 
 1. `git rev-parse --show-toplevel` - gitリポジトリか確認（失敗したらエラー終了）
-2. `git fetch origin` - リモートの最新情報を取得
+2. `git fetch --prune` - リモートの最新情報を取得＋削除済みリモートブランチを整理
 3. `git branch --show-current` - 現在のブランチ
 4. `git worktree list` - 既存のworktree一覧
 5. `ls package.json pnpm-lock.yaml yarn.lock bun.lockb 2>/dev/null` - パッケージマネージャー判定用
@@ -107,19 +118,42 @@ worktreeディレクトリは `../<略称>-<ブランチ名>` の形式にする
 
 #### rm (削除) の場合:
 
-1. 対象のworktreeディレクトリに未コミットの変更がないか確認:
-   ```bash
-   git -C <worktree-path> status --porcelain
-   ```
+##### 既存 worktree を選択した場合
 
-2. 未コミットの変更がある場合、警告を表示してAskUserQuestionで続行するか確認
-
-3. worktreeを削除:
-   ```bash
-   git worktree remove <worktree-path>
-   ```
-
+1. 対象のworktreeの状態を表示:
+   - `git -C <worktree-path> status --porcelain` で未コミット変更一覧
+   - `git -C <worktree-path> stash list` でstash一覧
+2. 状態一覧を表示して AskUserQuestion で削除確認（未コミット変更がある場合は警告を強調）
+3. 確認後に削除:
+   - `git worktree remove <worktree-path>`
+   - `git branch -d <branch>` を試行
+     - 失敗した場合（マージされていない）: 警告して `git branch -D` するか確認
 4. 成功メッセージを表示
+
+##### 「リモート削除済みブランチをまとめて削除」を選択した場合
+
+1. 全ての gone ブランチについて、ブランチごとに状態を表示:
+   - worktree がある場合: `git -C <worktree-path> status --porcelain` で未コミット変更
+   - worktree がない場合: `git log main..<branch> --oneline` でマージされていないコミット
+   - 表示例:
+     ```
+     ## feat/old-feature (worktree: ../epc-feat-old-feature)
+     未コミット変更:
+       M src/app.ts
+       ?? src/temp.ts
+
+     ## fix/resolved-bug (ローカルブランチのみ)
+     マージされていないコミット: なし
+
+     ## feat/experimental (ローカルブランチのみ)
+     マージされていないコミット:
+       abc1234 WIP: experimental change
+     ```
+2. 状態一覧を表示して AskUserQuestion で最終確認（未コミット変更やマージされていないコミットがある場合は警告を強調）
+3. 確認後にまとめて削除:
+   - worktree があるブランチ: `git worktree remove <path>` → `git branch -D <branch>`
+   - worktree がないブランチ: `git branch -D <branch>`
+4. 削除結果のサマリーを表示
 
 ## エラーハンドリング
 
