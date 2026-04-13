@@ -21,6 +21,7 @@
     gh         # GitHub CLI
     gcalcli    # Googleカレンダー
     wslu       # WSL utilities (wslview等)
+    sshfs      # リモートファイルシステムのマウント
 
     # ランタイム・バージョン管理
     fnm        # Node.jsバージョン管理
@@ -28,7 +29,10 @@
     bun        # Bun JavaScript runtime
 
     # Python
-    python3    # Python 3.x
+    (python3.withPackages (ps: with ps; [
+      requests
+      playwright
+    ]))
 
     # Oh My Zsh プラグイン
     zsh-you-should-use
