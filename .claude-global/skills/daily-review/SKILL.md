@@ -22,6 +22,14 @@ model: opus
 2. 対象日のgitコミットログを取得
 3. 対象日の完了タスク（当日 close された task Issue）を取得
 4. claude-nb-sync.py を手動実行して最新の会話を同期
+4.5. Rocket Chat（`mori.a-times`）から対象日の作業内容を取得
+   - `mcp__rocketchat__list_channels`（filter: `mori.a-times`）で room_id を特定
+   - `mcp__rocketchat__get_channel_history` で対象日の発言を取得（`oldest`/`latest` で日付絞り込み）
+   - username = `mori.a` の発言のみ抽出
+   - 以下のキーワードで **自分の作業** と **レビュー作業** に分類：
+     - **自分の作業**: 「PR作成」「issue立てた」「実装完了」「作成しました」「WIP」など自分が主体のもの
+     - **レビュー作業**: 「マージしました」「approveしました」「レビューお願い」に返答など他者PRへの対応
+   - threadId があるメッセージは `mcp__rocketchat__get_thread_messages` でスレッドを展開して補足情報を取得
 5. 対象日のClaude会話履歴を取得
 6. Work/Personalに分類してサマリー生成（Claude会話も含む）
 7. ユーザーに確認表示
@@ -56,6 +64,7 @@ model: opus
 | gitログ（Work） | `~/src/github.com/ebase-dev/*` 配下 | サマリーに反映 |
 | gitログ（Personal） | `~/.dotfiles`, `~/src/github.com/aya-215/*` | サマリーに反映 |
 | Claude会話履歴 | `~/.nb/claude/YYYY-MM-DD.md` | サマリーに反映 + レビュー対象 |
+| Rocket Chat 会話 | `mcp__rocketchat__*` ツール（`mori.a-times` チャンネル） | 自分の作業・レビュー作業の把握 |
 | agent-memory | `~/.claude/skills/agent-memory/memories/` | 整理・更新確認 |
 
 ---
@@ -334,6 +343,8 @@ echo "$checked/$total"
 | Issue のラベルに `work` あり | Work |
 | `~/src/github.com/ebase-dev/*` のコミット | Work |
 | その他すべて | Personal |
+| 自分が PR 作成・issue 作成・実装した（Rocket Chat の発言より） | 自分の作業 |
+| 他者の PR を approve・レビュー・マージした（Rocket Chat の発言より） | レビュー作業 |
 
 ---
 
@@ -343,11 +354,17 @@ echo "$checked/$total"
 ## 📝 サマリー
 
 ### Work (12 commits across 3 repos)
+
+#### 自分の作業
 - **ebase-middleware-mcp** (5 commits): LLMパラメータ修正、テスト追加
 - **epc-feature-agent** (4 commits): プロンプト改善
-- **ebase-portal-chat** (3 commits): worktree整理
-- PRレビュー対応
+- **eb-api-extended**: エージェントvolume情報取得JSP作成（PR#21）、セッション認証方式変更（PR#24）
+- 検索結果ランダム割り振り issue#23 を作成
 - [プロジェクト名] に関する調査・実装（Claude会話）
+
+#### レビュー作業
+- `ebase-portal-chat` PR#223（サブエージェントjsonモード対応）をレビュー・マージ
+- `ebase-middleware-mcp` PR#140（セッションID認証）をレビュー・マージ
 
 ### Personal (8 commits across 2 repos)
 - **dotfiles** (6 commits): j-functions改善、WezTerm設定改善
@@ -369,6 +386,10 @@ echo "$checked/$total"
 - Work/Personalに再分類
 - 簡潔な箇条書きでまとめる
 - **出力は `### Work`、`### Personal` の2セクション**（気づき・感想などの追加セクションは作成しない）
+- Rocket Chat の発言から得た情報は Work セクション内で **`#### 自分の作業`** と **`#### レビュー作業`** の2つのサブセクションに分けて記述する
+  - 自分の作業: 自分が実装・PR作成・issue作成したもの（git ログと統合してよい）
+  - レビュー作業: 他者のPRをレビュー・approve・マージしたもの
+  - Rocket Chat 発言が取得できない場合はこの区別を省略し、フラットな箇条書きにする
 - 日報に「### 🏠 家事メモ」セクションがあれば、サマリーのPersonalに家事内容を含める
 - ルーティンセクションが日報に存在しない場合（テンプレート導入前）はステップ8.6-8.7をスキップ
 
@@ -415,6 +436,7 @@ echo "$checked/$total"
 | 入力ソースがすべて空 | 「サマリーを生成する情報がありません」と表示して終了 |
 | ルーティンセクションなし | テンプレート導入前の日報。ルーティン関連の処理をスキップ |
 | 就寝: : が未記入 | ユーザーに質問して反映 |
+| Rocket Chat から対象日の発言が0件 | スキップして他のソースで生成 |
 
 ---
 
