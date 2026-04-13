@@ -62,6 +62,34 @@
             "command": "~/.claude/hooks/session-tracker.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude session-start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude session-end"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude user-prompt-submit"
+          }
+        ]
       }
     ],
     "Notification": [
@@ -77,6 +105,14 @@
             "command": "~/.claude/hooks/session-tracker.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude notification"
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -85,6 +121,14 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/session-tracker.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude pre-tool-use"
           }
         ]
       }
@@ -97,6 +141,14 @@
             "command": "~/.claude/hooks/session-tracker.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude post-tool-use"
+          }
+        ]
       }
     ],
     "Stop": [
@@ -105,6 +157,84 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/session-tracker.sh"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude stop"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude stop-failure"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude subagent-start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude subagent-stop"
+          }
+        ]
+      }
+    ],
+    "TaskCreated": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude task-created"
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude task-completed"
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude worktree-create"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude worktree-remove"
           }
         ]
       }
@@ -202,6 +332,7 @@
     ]
   },
   "alwaysThinkingEnabled": false,
+  "effortLevel": "medium",
   "plansDirectory": "./.claude/plans",
   "skipDangerousModePermissionPrompt": true,
   "mcpServers": {

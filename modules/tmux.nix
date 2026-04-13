@@ -180,6 +180,14 @@
       set -g status-right-length 150
       set -g status-left-length 100
 
+      # agent-sidebar: Claude Code/Codexのエージェント監視サイドバー
+      set -g @sidebar_key 'e'
+      set -g @sidebar_key_all 'A'
+      set -g @sidebar_width '15%'
+      set -g @sidebar_bottom_height '20'
+      set -g @sidebar_auto_create 'off'
+      run-shell ~/src/github.com/hiroppy/tmux-agent-sidebar/tmux-agent-sidebar.tmux
+
     '';
   };
 }
