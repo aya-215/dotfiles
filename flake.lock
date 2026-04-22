@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1773897212,
-        "narHash": "sha256-NoAijzh/jgoljHybGhmuxbboENPvf5Fnl96l8Y8VfIY=",
+        "lastModified": 1776843984,
+        "narHash": "sha256-X0GnD+UeHYu6VC6E/DxuVN9ii3WoajtcznBrCV1eOa0=",
         "ref": "refs/heads/main",
-        "rev": "8bae32013e6e9ab33638a1932c5ab3fc769c9932",
-        "revCount": 50,
+        "rev": "aeb1c317b4fce9d3c8d7f2dfdf6ab635d66dc715",
+        "revCount": 51,
         "type": "git",
         "url": "ssh://git@github-aya215/aya-215/glauncher"
       },

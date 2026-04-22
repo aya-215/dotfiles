@@ -15,7 +15,7 @@ edit = [
   { run = 'nvim "$@"', block = true, for = "unix" },
 ]
 open = [
-  { run = 'wslview "$@"', orphan = true, for = "unix" },
+  { run = 'cd /mnt/c && cmd.exe /c start "" "$@"', orphan = true, for = "unix" },
 ]
 
 [open]
