@@ -10,11 +10,6 @@
     VISUAL = "nvim";
   };
 
-  home.shellAliases = {
-    vi = "nvim";
-    vim = "nvim";
-  };
-
   home.activation.nvimSymlink = lib.hm.dag.entryBefore ["checkLinkTargets"] ''
     if [ ! -L "$HOME/.config/nvim" ] || [ "$(readlink "$HOME/.config/nvim")" != "$HOME/.dotfiles/config/nvim" ]; then
       rm -rf "$HOME/.config/nvim"
