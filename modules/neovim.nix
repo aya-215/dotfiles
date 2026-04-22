@@ -1,14 +1,24 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
-  programs.neovim = {
-    enable = true;
-    defaultEditor = true;
-    viAlias = true;
-    vimAlias = true;
+  home.packages = with pkgs; [
+    neovim
+  ];
+
+  home.sessionVariables = {
+    EDITOR = "nvim";
+    VISUAL = "nvim";
   };
 
-  home.file.".config/nvim".source =
-    config.lib.file.mkOutOfStoreSymlink
-      "${config.home.homeDirectory}/.dotfiles/config/nvim";
+  home.shellAliases = {
+    vi = "nvim";
+    vim = "nvim";
+  };
+
+  home.activation.nvimSymlink = lib.hm.dag.entryBefore ["checkLinkTargets"] ''
+    if [ ! -L "$HOME/.config/nvim" ] || [ "$(readlink "$HOME/.config/nvim")" != "$HOME/.dotfiles/config/nvim" ]; then
+      rm -rf "$HOME/.config/nvim"
+      ln -s "$HOME/.dotfiles/config/nvim" "$HOME/.config/nvim"
+    fi
+  '';
 }

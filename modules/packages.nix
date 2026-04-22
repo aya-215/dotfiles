@@ -20,7 +20,6 @@
     ghq        # リポジトリ管理
     gh         # GitHub CLI
     gcalcli    # Googleカレンダー
-    wslu       # WSL utilities (wslview等)
     sshfs      # リモートファイルシステムのマウント
 
     # ランタイム・バージョン管理
