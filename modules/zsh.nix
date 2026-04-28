@@ -1,12 +1,21 @@
 { config, pkgs, ... }:
 
 {
+  # wslview代替スクリプト（wslu廃止後のWSL→Windowsブラウザ起動用）
+  home.file.".local/bin/wslopen" = {
+    executable = true;
+    text = ''
+      #!/bin/bash
+      /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -NoProfile -Command "Start-Process '$1'"
+    '';
+  };
+
   # 環境変数（shell.nixから移行）
   home.sessionVariables = {
     EDITOR = "nvim";
     VISUAL = "nvim";
     LANG = "ja_JP.UTF-8";
-    BROWSER = "wslview";
+    BROWSER = "wslopen";
     CLAUDE_CODE_SKIP_WINDOWS_PROFILE = "1";
     USERPROFILE = "/mnt/c/Users/368";
   };
