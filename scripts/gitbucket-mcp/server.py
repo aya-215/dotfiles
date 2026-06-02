@@ -42,7 +42,13 @@ def call_api(method: str, endpoint: str, data: dict | None = None) -> dict | lis
     req.add_header("Content-Type", "application/json")
     try:
         with urllib.request.urlopen(req) as resp:
-            return json.loads(resp.read())
+            parsed = json.loads(resp.read())
+            # GitBucketのPR作成(POST /pulls)は、JSON文字列を二重にエンコードして
+            # 返すことがある（結果がdict/listでなくstrになる）。その場合はもう一度
+            # パースして本来のオブジェクトに戻す。
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed)
+            return parsed
     except urllib.error.HTTPError as e:
         if e.code == 401:
             raise RuntimeError(
@@ -149,6 +155,38 @@ def gitbucket_get_pr(owner: str, repo: str, number: int) -> str:
 
 
 @mcp.tool()
+def gitbucket_update_pr(
+    owner: str,
+    repo: str,
+    number: int,
+    title: str | None = None,
+    body: str | None = None,
+    state: str | None = None,
+) -> str:
+    """GitBucketの既存Pull Requestを更新する
+
+    title / body / state のうち、指定された項目だけを更新する。
+
+    Args:
+        owner: リポジトリのオーナー名
+        repo: リポジトリ名
+        number: PRの番号
+        title: 新しいタイトル（変更する場合のみ指定）
+        body: 新しい説明文（変更する場合のみ指定）
+        state: 新しい状態 open / closed（変更する場合のみ指定）
+    """
+    data = {
+        k: v
+        for k, v in {"title": title, "body": body, "state": state}.items()
+        if v is not None
+    }
+    if not data:
+        return "更新する項目が指定されていません（title / body / state のいずれかを指定してください）"
+    pr = call_api("PATCH", f"/repos/{owner}/{repo}/pulls/{number}", data)
+    return "PRを更新しました\n" + json.dumps(fmt_pr(pr), ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
 def gitbucket_create_pr(
     owner: str,
     repo: str,
@@ -227,23 +265,40 @@ def gitbucket_create_issue(
 
 
 @mcp.tool()
+def gitbucket_list_comments(owner: str, repo: str, number: int) -> str:
+    """GitBucketのIssueまたはPRのコメント一覧を取得する
+
+    IssueとPRはコメントエンドポイントが共通なので、PRの番号を渡してもよい。
+
+    Args:
+        owner: リポジトリのオーナー名
+        repo: リポジトリ名
+        number: IssueまたはPRの番号
+    """
+    result = call_api("GET", f"/repos/{owner}/{repo}/issues/{number}/comments")
+    if not result:
+        return f"{owner}/{repo} #{number} にコメントはありません"
+    comments = [fmt_comment(c) for c in result]
+    return json.dumps(comments, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
 def gitbucket_add_comment(
     owner: str,
     repo: str,
     number: int,
     body: str,
-    target_type: str = "issue",
 ) -> str:
     """GitBucketのIssueまたはPRにコメントを追加する
+
+    IssueとPRはコメントエンドポイントが共通なので、PRの番号を渡してもよい。
 
     Args:
         owner: リポジトリのオーナー名
         repo: リポジトリ名
         number: IssueまたはPRの番号
         body: コメント本文
-        target_type: コメント対象の種別 (issue / pr)
     """
-    # IssueとPRのコメントエンドポイントは共通
     data = {"body": body}
     comment = call_api("POST", f"/repos/{owner}/{repo}/issues/{number}/comments", data)
     result = fmt_comment(comment)
