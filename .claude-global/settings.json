@@ -51,7 +51,7 @@
       "Write(yarn.lock)",
       "Write(bun.lockb)"
     ],
-    "defaultMode": "plan"
+    "defaultMode": "auto"
   },
   "hooks": {
     "SessionStart": [
@@ -78,6 +78,14 @@
           {
             "type": "command",
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude session-end"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.dotfiles/scripts/claude-summarize/summarize-session.sh"
           }
         ]
       }
@@ -332,9 +340,10 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "plansDirectory": "./.claude/plans",
   "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
   "mcpServers": {
     "gitbucket": {
       "command": "uv",
