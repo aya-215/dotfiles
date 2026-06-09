@@ -15,6 +15,9 @@ PowerShell/secrets.ps1
 scripts/gitbucket-mcp/.env.local
 scripts/gitbucket-mcp/.venv/
 
+# daily-review secrets (Rocket Chat token)
+scripts/daily-review/.env.local
+
 # Home Manager managed directories (config source is in config/)
 .config/nvim/
 .config/lazygit/
