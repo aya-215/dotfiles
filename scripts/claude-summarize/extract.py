@@ -31,7 +31,7 @@ def main() -> int:
     last_ts = ""
     lines_out: list[str] = []
 
-    with path.open(encoding="utf-8") as fh:
+    with path.open(encoding="utf-8", errors="replace") as fh:
         for raw in fh:
             try:
                 d = json.loads(raw)
@@ -42,8 +42,10 @@ def main() -> int:
                 continue
 
             # メタ情報を拾う（最初に出てきた値を採用）
-            if not cwd and d.get("cwd"):
-                cwd = d["cwd"]
+            if not cwd:
+                _cwd = d.get("cwd")
+                if isinstance(_cwd, str) and _cwd:
+                    cwd = _cwd
             if not session_id and d.get("sessionId"):
                 session_id = d["sessionId"]
             ts = d.get("timestamp", "")
@@ -53,7 +55,7 @@ def main() -> int:
                 last_ts = ts
 
             role = "User" if d["type"] == "user" else "Claude"
-            content = d.get("message", {}).get("content", "")
+            content = (d.get("message") or {}).get("content", "")
 
             if isinstance(content, str):
                 text = content.strip()
@@ -69,19 +71,21 @@ def main() -> int:
                     continue
                 itype = item.get("type")
                 if itype == "text":
-                    text = item.get("text", "").strip()
+                    text = str(item.get("text", "")).strip()
                     if text:
                         lines_out.append(f"**{role}:** {text}")
                 elif itype == "tool_use":
                     name = item.get("name", "?")
                     inp = item.get("input", {})
+                    if not isinstance(inp, dict):
+                        inp = {}
                     # ツールごとに要約に有用なメタだけ抜く
                     if name in ("Edit", "Write", "Read", "NotebookEdit"):
-                        meta = inp.get("file_path", "")
+                        meta = str(inp.get("file_path", ""))
                     elif name == "Bash":
-                        meta = inp.get("command", "")[:120]
+                        meta = str(inp.get("command", ""))[:120]
                     elif name in ("Grep", "Glob"):
-                        meta = inp.get("pattern", "")
+                        meta = str(inp.get("pattern", ""))
                     else:
                         meta = ""
                     lines_out.append(f"  [tool:{name}] {meta}".rstrip())
