@@ -51,7 +51,7 @@
       "Write(yarn.lock)",
       "Write(bun.lockb)"
     ],
-    "defaultMode": "auto"
+    "defaultMode": "plan"
   },
   "hooks": {
     "SessionStart": [
