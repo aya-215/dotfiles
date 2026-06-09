@@ -29,6 +29,14 @@ cd "$PROJECT_DIR" || { echo "エラー: $PROJECT_DIR に移動できません" >
 # Rocket Chat 当日履歴を事前収集（失敗してもサマリー生成は続行する）
 rocketchat_log="$(bash "$SCRIPT_DIR/fetch-rocketchat.sh" "$TARGET_DATE" 2>/dev/null || echo "(Rocket Chat: 取得失敗)")"
 
+# その日のセッション要約を集約（なければプレースホルダ）
+sessions_dir="$HOME/.nb/claude/sessions/$TARGET_DATE"
+if compgen -G "$sessions_dir/*.md" > /dev/null; then
+  session_summaries="$(cat "$sessions_dir"/*.md)"
+else
+  session_summaries="(本日のセッション要約なし)"
+fi
+
 # Claude へ渡す無人実行用プロンプト。daily-review スキルのフェーズ1のみを実行させる。
 read -r -d '' PROMPT <<EOF || true
 /daily-review を「無人モード」で実行してください。以下のルールを厳守すること:
@@ -42,17 +50,19 @@ read -r -d '' PROMPT <<EOF || true
 - 「ユーザー確認後に更新」のステップは、確認を取らずにそのまま更新を実行してよい。承認は事前に与えられている。
 
 【実行すること（フェーズ1のサマリー生成のみ）】
-1. claude-nb-sync.py を実行して最新の会話を同期
-2. 当日分（${TARGET_DATE}）の日報 Issue を aya-215/life から特定（gh は aya-215 アカウントのトークンを使用）
-3. git ログ（Work: ~/src/github.com/ebase-dev/*, Personal: ~/.dotfiles と ~/src/github.com/aya-215/*）を収集
-4. 当日 close された task Issue を収集
-5. Rocket Chat の発言は下記【Rocket Chat 当日履歴】を入力として使う（MCP は使わない）
-6. Claude 会話履歴（~/.nb/claude/${TARGET_DATE}.md）を収集
-7. Work/Personal に分類し、スキルの「サマリー形式」に従って「📝 サマリー」セクションを生成
-8. Issue が open なら gh issue edit で body のサマリーセクションを更新。close 済みなら blog md を編集して push。
+1. 当日分（${TARGET_DATE}）の日報 Issue を aya-215/life から特定（gh は aya-215 アカウントのトークンを使用）
+2. git ログ（Work: ~/src/github.com/ebase-dev/*, Personal: ~/.dotfiles と ~/src/github.com/aya-215/*）を収集
+3. 当日 close された task Issue を収集
+4. Rocket Chat の発言は下記【Rocket Chat 当日履歴】を入力として使う（MCP は使わない）
+5. Claude 会話履歴は下記【セッション要約】を入力として使う（各セッションが意図/作業内容/結論/編集ファイル/コマンド/ナレッジ候補の6項目で要約済み）。生ログ参照は不要。
+6. Work/Personal に分類し、スキルの「サマリー形式」に従って「📝 サマリー」セクションを生成
+7. Issue が open なら gh issue edit で body のサマリーセクションを更新。close 済みなら blog md を編集して push。
 
 【Rocket Chat 当日履歴（mori.a-times）】
 ${rocketchat_log}
+
+【セッション要約（${TARGET_DATE}・プロジェクト別）】
+${session_summaries}
 
 【完了後】
 - 更新したサマリーの全文を標準出力に出力すること。
