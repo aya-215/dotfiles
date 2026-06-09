@@ -11,8 +11,9 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly CLAUDE_BIN="$HOME/.local/bin/claude"
 readonly SESSIONS_ROOT="$HOME/.nb/claude/sessions"
-# ★ Haiku 200K コンテキストへの安全弁（文字数上限）。これを超えたら末尾を切り詰める。
-#   日本語混在で概ね 1.5 文字/トークンと見て、約12万文字 ≒ 8万トークン程度に抑える。
+# ★ Haiku 200K コンテキストへの安全弁（文字数またはバイト数の上限）。これを超えたら末尾を切り詰める。
+#   日本語混在で概ね 1.5 文字/トークンと見て、約12万文字（LC_ALL=C 等では約12万バイト）≒ 8万トークン程度に抑える。
+#   LANG=ja_JP.UTF-8 設定後は文字単位になる。
 readonly MAX_CHARS=120000
 
 transcript="${1:?usage: summarize.sh <transcript.jsonl> <session_id>}"
@@ -65,4 +66,25 @@ cwd: <cwd>
 ${extracted}
 EOF
 
-"$CLAUDE_BIN" -p "$PROMPT" --model haiku > "$out_file" 2>/dev/null || { rm -f "$out_file"; exit 0; }
+# ★ 上限ガード: 切り詰めブロックの前後でロケールを固定し文字単位を保証する
+export LANG=ja_JP.UTF-8
+
+# Haiku で要約生成（失敗したら中途半端なファイルを残さない）
+if ! "$CLAUDE_BIN" -p "$PROMPT" --model haiku > "$out_file" 2>/dev/null; then
+  rm -f "$out_file"
+  exit 0
+fi
+
+# 空ファイル（claude が exit 0 で空出力を返したケース等）は残さない
+[ -s "$out_file" ] || { rm -f "$out_file"; exit 0; }
+
+# 後処理: frontmatter（最初の ---）より前の前置きを除去。--- が無ければ不正として削除。
+if grep -q '^---' "$out_file"; then
+  sed -i -n '/^---/,$p' "$out_file"
+else
+  rm -f "$out_file"
+  exit 0
+fi
+
+# sed 後の空ファイル確認（念のため）
+[ -s "$out_file" ] || { rm -f "$out_file"; exit 0; }
