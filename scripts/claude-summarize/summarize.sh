@@ -44,9 +44,19 @@ target_date="$(printf '%s\n' "$extracted" \
   | sed -n 's/^end: //p' | head -1 \
   | { read -r ts; [ -n "$ts" ] && TZ=Asia/Tokyo date -d "$ts" +%Y-%m-%d 2>/dev/null || TZ=Asia/Tokyo date +%Y-%m-%d; })"
 
+# ファイル名用の要素を抽出: プロジェクト名・終了時刻(HHMM, JST)・session_id先頭8文字
+proj_name="$(printf '%s\n' "$extracted" | sed -n 's/^project: //p' | head -1)"
+[ -z "$proj_name" ] && proj_name="unknown"
+end_hhmm="$(printf '%s\n' "$extracted" \
+  | sed -n 's/^end: //p' | head -1 \
+  | { read -r ts; [ -n "$ts" ] && TZ=Asia/Tokyo date -d "$ts" +%H%M 2>/dev/null || TZ=Asia/Tokyo date +%H%M; })"
+sid_short="${session_id:0:8}"
+# ファイル名に使えない文字を念のためサニタイズ（スラッシュ等をハイフンに）
+safe_proj="$(printf '%s' "$proj_name" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')"
+
 out_dir="$SESSIONS_ROOT/$target_date"
 mkdir -p "$out_dir"
-out_file="$out_dir/$session_id.md"
+out_file="$out_dir/${safe_proj}-${end_hhmm}-${sid_short}.md"
 
 read -r -d '' PROMPT <<EOF || true
 以下は Claude Code の1セッションの会話ログ（前処理済み: 会話テキストとツール使用メタのみ）です。
