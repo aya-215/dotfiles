@@ -29,10 +29,28 @@ cd "$PROJECT_DIR" || { echo "エラー: $PROJECT_DIR に移動できません" >
 # Rocket Chat 当日履歴を事前収集（失敗してもサマリー生成は続行する）
 rocketchat_log="$(bash "$SCRIPT_DIR/fetch-rocketchat.sh" "$TARGET_DATE" 2>/dev/null || echo "(Rocket Chat: 取得失敗)")"
 
-# その日のセッション要約を集約（なければプレースホルダ）
+# その日のセッション要約を集約（プロジェクトごとにまとまる。なければプレースホルダ）
+# 各要約に「## <project> — <終了時刻>」見出しを付け、frontmatter を除いた本文を連結する。
+# ファイル名が <project>-<時刻>-<id>.md なので glob 順でプロジェクトごとにまとまる。
 sessions_dir="$HOME/.nb/claude/sessions/$TARGET_DATE"
 if compgen -G "$sessions_dir/*.md" > /dev/null; then
-  session_summaries="$(cat "$sessions_dir"/*.md)"
+  session_summaries=""
+  for sf in "$sessions_dir"/*.md; do
+    proj="$(sed -n 's/^project: //p' "$sf" | head -1)"
+    [ -z "$proj" ] && proj="unknown"
+    end_ts="$(sed -n 's/^end: //p' "$sf" | head -1)"
+    end_hm="$(TZ=Asia/Tokyo date -d "$end_ts" +%H:%M 2>/dev/null || echo "??:??")"
+    # frontmatter を除いた本文を取り出す
+    # 実際のファイル構造: --- (空) / --- / フィールド / --- / 本文 （--- が3つ）
+    body="$(awk 'BEGIN{fm=0} /^---$/{fm++; next} fm>=3{print}' "$sf")"
+    session_summaries="${session_summaries}## ${proj} — ${end_hm}
+
+${body}
+
+---
+
+"
+  done
 else
   session_summaries="(本日のセッション要約なし)"
 fi
