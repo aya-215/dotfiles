@@ -25,6 +25,13 @@ extracted="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" 2>/dev/null)" || exi
 body_lines="$(printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | grep -c .)" || body_lines=0
 [ "$body_lines" -gt 0 ] || exit 0
 
+# ガードA: 薄いセッション（ツール使用なし＆本文が極端に短い）は要約しない
+tool_count="$(printf '%s\n' "$extracted" | grep -c '\[tool:')" || tool_count=0
+body_chars="$(printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | wc -m)"
+if [ "$tool_count" -eq 0 ] && [ "$body_chars" -lt 200 ]; then
+  exit 0
+fi
+
 # ★ 上限ガード: extracted が極端に大きい場合は先頭 MAX_CHARS 文字に切り詰める
 #   （会話が長大でも Haiku の 200K を超えないようにする安全弁）
 if [ "${#extracted}" -gt "$MAX_CHARS" ]; then
@@ -91,3 +98,9 @@ fi
 
 # sed 後の空ファイル確認（念のため）
 [ -s "$out_file" ] || { rm -f "$out_file"; exit 0; }
+
+# ガードB: Haiku が要約せず聞き返した応答（「ログを提供してください」等）は不正として破棄
+if grep -qE "提供してください|ご提供ください|セッションログには|必要な要素|実際の会話ログ|お知らせください" "$out_file"; then
+  rm -f "$out_file"
+  exit 0
+fi
