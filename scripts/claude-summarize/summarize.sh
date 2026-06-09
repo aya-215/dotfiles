@@ -70,7 +70,10 @@ EOF
 export LANG=ja_JP.UTF-8
 
 # Haiku で要約生成（失敗したら中途半端なファイルを残さない）
-if ! "$CLAUDE_BIN" -p "$PROMPT" --model haiku > "$out_file" 2>/dev/null; then
+# --settings '{"disableAllHooks":true}' で、この claude -p 実行が SessionEnd hook を
+# 再発火させないようにする（さもないと「要約用 claude の終了 → また要約」の自己増殖ループになる）。
+# --bare は hook を切れるが認証(OAuth/keychain)も読まなくなるため使わない。disableAllHooks は認証を保つ。
+if ! "$CLAUDE_BIN" -p "$PROMPT" --model haiku --settings '{"disableAllHooks":true}' > "$out_file" 2>/dev/null; then
   rm -f "$out_file"
   exit 0
 fi
