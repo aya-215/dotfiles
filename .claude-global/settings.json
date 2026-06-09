@@ -340,10 +340,9 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "plansDirectory": "./.claude/plans",
   "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true,
   "mcpServers": {
     "gitbucket": {
       "command": "uv",
