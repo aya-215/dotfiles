@@ -7,6 +7,7 @@
 #
 # 使用方法（hook から自動）:
 #   echo '{"transcript_path":"...","session_id":"...","reason":"..."}' | summarize-session.sh
+# set -e は使わない: hook は途中で何が失敗しても必ず exit 0 で返したいため（セッション操作を妨げない）
 set -uo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
