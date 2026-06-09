@@ -51,7 +51,7 @@
       "Write(yarn.lock)",
       "Write(bun.lockb)"
     ],
-    "defaultMode": "plan"
+    "defaultMode": "auto"
   },
   "hooks": {
     "SessionStart": [
@@ -340,7 +340,7 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "effortLevel": "medium",
+  "effortLevel": "high",
   "plansDirectory": "./.claude/plans",
   "skipDangerousModePermissionPrompt": true,
   "mcpServers": {
