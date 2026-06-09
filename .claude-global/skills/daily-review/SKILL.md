@@ -21,8 +21,7 @@ model: opus
    - **Issue が見つからない場合（昨日以前の分）**: close済みでmd化されている。`blog/YYYYMMDD.md` をローカルで編集する（後述「close済み日報の更新手順」参照）
 2. 対象日のgitコミットログを取得
 3. 対象日の完了タスク（当日 close された task Issue）を取得
-4. claude-nb-sync.py を手動実行して最新の会話を同期
-4.5. Rocket Chat（`mori.a-times`）から対象日の作業内容を取得
+4. Rocket Chat（`mori.a-times`）から対象日の作業内容を取得
    - `mcp__rocketchat__list_channels`（filter: `mori.a-times`）で room_id を特定
    - `mcp__rocketchat__get_channel_history` で対象日の発言を取得（`oldest`/`latest` で日付絞り込み）
    - username = `mori.a` の発言のみ抽出
@@ -30,7 +29,8 @@ model: opus
      - **自分の作業**: 「PR作成」「issue立てた」「実装完了」「作成しました」「WIP」など自分が主体のもの
      - **レビュー作業**: 「マージしました」「approveしました」「レビューお願い」に返答など他者PRへの対応
    - threadId があるメッセージは `mcp__rocketchat__get_thread_messages` でスレッドを展開して補足情報を取得
-5. 対象日のClaude会話履歴を取得
+5. 対象日のセッション要約群（`~/.nb/claude/sessions/YYYY-MM-DD/*.md`）を取得
+   - SessionEnd hook が各セッション終了時に自動生成済みのため、手動同期は不要
 6. Work/Personalに分類してサマリー生成（Claude会話も含む）
 7. ユーザーに確認表示
 8. 承認後、日報を更新
@@ -63,7 +63,7 @@ model: opus
 | 完了タスク | `aya-215/life` の当日 close された Issue（label: `task`） | サマリーに反映 |
 | gitログ（Work） | `~/src/github.com/ebase-dev/*` 配下 | サマリーに反映 |
 | gitログ（Personal） | `~/.dotfiles`, `~/src/github.com/aya-215/*` | サマリーに反映 |
-| Claude会話履歴 | `~/.nb/claude/YYYY-MM-DD.md` | サマリーに反映 + レビュー対象 |
+| Claudeセッション要約 | `~/.nb/claude/sessions/YYYY-MM-DD/*.md` | サマリーに反映 + レビュー対象（セッション単位の6項目要約、SessionEnd hook が自動生成） |
 | Rocket Chat 会話 | `mcp__rocketchat__*` ツール（`mori.a-times` チャンネル） | 自分の作業・レビュー作業の把握 |
 | agent-memory | `~/.claude/skills/agent-memory/memories/` | 整理・更新確認 |
 
@@ -177,64 +177,27 @@ done
 - `### Personal (N commits across M repos)`
 - 各プロジェクト行にも `(N commits)` を付与
 
-### Claude会話同期の実行
+### Claudeセッション要約の取得
+
+SessionEnd hook により各セッション終了時に自動でセッション要約が生成されるため、手動同期は不要。
+各セッションは既に6項目（意図・作業内容・結論・編集ファイル・実行コマンド・ナレッジ候補）で構造化済み。
 
 ```bash
-python3 ~/.dotfiles/scripts/claude-sync/claude-nb-sync.py
+# その日の全セッション要約を読む（各セッションが6項目で要約済み）
+SESSION_DATE="2026-01-15"
+cat ~/.nb/claude/sessions/"$SESSION_DATE"/*.md 2>/dev/null
+
+# セッションが存在するか確認
+ls ~/.nb/claude/sessions/"$SESSION_DATE"/ 2>/dev/null || echo "セッション要約なし"
 ```
 
-### Claude会話履歴の取得（大きいファイル対応）
+プロジェクト別に絞り込む場合は frontmatter の `project:` フィールドを使う：
 
-会話履歴は1日分でも数百KBになることがあるため、以下の手順で効率的に取得する：
-
-**1. プロジェクト一覧の抽出（セッション数付き）**
 ```bash
-# その日に作業した全プロジェクトを把握
-for proj in $(grep -E "^## [a-z]+(-[a-z]+)*$" ~/.nb/claude/2026-01-15.md | sort -u | sed 's/^## //'); do
-  count=$(sed -n "/^## $proj\$/,/^## [a-z]/p" ~/.nb/claude/2026-01-15.md | grep -c "^### [0-9]")
-  echo "$proj ($count sessions)"
-done
+# 特定プロジェクトのセッションのみ表示
+grep -l "^project: dotfiles" ~/.nb/claude/sessions/"$SESSION_DATE"/*.md 2>/dev/null | \
+  xargs cat 2>/dev/null
 ```
-
-**2. 各プロジェクトの最初のUser質問を抽出**
-```bash
-# 各プロジェクトで何を始めたかを把握
-for proj in $(grep -E "^## [a-z]+(-[a-z]+)*$" ~/.nb/claude/2026-01-15.md | sort -u | sed 's/^## //'); do
-  echo "=== $proj ==="
-  # プロジェクトセクションから最初のUser質問を5行取得
-  sed -n "/^## $proj\$/,/^## [a-z]/p" ~/.nb/claude/2026-01-15.md | \
-    grep -A4 -m1 '^\*\*User:\*\*' | head -5
-done
-```
-
-**3. 結論マーカー検索 + フォールバック**
-```bash
-# 各プロジェクトの成果を把握
-for proj in $(grep -E "^## [a-z]+(-[a-z]+)*$" ~/.nb/claude/2026-01-15.md | sort -u | sed 's/^## //'); do
-  echo "=== $proj (結論) ==="
-  # まず結論マーカーを探す
-  results=$(sed -n "/^## $proj\$/,/^## [a-z]/p" ~/.nb/claude/2026-01-15.md | grep -E "(✅|完了|成功)" | tail -3)
-  if [ -n "$results" ]; then
-    echo "$results"
-  else
-    # フォールバック: 最後のUser-Claudeペア
-    sed -n "/^## $proj\$/,/^## [a-z]/p" ~/.nb/claude/2026-01-15.md | tail -30 | grep -A2 '^\*\*Claude:\*\*' | tail -5
-  fi
-done
-```
-
-**4. 見出し・絵文字マーカー検索**
-```bash
-# 横断的な成果を把握
-echo "=== 見出しレベルの成果 ==="
-grep -E "^#+.*(完了|成功|解決|実装)" ~/.nb/claude/2026-01-15.md
-
-echo ""
-echo "=== 絵文字マーカーの成果 ==="
-grep -E "^✅|^- ✅" ~/.nb/claude/2026-01-15.md | head -10
-```
-
-**注意:** `cat` でファイル全体を読むのは避ける。256KB以上のファイルは読み込みエラーになる。
 
 ### 既存メモリの一覧取得
 
@@ -399,7 +362,7 @@ echo "$checked/$total"
 
 ### a. 新規メモリ候補の提案
 
-会話履歴から以下を「重要な発見」として抽出:
+セッション要約から以下を「重要な発見」として抽出（各要約の「## ナレッジ候補」セクションを優先的に参照）:
 - 複数往復の調査を要した発見
 - 「解決」「完了」「修正」などの結論を含む内容
 - コードスニペットや設定例を含む回答
@@ -432,7 +395,7 @@ echo "$checked/$total"
 | 日報 Issue が見つからない（過去分） | close済みでmd化されている。`blog/YYYYMMDD.md` をローカルで編集する |
 | blog md も見つからない | 「日報が見つかりません」と表示して終了 |
 | gitリポジトリなし | スキップして他のソースで生成 |
-| Claude会話履歴なし | スキップして他のソースで生成 |
+| Claudeセッション要約なし（`sessions/YYYY-MM-DD/` が空） | スキップして他のソースで生成 |
 | 入力ソースがすべて空 | 「サマリーを生成する情報がありません」と表示して終了 |
 | ルーティンセクションなし | テンプレート導入前の日報。ルーティン関連の処理をスキップ |
 | 就寝: : が未記入 | ユーザーに質問して反映 |
