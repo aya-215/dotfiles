@@ -308,6 +308,15 @@ function M.setup(config)
       mods = 'SHIFT',
       action = act.SendString('\x1b[13;2u')
     },
+
+    -- ========================================
+    -- デフォルトキーバインドの無効化
+    -- ========================================
+    {
+      key = 'Enter',
+      mods = 'ALT',
+      action = act.DisableDefaultAssignment,
+    },
   }
 
   -- ========================================
