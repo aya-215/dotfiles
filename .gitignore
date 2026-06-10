@@ -18,6 +18,12 @@ scripts/gitbucket-mcp/.venv/
 # daily-review secrets (Rocket Chat token)
 scripts/daily-review/.env.local
 
+# MCP server settings (Rocket Chat auth token入り)
+.mcp.json
+
+# Python cache
+__pycache__/
+
 # Home Manager managed directories (config source is in config/)
 .config/nvim/
 .config/lazygit/
