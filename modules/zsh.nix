@@ -59,6 +59,10 @@
       lg = "eza -l --icons --group-directories-first --git --git-ignore";
       tree = "eza --tree --level=2 --icons";
       treea = "eza --tree --level=2 --icons -a";
+
+      # クリップボード (WSL → Windows、UTF-8で文字化けなし)
+      wclip = "win32yank.exe -i --crlf";
+      wpaste = "win32yank.exe -o --lf";
     };
 
     # 補完初期化（-C: セキュリティチェックスキップで高速化）
