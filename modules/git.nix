@@ -56,5 +56,14 @@
       # aya-215アカウント用SSHエイリアスへの自動書き換え
       "url \"git@github-aya215:aya-215/\"".insteadOf = "git@github.com:aya-215/";
     };
+
+    # /mnt/ 配下（Windows側リポジトリ）のみCRLFチェックアウトを有効化
+    # WSLネイティブのリポジトリはLFのまま（シェルスクリプト等の改行破壊を防ぐ）
+    includes = [
+      {
+        condition = "gitdir:/mnt/";
+        contents.core.autocrlf = true;
+      }
+    ];
   };
 }
