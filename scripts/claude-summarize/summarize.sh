@@ -109,6 +109,13 @@ fi
 # sed 後の空ファイル確認（念のため）
 [ -s "$out_file" ] || { rm -f "$out_file"; exit 0; }
 
+# redaction: 会話にシークレットが混入していても要約ファイルに残さない（二重ガードの1段目）
+if ! bash "$SCRIPT_DIR/../lib/redact.sh" < "$out_file" > "${out_file}.tmp"; then
+  rm -f "$out_file" "${out_file}.tmp"
+  exit 0
+fi
+mv "${out_file}.tmp" "$out_file"
+
 # ガードB: Haiku が要約せず聞き返した応答（「ログを提供してください」等）は不正として破棄
 if grep -qE "提供してください|ご提供ください|セッションログには|必要な要素|実際の会話ログ|お知らせください" "$out_file"; then
   rm -f "$out_file"
