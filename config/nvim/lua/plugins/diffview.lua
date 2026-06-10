@@ -21,7 +21,15 @@ return {
           local base = vim.fn.system("git merge-base HEAD origin/main"):gsub("\n", "")
           vim.cmd("DiffviewOpen " .. base)
         end,
-        desc = "Diff with merge-base",
+        desc = "Diff with merge-base (main)",
+      },
+      {
+        "<leader>gM",
+        function()
+          local base = vim.fn.system("git merge-base HEAD origin/DEV"):gsub("\n", "")
+          vim.cmd("DiffviewOpen " .. base)
+        end,
+        desc = "Diff with merge-base (DEV)",
       },
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "File History (Current)" },
       { "<leader>gH", "<cmd>DiffviewFileHistory<cr>", desc = "File History (All)" },
