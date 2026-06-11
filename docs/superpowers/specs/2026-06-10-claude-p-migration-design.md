@@ -46,9 +46,10 @@ daily-review ルーティン
 ### データフローとセキュリティ境界
 
 - 会話由来データの経路: ローカル → HTTPS → Anthropic（クラウドセッション）のみ。**GitHubには一切上がらない**。現行の `claude -p`（プロンプト埋め込み）と同じ到達範囲。
-- クラウドに預ける秘密情報: **GitHub PAT 2枚のみ**（ルーティン環境の環境変数）。
-  - `GH_TOKEN_AYA215`: fine-grained PAT。スコープ: aya-215/life（Issues RW）+ 自分のリポジトリのコミット参照
-  - `GH_TOKEN_EBASE`: fine-grained PAT。スコープ: ebase-dev org の対象リポジトリ read-only
+- クラウドに預ける秘密情報: **なし**（実装時変更 2026-06-11）。
+  - 当初はPAT 2枚を環境変数に置く設計だったが、クラウド環境の環境変数は「この環境を使用するすべてのユーザーに表示される」とUIに明記されており（Teamプランで共有リスク）、**認証情報は置かない方針に変更**。
+  - 代わりにセッション内蔵のGitHub認証（claude.aiのGitHub接続=eBASE-Mori + Claude GitHub App）を使用。aya-215/life へは **eBASE-Mori をコラボレーター（Write）に追加**してアクセスを確保。Issue編集・pushはeBASE-Mori名義になる。
+  - ルーティンのプロンプトは GH_TOKEN_* が未設定でも止まらない設計（設定されていれば優先使用）。Work git収集（GH_TOKEN_EBASE）は組織のPAT承認が取れたら有効化、それまではセッション要約から把握。
 - ローカルに残る秘密情報: RC_TOKEN等（既存の `.env.local`）+ 新規にルーティンの fire 用トークン（`ROUTINE_FIRE_URL` / `ROUTINE_FIRE_TOKEN` を同じ `.env.local` に追記、権限600）。
 - fire トークンの被害半径: 単一ルーティンの起動のみ（読み取り不可）。漏洩時はWeb UIで再生成すれば旧トークンは失効。
 

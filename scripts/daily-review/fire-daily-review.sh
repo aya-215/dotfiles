@@ -70,7 +70,13 @@ build_sessions() {
     [ -z "$proj" ] && proj="unknown"
     end_ts="$(sed -n 's/^end: //p' "$sf" | head -1)"
     end_hm="$(TZ=Asia/Tokyo date -d "$end_ts" +%H:%M 2>/dev/null || echo "??:??")"
-    body="$(awk 'BEGIN{fm=0} /^---$/{fm++; next} fm>=3{print}' "$sf")"
+    # frontmatter は「project: 行より後の最初の ---」で終わる（先頭に余分な --- ブロックが
+    # 付くファイルと標準形の両方に対応する。--- の個数には依存しない）
+    body="$(awk '/^project: /{seen=1} /^---$/{if(seen && !body){body=1; next}} body{print}' "$sf")"
+    # 本文が空の要約（薄いセッション等）は見出しごとスキップしてトークンを節約する
+    if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
+      continue
+    fi
     out="${out}## ${proj} — ${end_hm}
 
 ${body}
