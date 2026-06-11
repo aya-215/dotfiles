@@ -236,3 +236,34 @@ gw3off() {
   net.exe use W: /delete 2>/dev/null
   echo "gw3 unmounted"
 }
+
+# dbusclean - WSLgが残す孤立dbus-daemonを掃除しinotifyを解放
+# WSL長時間使用で --session dbus が数百個残留し inotify instances を食い潰す
+# （Next.js Turbopack 等が "Too many open files (os error 24)" で起動不能になる）
+# 実測上これらは誰にも参照されない孤立プロセスのため、--session 持ちを一括 kill する
+dbusclean() {
+  local pid
+
+  # 掃除対象の PID 一覧（--session 持ちの dbus-daemon のみ。実行中シェルは対象外）
+  local -a targets
+  targets=("${(@f)$(pgrep -f 'dbus-daemon --syslog --fork --print-pid 5 --print-address 7 --session' 2>/dev/null)}")
+
+  local before after
+  before=$(pgrep -c dbus-daemon)
+  if (( ${#targets[@]} == 0 )); then
+    echo "孤立 dbus-daemon は見つかりませんでした (現在 ${before} 個)"
+    return 0
+  fi
+
+  # 個別に kill（pkill の自プロセス巻き込み事故を避けるため PID 指定で送る）
+  for pid in "${targets[@]}"; do
+    [[ -n "$pid" ]] && kill "$pid" 2>/dev/null
+  done
+  sleep 1
+
+  after=$(pgrep -c dbus-daemon)
+  local inst max
+  inst=$(ls -l /proc/[0-9]*/fd/* 2>/dev/null | grep -c 'anon_inode:inotify')
+  max=$(cat /proc/sys/fs/inotify/max_user_instances 2>/dev/null)
+  echo "dbus-daemon: ${before} → ${after} 個 / inotify instances: ${inst} / ${max}"
+}
