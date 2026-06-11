@@ -58,7 +58,7 @@ fi
 # HEAD のみを見る（--all は worktree 間の重複と entire-cli のチェックポイント
 # コミットを拾ってしまうため使わない）。
 collect_git_log() {
-  local out="" label repo name lines
+  local out="" label repo name lines branch
   for label in Personal Work; do
     local repos=()
     if [ "$label" = "Personal" ]; then
@@ -68,15 +68,34 @@ collect_git_log() {
     fi
     for repo in "${repos[@]}"; do
       [ -e "$repo/.git" ] || continue
+      # 時刻+件名+変更量を1コミット1行に整形する。--shortstat の統計行は
+      # awk で直前の件名行へ「（N files +A -D）」として畳み込む。
+      # 注意: TZ=Asia/Tokyo を付けると git が zoneinfo を解決できず UTC に
+      # 落ちる環境のため、システムローカル時刻（JST）に任せる
       lines="$(git -C "$repo" log \
         --author="$GIT_AUTHOR_RE" \
         --since="${target_date}T00:00:00+09:00" \
         --until="${target_date}T23:59:59+09:00" \
-        --pretty=format:'- %s' 2>/dev/null \
-        | sed -E 's/ Entire-Checkpoint: [0-9a-f]+//')" || continue
+        --date=format-local:'%H:%M' \
+        --pretty=format:'- %ad %s' --shortstat 2>/dev/null \
+        | sed -E 's/ Entire-Checkpoint: [0-9a-f]+//' \
+        | awk '
+            /^- / { if (prev != "") print prev; prev = $0; next }
+            /files? changed/ {
+              ins = 0; del = 0
+              for (i = 1; i <= NF; i++) {
+                if ($i ~ /insertion/) ins = $(i-1)
+                if ($i ~ /deletion/)  del = $(i-1)
+              }
+              prev = prev "（" $1 " files +" ins " -" del "）"
+            }
+            END { if (prev != "") print prev }
+          ')" || continue
       [ -n "$lines" ] || continue
       name="$(basename "$repo")"
-      out="${out}### [${label}] ${name}
+      branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
+      [ -z "$branch" ] && branch="detached"
+      out="${out}### [${label}] ${name} (branch: ${branch})
 ${lines}
 
 "
