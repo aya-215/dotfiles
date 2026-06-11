@@ -21,6 +21,9 @@ readonly REDACT="$SCRIPT_DIR/../lib/redact.sh"
 # /fire の text 上限は 65,536 文字。余裕を見て 60,000 に抑える
 readonly MAX_PAYLOAD_CHARS=60000
 readonly MAX_RC_CHARS=15000
+readonly MAX_GIT_CHARS=8000
+# 自分のコミットを特定する author 正規表現（work / personal の両メール）
+readonly GIT_AUTHOR_RE='mori\.a@ebase\.co\.jp\|aya\.chr928@gmail\.com'
 
 dry_run=0
 [ "${1:-}" = "--dry-run" ] && dry_run=1
@@ -47,6 +50,49 @@ rocketchat_log="$(bash "$SCRIPT_DIR/fetch-rocketchat.sh" "$target_date" 2>/dev/n
 if [ "${#rocketchat_log}" -gt "$MAX_RC_CHARS" ]; then
   rocketchat_log="${rocketchat_log:0:$MAX_RC_CHARS}
 （※ Rocket Chat 履歴が長いため切り詰め）"
+fi
+
+# 当日の自分のコミットをローカルリポジトリから収集する
+# ローカル収集なので push 前のコミットも拾える（GitHub API より新鮮）うえ、
+# GitHub に無い社内 GitBucket リポジトリ（/mnt/d/tomcat/webapps/*）もカバーできる。
+# HEAD のみを見る（--all は worktree 間の重複と entire-cli のチェックポイント
+# コミットを拾ってしまうため使わない）。
+collect_git_log() {
+  local out="" label repo name lines
+  for label in Personal Work; do
+    local repos=()
+    if [ "$label" = "Personal" ]; then
+      repos=("$HOME/.dotfiles" "$HOME"/src/github.com/aya-215/*/)
+    else
+      repos=("$HOME"/src/github.com/ebase-dev/*/ /mnt/d/tomcat/webapps/*/)
+    fi
+    for repo in "${repos[@]}"; do
+      [ -e "$repo/.git" ] || continue
+      lines="$(git -C "$repo" log \
+        --author="$GIT_AUTHOR_RE" \
+        --since="${target_date}T00:00:00+09:00" \
+        --until="${target_date}T23:59:59+09:00" \
+        --pretty=format:'- %s' 2>/dev/null \
+        | sed -E 's/ Entire-Checkpoint: [0-9a-f]+//')" || continue
+      [ -n "$lines" ] || continue
+      name="$(basename "$repo")"
+      out="${out}### [${label}] ${name}
+${lines}
+
+"
+    done
+  done
+  if [ -n "$out" ]; then
+    printf '%s' "$out"
+  else
+    echo "(本日のコミットなし)"
+  fi
+}
+
+git_log="$(collect_git_log)"
+if [ "${#git_log}" -gt "$MAX_GIT_CHARS" ]; then
+  git_log="${git_log:0:$MAX_GIT_CHARS}
+（※ git活動が長いため切り詰め）"
 fi
 
 # 当日のセッション要約を新しい方から keep 件だけ連結する（古い方を落とす）
@@ -95,6 +141,9 @@ keep="$session_count"
 while :; do
   session_summaries="$(build_sessions "$keep")"
   payload="【対象日】${target_date}
+
+【git活動（当日コミット・ローカル収集）】
+${git_log}
 
 【Rocket Chat 当日履歴（mori.a-times）】
 ${rocketchat_log}
