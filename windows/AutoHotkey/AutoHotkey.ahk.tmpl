@@ -43,6 +43,19 @@ IME_SET(isOn := 0, WinTitle := "A") {
                            , "Ptr",  isOn)
 }
 
+; ──────────────────────────────────────────────
+; WezTermでCtrl+q(tmuxのprefix)を押したら、先にIMEをOFF(英数)にしてから
+; tmuxへprefixを送り直す。
+;   IMEがONのままだとprefix後のコマンドキーをIMEが食って効かない問題の回避。
+;   WezTermがアクティブなときだけ横取りするので、他アプリのCtrl+qには影響しない。
+; ──────────────────────────────────────────────
+#HotIf WinActive("ahk_exe wezterm-gui.exe")
+^q:: {
+    IME_SET(0)
+    Send("^q")
+}
+#HotIf
+
 ; Ctrl + \ でWeztermをトグル
 ^\::ToggleWezterm()
 
