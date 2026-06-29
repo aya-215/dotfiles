@@ -59,12 +59,12 @@ Write-Info ""
 # シンボリックリンク設定
 $links = @(
     @{
-        Source = "$DOTFILES_DIR\.config\wezterm"
+        Source = "$DOTFILES_DIR\config\wezterm"
         Target = "$env:USERPROFILE\.config\wezterm"
         Name = "WezTerm"
     },
     @{
-        Source = "$DOTFILES_DIR\.config\nvim"
+        Source = "$DOTFILES_DIR\config\nvim"
         Target = "$env:USERPROFILE\.config\nvim"
         Name = "Neovim"
     },
