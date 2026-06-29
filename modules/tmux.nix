@@ -112,11 +112,23 @@
       bind-key -n M-k if-shell -F "#{@pane-is-vim}" 'send-keys M-k' 'select-pane -U'
       bind-key -n M-l if-shell -F "#{@pane-is-vim}" 'send-keys M-l' 'select-pane -R'
 
+      # ペイン移動 矢印両対応（大西配列レイヤーのAlt+矢印を受ける）
+      bind-key -n M-Up    if-shell -F "#{@pane-is-vim}" 'send-keys M-Up'    'select-pane -U'
+      bind-key -n M-Down  if-shell -F "#{@pane-is-vim}" 'send-keys M-Down'  'select-pane -D'
+      bind-key -n M-Left  if-shell -F "#{@pane-is-vim}" 'send-keys M-Left'  'select-pane -L'
+      bind-key -n M-Right if-shell -F "#{@pane-is-vim}" 'send-keys M-Right' 'select-pane -R'
+
       # ウィンドウ/セッション移動 (prefix + hjkl)
       bind-key h previous-window
       bind-key l next-window
       bind-key j switch-client -n
       bind-key k switch-client -p
+
+      # ウィンドウ/セッション移動 矢印両対応（大西配列対応。prefix+矢印のデフォルトselect-paneを上書き）
+      bind-key Left  previous-window
+      bind-key Right next-window
+      bind-key Down  switch-client -n
+      bind-key Up    switch-client -p
 
       # コピーモードへ入る (Spaceで)
       bind Space copy-mode

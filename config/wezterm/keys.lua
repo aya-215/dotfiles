@@ -194,6 +194,13 @@ function M.setup(config)
     { key = 'k', mods = 'ALT', action = smart_pane_navigate('Up', 'k') },
     { key = 'l', mods = 'ALT', action = smart_pane_navigate('Right', 'l') },
 
+    -- 矢印両対応（大西配列レイヤーのAlt+矢印を受ける）
+    -- 捕捉は矢印、tmux/nvimへの送出は文字h/j/k/l（確実に受けられる既存ルートを使う）
+    { key = 'LeftArrow',  mods = 'ALT', action = smart_pane_navigate('Left', 'h') },
+    { key = 'DownArrow',  mods = 'ALT', action = smart_pane_navigate('Down', 'j') },
+    { key = 'UpArrow',    mods = 'ALT', action = smart_pane_navigate('Up', 'k') },
+    { key = 'RightArrow', mods = 'ALT', action = smart_pane_navigate('Right', 'l') },
+
     -- ========================================
     -- タブ直接移動 (Alt+数字)
     -- ========================================
