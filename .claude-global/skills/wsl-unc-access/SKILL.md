@@ -1,7 +1,7 @@
 ---
 name: wsl-unc-access
-description: Use when accessing files on a Windows host's UNC admin share (\\IP\d$) from WSL — reading logs/CSV/.chk, listing directories, searching contents, or deploying files to the host. Typically a verification environment such as the hankyu shimebi-master host 192.168.161.90. Triggers include "90のログを見て", "検証環境のCSVを読んで", "WSLからWindows共有のファイルを見て", "\\IP\d$ にアクセス".
-version: 1.0.0
+description: Use when accessing files on a Windows host's UNC admin share (\\IP\d$) from WSL — reading logs/CSV/.chk, listing directories, searching contents, or deploying files to the host. Typically a verification environment such as the hankyu shimebi-master host 192.168.161.90. Triggers include "90のログを見て", "検証環境のCSVを読んで", "WSLからWindows共有のファイルを見て", "\\IP\d$ にアクセス". PowerShell呼び出しの基礎は wsl-call-powershell スキルに集約。
+version: 1.1.0
 ---
 
 # wsl-unc-access
@@ -11,6 +11,8 @@ version: 1.0.0
 検証環境（既定 `192.168.161.90`）の Windows 共有 `\\IP\d$`（D ドライブの管理共有）配下のファイルを、WSL から読み書きするためのレシピ集。ローカルマシンには eBASE-Server 実体が無く、締め日マスタ等の登録経路が完結するのは検証環境のみ。そのため「コードはローカル(/mnt/d)で編集 → 実行・確認は検証環境で」という構成上、共有越しのファイルアクセスが定期的に必要になる。
 
 **Core principle: WSL には smbclient/cifs が無く、drvfs マウントは sudo パスワードを毎回要求する。Windows の `powershell.exe` をフルパスで呼び、既存ログオンセッションの資格情報で `\\IP\d$` に到達する。これは追加権限ゼロで動く（2026-06-19 実測）。**
+
+> PowerShell の呼び出し作法そのもの（フルパス必須・クォート/エスケープ・エンコード2軸・`wslpath`）は汎用スキル **`wsl-call-powershell`** に集約済み。本スキルはその応用（UNC 管理共有越しの read/list/search/deploy）に絞る。基礎で迷ったら `wsl-call-powershell` を参照。
 
 ## When to Use
 
@@ -80,8 +82,8 @@ DST="\\\\$TARGET\\d\$\\tomcat9\\webapps\\ebase-web\\add-on\\eb-MDM-DBP\\support\
 
 ## 既知の地雷
 
-- **エンコードは2軸**: 出力化け対策 `OutputEncoding=UTF8` と、ファイル中身の Shift-JIS 読み `-Encoding default` は別物。両方必要な場面が多い。
 - **WEB コンテキストは `ebase-web`**（ローカルの `hankyu` ではない）。検証環境の URL は `http://<TARGET>/ebase-web`。
 - **`\\IP\d$` は管理共有**で既存 Windows ログオンセッション依存。`net use` が切れていると失敗 → 接続確認レシピ(1)で切り分け、復旧はユーザーに依頼。
 - **設置元は `/mnt` 配下限定**（`/tmp` 不可）。
-- **`powershell.exe` は PATH に無い**ためフルパス必須。pwsh7（`/mnt/c/Program Files/PowerShell/7/pwsh.exe`）も存在するが既定は WindowsPowerShell を使う。
+
+> 汎用の地雷（エンコード2軸・`powershell.exe` フルパス必須・`$`/`\` のエスケープ・pwsh7 との使い分け）は `wsl-call-powershell` の「既知の地雷」に集約。
