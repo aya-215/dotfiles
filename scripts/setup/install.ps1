@@ -44,8 +44,8 @@ param(
 $SCRIPT_DIR = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $SCRIPT_DIR "common.ps1")
 
-# dotfilesのルートディレクトリを取得
-$DOTFILES_DIR = Split-Path -Parent $SCRIPT_DIR
+# dotfilesのルートディレクトリを取得 (このスクリプトは scripts/setup/ にあるため2階層上がる)
+$DOTFILES_DIR = Split-Path -Parent (Split-Path -Parent $SCRIPT_DIR)
 $BACKUP_DIR = "$env:USERPROFILE\.dotfiles_backup"
 
 Write-Info "===================================="
