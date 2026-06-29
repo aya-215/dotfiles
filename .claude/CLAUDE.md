@@ -29,6 +29,22 @@ dotfiles/
 └── README.md             # プロジェクトドキュメント
 ```
 
+## リポジトリのclone構成（重要）
+
+同じremoteのcloneが2つ存在し、別実体（シンボリックリンクではない）：
+
+| clone | 役割 |
+|---|---|
+| `/home/aya/.dotfiles`（WSL側） | **メイン作業場**。編集・コミット・pushはここで行う |
+| `/mnt/d/git/dotfiles`（Windows側 = `D:\git\dotfiles`） | WezTerm/AHK等のWindowsアプリが読む実体。基本 `git pull` するだけ |
+
+**Windows側アプリ（WezTerm・AHK等）の設定変更を反映する流れ：**
+1. `/home/aya/.dotfiles` で編集 → コミット → push
+2. Windows側で `cd D:\git\dotfiles && git pull`
+3. （chezmoi管理の`windows/`配下を変更した場合のみ）Windowsで `chezmoi apply --source .\windows`
+
+`/home/aya/.dotfiles` だけ編集してもWindowsアプリには反映されない点に注意。
+
 ## dotfiles管理の仕組み
 
 このリポジトリはWSLとWindowsで役割が分かれとる：
@@ -48,6 +64,8 @@ dotfiles/
 
 - 設定変更は `windows/` 配下のファイルを編集する
 - 反映するには `chezmoi apply --source .\windows` を実行する（Windowsで）
+- `AutoHotkey.ahk.tmpl` は `{{ .hasDriveD }}` 等のテンプレート変数を含むため、生コピーではなく `chezmoi apply` での展開が必須
+- AHK変更時は `run_onchange_install-autohotkey.ps1.tmpl` が連動発火し、Startupフォルダのシンボリックリンクを自動更新する（apply内で実行される）
 
 ### Neovim設定
 
@@ -60,6 +78,7 @@ dotfiles/
 
 - `config/wezterm/` がソースファイル（WSL/Windows共通）
 - chezmoiテンプレート変数は使わずLuaのランタイムチェックで環境差異を吸収している
+- `.tmpl`ではない通常のLuaファイルのため、Windows側は `git pull` するだけで反映（chezmoi不要、保存検知で自動リロード）
 
 ## Git操作
 
