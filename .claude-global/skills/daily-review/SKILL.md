@@ -63,7 +63,7 @@ model: opus
 | 完了タスク | `aya-215/life` の当日 close された Issue（label: `task`） | サマリーに反映 |
 | gitログ（Work） | `~/src/github.com/ebase-dev/*` 配下 | サマリーに反映 |
 | gitログ（Personal） | `~/.dotfiles`, `~/src/github.com/aya-215/*` | サマリーに反映 |
-| Claudeセッション要約 | `~/.nb/claude/sessions/YYYY-MM-DD/*.md` | サマリーに反映 + レビュー対象（セッション単位の6項目要約、SessionEnd hook が自動生成） |
+| Claudeセッション要約 | `~/.nb/claude/sessions/YYYY-MM-DD/*.md` | サマリーに反映 + レビュー対象（セッション単位の7項目要約、SessionEnd hook が自動生成） |
 | Rocket Chat 会話 | `mcp__rocketchat__*` ツール（`mori.a-times` チャンネル） | 自分の作業・レビュー作業の把握 |
 | agent-memory | `~/.claude/skills/agent-memory/memories/` | 整理・更新確認 |
 
@@ -180,7 +180,7 @@ done
 ### Claudeセッション要約の取得
 
 SessionEnd hook により各セッション終了時に自動でセッション要約が生成されるため、手動同期は不要。
-各セッションは既に6項目（意図・作業内容・結論・編集ファイル・実行コマンド・ナレッジ候補）で構造化済み。
+各セッションは既に7項目（意図・作業内容・結論・編集ファイル・実行コマンド・ナレッジ候補・フィードバック/承認）で構造化済み。
 
 ```bash
 # その日の全セッション要約をプロジェクトごとに見出し付きで読む
