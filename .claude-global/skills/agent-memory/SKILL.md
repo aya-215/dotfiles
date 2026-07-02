@@ -1,7 +1,7 @@
 ---
 name: agent-memory
 description: "Use this skill when the user asks to '記憶して', '覚えて', '保存して', '思い出して', '記憶を検索', 'メモリーを検索', or mentions memory-related keywords like '前に話した', 'さっきの', '以前の会話'. Also use proactively when discovering valuable findings worth preserving."
-version: 3.0.0
+version: 3.1.0
 ---
 
 # Agent Memory
@@ -75,6 +75,35 @@ tags: [performance, worker, memory-leak]
 related: [src/core/file/fileProcessor.ts]
 ---
 ```
+
+## Feedback Memory（retrospective学習機構）
+
+`memories/feedback/` には `/retrospective` スキルが管理するfeedbackメモリを置く。通常メモリのfrontmatterに加えて以下のフィールドを持つ:
+
+```yaml
+---
+summary: "1-2行の説明（通常メモリと同じ規約）"
+created: 2026-07-02
+updated: 2026-07-09      # カウント更新時に更新
+type: feedback           # feedbackメモリの識別子
+pain_count: 0            # 失敗の繰り返し数（1セッション1回まで）
+success_count: 0         # 成功の積み重ね数（同上）
+reinforce_count: 0       # 昇格後の適用実績（要約に明確な証拠がある場合のみ）
+promoted_to: null        # null | rules | skill
+tags: [error-handling]
+scope: global            # global | <プロジェクト名>（普遍/固有の分離）
+---
+```
+
+本文は3部構成:
+
+```markdown
+**Why:** なぜこれが重要か
+**How to apply:** いつ・どこで適用すべきか
+**出現記録:** 2026-06-25 (ebase-web), 2026-07-01 (dotfiles)
+```
+
+カウント更新・昇格提案は `/retrospective` スキルが行う（閾値: count >= 3 で `rules/learned-rules.md` へ昇格提案、reinforce_count >= 3 でスキル化候補）。手動編集も可。
 
 ## Search Workflow
 
