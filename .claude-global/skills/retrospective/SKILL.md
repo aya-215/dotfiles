@@ -1,7 +1,7 @@
 ---
 name: retrospective
 description: 週次のふりかえり学習。セッション要約からpain/successパターンを検出してfeedbackメモリのカウントを更新し、閾値到達でルール/スキルへの昇格を提案する。「/retrospective」「ふりかえり学習」「昇格チェック」「週次ふりかえり」で起動。
-version: 1.0.0
+version: 1.1.0
 ---
 
 # retrospective（週次ふりかえり学習）
@@ -69,6 +69,8 @@ rules昇格候補があれば、候補ごとにAskUserQuestionで承認を確認
 ```
 
 2. 該当feedbackの `promoted_to` を `rules` に、`updated` を今日に更新する
+
+3. 追記後、learned-rules.md のルール数（`##` 見出しの数）を確認する。15件を超えている場合、または reinforce_count が長期間 0 のままのルールがある場合は、整理（類似ルールの統合・本文の短縮・不要ルールの削除）をユーザーに提案する。削除時は由来feedbackの `promoted_to` を `null` に戻すこと（ルールは毎セッション読み込まれるため、肥大はコンテキストを圧迫する）
 
 ### 7. スキル化候補の提示
 
