@@ -41,10 +41,23 @@ echo "=== blog md ==="
 grep -rl "$KEYWORD" "$LIFE_REPO/blog/" 2>/dev/null | sort
 
 echo "=== Claudeセッション要約 ==="
-grep -rl "$KEYWORD" ~/.nb/claude/sessions/ 2>/dev/null | sort
+# project が .dotfiles / life などメタ系のファイルと、このスキル自身の過去出力
+# （effort-estimate の実行セッション）は除外する。過去の工数結論に循環アンカリングするのを防ぐ。
+grep -rl "$KEYWORD" ~/.nb/claude/sessions/ 2>/dev/null | sort | \
+  grep -viE 'effort-estimate|/\.dotfiles-|/life-'
 ```
 
 ヒットした日付の最小〜最大を作業期間とする。前後1日程度は関連作業がにじむため、範囲は広めに取る。
+
+**自己汚染の除外（重要）**: このスキルの過去実行が残したセッション要約には工数の結論（「約6人日」等）が書かれており、キーワードにヒットする。発見段階でこれらを除外しないと、自分の過去結論にアンカリングして再現性を損なう。上記 `grep -v` で `effort-estimate`・dotfiles/life 等のメタ系を弾く。
+
+**タスクの切り出し（狭義/広義の線引き）**: タスク名（例「デモ環境作成」）はリテラルではヒットしないことが多く、ブランド名等でしか引けないため、広義の一連の作業がまとめて釣れる。含める範囲は次の基準で狭義・広義を両方見積もり、出力で並べる：
+
+- **狭義（環境構築のみ）に含める**: そのタスクを「動かす」ために不可避な作業（環境セットアップ・接続設定・データ準備・基本動作の検証・タスク固有のプロンプト/設定）
+- **広義（一式）に含める**: 上記に加え、そのタスクを機に作った再利用可能なツール・基盤・ワークフロー、品質の作り込み
+- **どちらからも除外**: 別タスク・別機能・他者PRレビュー・個人リポ（下記「並行作業の除外」参照）
+
+境界が一意に決まらず、含める範囲の候補が複数あるときだけ `AskUserQuestion` で確認する。
 
 ## データ収集
 
@@ -89,6 +102,8 @@ done
 
 コミット時刻で「その日の作業窓の下限」を裏取りする。対象タスクに関係するリポジトリを選んで実行する。
 
+**worktree重複に注意**: `~/src/github.com/ebase-dev/` 配下には本体リポジトリと並んで worktree（`epc-feat-*`・`emm-feat-*` 等）が同居しており、`--all` で回すと同一コミットが複数リポジトリ分ダブって出る。人日ベース主軸なら最終値は汚染されないが、**コミット数を数える運用はしないこと**（時刻の分布＝作業窓の裏取りにのみ使う）。
+
 ```bash
 # ebase-dev配下 + eb-api-extended + hankyu
 for repo in ~/src/github.com/ebase-dev/*/ /mnt/d/tomcat/webapps/eb-api-extended /mnt/d/tomcat/webapps/hankyu; do
@@ -105,6 +120,8 @@ done
 ### Claudeセッション要約（start/end付き・作業窓クロスチェック用）
 
 各セッションの frontmatter に `session_id`/`start`/`end` がある。**start/endは合算に使わず、その日の作業窓の裏取りにのみ使う**（後述の方法論を厳守）。
+
+同一 `session_id` の要約が同日に複数ファイル存在することがある（セッション継続中に複数回スナップショットが取られるため）。end 時刻だけが少しずつ違う同一 session_id は1セッションとして扱い、重複計上しないこと。
 
 ```bash
 d="$start_date"
@@ -126,6 +143,8 @@ done
 ### Rocket Chat（つまずき・進捗の実況）
 
 `mcp__rocketchat__list_channels`（filter: "mori.a-times"）で room_id を特定し、`mcp__rocketchat__get_channel_history`（oldest/latest でJST→UTC変換に注意）で期間内を取得。username=mori.a の発言のみ、タスクのキーワードに関連するものを抽出する。出力が大きい場合はサブエージェントに抽出させる。
+
+**タイムアウト時は即スキップ**: `list_channels` 等が無応答の場合、待たずにこのソースを飛ばして他ソースで算出する（Rocket Chatは「つまずきの実況」の補助ソースであり、無くても人日算出は成立する）。
 
 ## 工数算出の方法論
 
@@ -160,4 +179,5 @@ done
 | タスク名でヒットするデータが1件もない | 「該当する作業が見つかりません」と表示して終了 |
 | gitリポジトリなし | スキップして他ソースで算出 |
 | Rocket Chat 発言0件 | スキップして他ソースで算出 |
+| Rocket Chat ツール無応答・タイムアウト | 待たずに即スキップして他ソースで算出 |
 | 日報が期間内に1日もない | gitログ・セッション要約のみで算出（精度低下を明記） |
