@@ -1,7 +1,8 @@
 {
   "env": {
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_AFK_TIMEOUT_MS": "604800000"
   },
   "attribution": {
     "commit": "",
@@ -60,14 +61,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/session-tracker.sh"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude session-start"
           }
         ]
@@ -108,10 +101,6 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/notify.sh"
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/session-tracker.sh"
           }
         ]
       },
@@ -129,14 +118,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/session-tracker.sh"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude pre-tool-use"
           }
         ]
@@ -147,28 +128,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.claude/hooks/session-tracker.sh"
-          }
-        ]
-      },
-      {
-        "hooks": [
-          {
-            "type": "command",
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude post-tool-use"
           }
         ]
       }
     ],
     "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/session-tracker.sh"
-          }
-        ]
-      },
       {
         "hooks": [
           {
@@ -260,7 +225,16 @@
     "claude-mem@thedotmack": false,
     "rust-analyzer-lsp@claude-plugins-official": false,
     "superpowers@claude-plugins-official": true,
-    "ebaseweb-coding-check@ebase-marketplace": true
+    "ebaseweb-coding-check@ebase-marketplace": true,
+    "superpowers-developing-for-claude-code@superpowers-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "superpowers-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "obra/superpowers-marketplace"
+      }
+    }
   },
   "language": "日本語",
   "spinnerVerbs": {
@@ -341,9 +315,12 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "effortLevel": "high",
+  "effortLevel": "low",
+  "advisorModel": "opus",
   "plansDirectory": "./.claude/plans",
+  "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
+  "skipWorkflowUsageWarning": true,
   "mcpServers": {
     "gitbucket": {
       "command": "uv",
