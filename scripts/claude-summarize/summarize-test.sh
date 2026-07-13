@@ -118,6 +118,65 @@ else
 fi
 assert_absent "case1: tmp ファイルが残らない" "$out1.tmp"
 
+# ==== case2: コードフェンス包み・frontmatter混入の救済 ====
+mkdir -p "$TMP/case2/stub"
+{
+  echo '```markdown'
+  echo '---'
+  echo 'project: testproj'
+  echo '---'
+  good_body
+  echo '```'
+} > "$TMP/case2/stub/out"
+run_summarize case2 > /dev/null
+out2="$TMP/case2/sessions/2026-07-13/testproj-1134-$SID_SHORT.md"
+assert_contains "case2: フェンス包みでもファイル生成される" "$out2" '^## 意図'
+if [ -f "$out2" ] && ! grep -q '^```' "$out2"; then
+  echo "ok: case2: フェンス行が残らない"
+else
+  echo "NG: case2: フェンス行が残っている"
+  fails=$((fails + 1))
+fi
+if [ -f "$out2" ] && [ "$(grep -c '^---$' "$out2")" -eq 2 ]; then
+  echo "ok: case2: frontmatter が二重にならない"
+else
+  echo "NG: case2: frontmatter 区切りが2本でない"
+  fails=$((fails + 1))
+fi
+
+# ==== case3: 見出し不足が2回続いたら破棄してログを残す ====
+mkdir -p "$TMP/case3/stub"
+echo "要約できませんでした。会話ログを提供してください。" > "$TMP/case3/stub/out"
+log3="$(run_summarize case3)"
+out3="$TMP/case3/sessions/2026-07-13/testproj-1134-$SID_SHORT.md"
+assert_absent "case3: 不正出力はファイルを残さない" "$out3"
+if printf '%s\n' "$log3" | grep -q "discarded(attempt=2)"; then
+  echo "ok: case3: 破棄理由がログに出る"
+else
+  echo "NG: case3: 破棄ログがない → got: $log3"
+  fails=$((fails + 1))
+fi
+if [ "$(cat "$TMP/case3/stub/calls")" -eq 2 ]; then
+  echo "ok: case3: リトライ含め2回呼ばれる"
+else
+  echo "NG: case3: 呼び出し回数が2でない → $(cat "$TMP/case3/stub/calls")"
+  fails=$((fails + 1))
+fi
+
+# ==== case4: 1回目不正 → 2回目正常でリトライ成功 ====
+mkdir -p "$TMP/case4/stub"
+echo "garbage" > "$TMP/case4/stub/out.1"
+good_body > "$TMP/case4/stub/out.2"
+run_summarize case4 > /dev/null
+out4="$TMP/case4/sessions/2026-07-13/testproj-1134-$SID_SHORT.md"
+assert_contains "case4: リトライで復旧してファイル生成" "$out4" '^## 結論'
+if [ "$(cat "$TMP/case4/stub/calls")" -eq 2 ]; then
+  echo "ok: case4: ちょうど2回呼ばれる"
+else
+  echo "NG: case4: 呼び出し回数が2でない → $(cat "$TMP/case4/stub/calls")"
+  fails=$((fails + 1))
+fi
+
 # ==== 結果 ====
 if [ "$fails" -eq 0 ]; then
   echo "ALL OK"

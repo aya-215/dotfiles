@@ -83,14 +83,23 @@ read -r -d '' PROMPT <<EOF || true
 ${extracted}
 EOF
 
-# Haiku で要約生成。
-# --settings '{"disableAllHooks":true}' で、この claude -p 実行が SessionEnd hook を
-# 再発火させないようにする（さもないと「要約用 claude の終了 → また要約」の自己増殖ループになる）。
-# --bare は hook を切れるが認証(OAuth/keychain)も読まなくなるため使わない。disableAllHooks は認証を保つ。
-raw="$("$CLAUDE_BIN" -p "$PROMPT" --model haiku --settings '{"disableAllHooks":true}' 2>/dev/null)" || exit 0
-
-# 前置き除去: 最初の「## 意図」以降だけを採用（frontmatter やフェンスの混入をここで捨てる）
-body="$(printf '%s\n' "$raw" | sed -n '/^## 意図/,$p')"
+# Haiku で要約生成（不正出力なら1回だけリトライ）。
+# 出力は「最初の ## 意図 以降を採用 → フェンス行除去 → 必須見出し検証」で決定的に整形・検証する。
+body=""
+for attempt in 1 2; do
+  if ! raw="$("$CLAUDE_BIN" -p "$PROMPT" --model haiku --settings '{"disableAllHooks":true}' 2>/dev/null)"; then
+    echo "discarded(attempt=$attempt): claude 実行失敗: $session_id"
+    continue
+  fi
+  # 前置き除去（frontmatter・フェンス開始行の混入をここで捨てる）→ 残ったフェンス行を除去
+  cand="$(printf '%s\n' "$raw" | sed -n '/^## 意図/,$p' | sed '/^```/d')"
+  if printf '%s\n' "$cand" | grep -q '^## 作業内容' \
+     && printf '%s\n' "$cand" | grep -q '^## 結論'; then
+    body="$cand"
+    break
+  fi
+  echo "discarded(attempt=$attempt): 必須見出し不足: $session_id"
+done
 [ -n "$body" ] || exit 0
 
 # redaction: 会話にシークレットが混入していても要約ファイルに残さない（二重ガードの1段目）
