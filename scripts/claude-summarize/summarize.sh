@@ -1,20 +1,23 @@
 #!/bin/bash
-# summarize.sh - セッション JSONL 1本を Haiku で6項目要約し、sessions/ に保存する
+# summarize.sh - セッション JSONL 1本を Haiku で7項目要約し、sessions/ に保存する
 #
 # extract.py で前処理（text + ツールメタ抽出）してから claude -p --model haiku に渡す。
+# frontmatter と出力ファイルの構造はスクリプトが決定的に組み立て、Haiku には本文のみ生成させる
+# （LLM に構造を任せると frontmatter 欠落・フェンス混入が起きるため）。
 # サブスク枠で動くため API 課金はなく、要約は軽いタスクなので Haiku で十分。
 #
 # 使用方法:
 #   ./summarize.sh <transcript.jsonl> <session_id>
+# 環境変数（テスト用に上書き可能）:
+#   CLAUDE_BIN / SESSIONS_ROOT / MAX_CHARS
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly CLAUDE_BIN="$HOME/.local/bin/claude"
-readonly SESSIONS_ROOT="$HOME/.nb/claude/sessions"
-# ★ Haiku 200K コンテキストへの安全弁（文字数またはバイト数の上限）。これを超えたら末尾を切り詰める。
-#   日本語混在で概ね 1.5 文字/トークンと見て、約12万文字（LC_ALL=C 等では約12万バイト）≒ 8万トークン程度に抑える。
-#   LANG=ja_JP.UTF-8 設定後は文字単位になる。
-readonly MAX_CHARS=120000
+CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
+SESSIONS_ROOT="${SESSIONS_ROOT:-$HOME/.nb/claude/sessions}"
+# ★ Haiku 200K コンテキストへの安全弁（文字数上限）。超えたら切り詰める。
+#   日本語混在で概ね 1.5 文字/トークンと見て、約12万文字 ≒ 8万トークン程度に抑える。
+MAX_CHARS="${MAX_CHARS:-120000}"
 
 transcript="${1:?usage: summarize.sh <transcript.jsonl> <session_id>}"
 session_id="${2:?usage: summarize.sh <transcript.jsonl> <session_id>}"
@@ -32,35 +35,40 @@ if [ "$tool_count" -eq 0 ] && [ "$body_chars" -lt 200 ]; then
   exit 0
 fi
 
+# ヘッダ値を決定的にパース（frontmatter は Haiku に転記させず、この値から自前で組み立てる）
+header="$(printf '%s\n' "$extracted" | sed -n '1,/^---$/p')"
+get_header() {
+  local key="$1"
+  printf '%s\n' "$header" | sed -n "s/^${key}: //p" | head -1
+}
+proj_name="$(get_header project)"
+[ -z "$proj_name" ] && proj_name="unknown"
+cwd_val="$(get_header cwd)"
+start_ts="$(get_header start)"
+end_ts="$(get_header end)"
+
 # ★ 上限ガード: extracted が極端に大きい場合は先頭 MAX_CHARS 文字に切り詰める
-#   （会話が長大でも Haiku の 200K を超えないようにする安全弁）
+# ロケールを固定し文字単位の切り詰めを保証する
+export LANG=ja_JP.UTF-8
 if [ "${#extracted}" -gt "$MAX_CHARS" ]; then
   extracted="${extracted:0:$MAX_CHARS}
 （※ 会話が長いため、ここで切り詰めています）"
 fi
 
-# 対象日を JSONL の最終 timestamp（JST）から決める。取れなければ今日。
-target_date="$(printf '%s\n' "$extracted" \
-  | sed -n 's/^end: //p' | head -1 \
-  | { read -r ts; [ -n "$ts" ] && TZ=Asia/Tokyo date -d "$ts" +%Y-%m-%d 2>/dev/null || TZ=Asia/Tokyo date +%Y-%m-%d; })"
-
-# ファイル名用の要素を抽出: プロジェクト名・終了時刻(HHMM, JST)・session_id先頭8文字
-proj_name="$(printf '%s\n' "$extracted" | sed -n 's/^project: //p' | head -1)"
-[ -z "$proj_name" ] && proj_name="unknown"
-end_hhmm="$(printf '%s\n' "$extracted" \
-  | sed -n 's/^end: //p' | head -1 \
-  | { read -r ts; [ -n "$ts" ] && TZ=Asia/Tokyo date -d "$ts" +%H%M 2>/dev/null || TZ=Asia/Tokyo date +%H%M; })"
+# 対象日・時刻は end タイムスタンプ（JST）から決める。取れなければ今日/現在時刻。
+target_date="$(TZ=Asia/Tokyo date -d "$end_ts" +%Y-%m-%d 2>/dev/null || TZ=Asia/Tokyo date +%Y-%m-%d)"
+end_hhmm="$(TZ=Asia/Tokyo date -d "$end_ts" +%H%M 2>/dev/null || TZ=Asia/Tokyo date +%H%M)"
 sid_short="${session_id:0:8}"
 # ファイル名に使えない文字を念のためサニタイズ（スラッシュ等をハイフンに）
 safe_proj="$(printf '%s' "$proj_name" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')"
 
 out_dir="$SESSIONS_ROOT/$target_date"
-mkdir -p "$out_dir"
 out_file="$out_dir/${safe_proj}-${end_hhmm}-${sid_short}.md"
 
 read -r -d '' PROMPT <<EOF || true
 以下は Claude Code の1セッションの会話ログ（前処理済み: 会話テキストとツール使用メタのみ）です。
-このセッションを日本語で要約し、**下記7項目の Markdown のみ**を出力してください。前置き・後置きは一切不要。
+このセッションを日本語で要約し、**下記7項目の Markdown 本文のみ**を出力してください。
+前置き・後置き・frontmatter・コードフェンス（\`\`\`）は一切不要。出力は必ず「## 意図」の行から始めること。
 
 各項目の書き方:
 - ## 意図 — このセッションで何をしようとしたか（1〜2行）。冒頭で必ず「【レビュー作業】」または「【実装作業】」を明記すること（レビュー作業=他者のPRやコードを読んで指摘・確認する作業。実装作業=自分でコードを書く・修正する作業。両方を含む場合は主たる方を選び、もう一方も触れる）
@@ -71,54 +79,33 @@ read -r -d '' PROMPT <<EOF || true
 - ## ナレッジ候補 — memory に残す価値のある発見。なければ「なし」
 - ## フィードバック/承認 — ユーザーから修正・指摘された点（pain）と、ユーザーが明確に承認・称賛した進め方（success）。なければ「なし」
 
-冒頭に必ず以下の frontmatter を付けること（会話ログのヘッダの値を転記）:
----
-project: <project>
-session_id: <session_id>
-start: <start>
-end: <end>
-cwd: <cwd>
----
-
 === 会話ログ ===
 ${extracted}
 EOF
 
-# ★ 上限ガード: 切り詰めブロックの前後でロケールを固定し文字単位を保証する
-export LANG=ja_JP.UTF-8
-
-# Haiku で要約生成（失敗したら中途半端なファイルを残さない）
+# Haiku で要約生成。
 # --settings '{"disableAllHooks":true}' で、この claude -p 実行が SessionEnd hook を
 # 再発火させないようにする（さもないと「要約用 claude の終了 → また要約」の自己増殖ループになる）。
 # --bare は hook を切れるが認証(OAuth/keychain)も読まなくなるため使わない。disableAllHooks は認証を保つ。
-if ! "$CLAUDE_BIN" -p "$PROMPT" --model haiku --settings '{"disableAllHooks":true}' > "$out_file" 2>/dev/null; then
-  rm -f "$out_file"
-  exit 0
-fi
+raw="$("$CLAUDE_BIN" -p "$PROMPT" --model haiku --settings '{"disableAllHooks":true}' 2>/dev/null)" || exit 0
 
-# 空ファイル（claude が exit 0 で空出力を返したケース等）は残さない
-[ -s "$out_file" ] || { rm -f "$out_file"; exit 0; }
-
-# 後処理: frontmatter（最初の ---）より前の前置きを除去。--- が無ければ不正として削除。
-if grep -q '^---' "$out_file"; then
-  sed -i -n '/^---/,$p' "$out_file"
-else
-  rm -f "$out_file"
-  exit 0
-fi
-
-# sed 後の空ファイル確認（念のため）
-[ -s "$out_file" ] || { rm -f "$out_file"; exit 0; }
+# 前置き除去: 最初の「## 意図」以降だけを採用（frontmatter やフェンスの混入をここで捨てる）
+body="$(printf '%s\n' "$raw" | sed -n '/^## 意図/,$p')"
+[ -n "$body" ] || exit 0
 
 # redaction: 会話にシークレットが混入していても要約ファイルに残さない（二重ガードの1段目）
-if ! bash "$SCRIPT_DIR/../lib/redact.sh" < "$out_file" > "${out_file}.tmp"; then
-  rm -f "$out_file" "${out_file}.tmp"
-  exit 0
-fi
-mv "${out_file}.tmp" "$out_file"
+body="$(printf '%s\n' "$body" | bash "$SCRIPT_DIR/../lib/redact.sh")" || exit 0
 
-# ガードB: Haiku が要約せず聞き返した応答（「ログを提供してください」等）は不正として破棄
-if grep -qE "提供してください|ご提供ください|セッションログには|必要な要素|実際の会話ログ|お知らせください" "$out_file"; then
-  rm -f "$out_file"
-  exit 0
-fi
+# 組み立てはアトミックに: tmp に全て書いてから mv（途中失敗で壊れたファイルを残さない）
+mkdir -p "$out_dir"
+{
+  printf -- '---\n'
+  printf 'project: %s\n' "$proj_name"
+  printf 'session_id: %s\n' "$session_id"
+  printf 'start: %s\n' "$start_ts"
+  printf 'end: %s\n' "$end_ts"
+  printf 'cwd: %s\n' "$cwd_val"
+  printf -- '---\n\n'
+  printf '%s\n' "$body"
+} > "${out_file}.tmp"
+mv "${out_file}.tmp" "$out_file"
