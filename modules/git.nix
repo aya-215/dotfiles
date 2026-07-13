@@ -49,6 +49,8 @@
       diff.colorMoved = "default";
       credential."https://github.com".helper = "!${pkgs.gh}/bin/gh auth git-credential";
       credential."https://gist.github.com".helper = "!${pkgs.gh}/bin/gh auth git-credential";
+      # 社内GitBucket: 初回push時の認証情報を~/.git-credentialsに平文保存し、以降の入力を省略
+      credential."http://192.168.208.80:8080".helper = "store";
       coderabbit.machineId = "cli/96c13c10b3db406c9ed1d8b2fb783b2c";
       push.autoSetupRemote = true;
       pull.rebase = true;
