@@ -105,6 +105,9 @@ done
 # redaction: 会話にシークレットが混入していても要約ファイルに残さない（二重ガードの1段目）
 body="$(printf '%s\n' "$body" | bash "$SCRIPT_DIR/../lib/redact.sh")" || exit 0
 
+# 同一セッションの旧要約を削除（再開セッションは最新の要約が全期間をカバーするため1本に保つ）
+find "$SESSIONS_ROOT" -type f -name "*-${sid_short}.md" ! -path "$out_file" -delete 2>/dev/null || true
+
 # 組み立てはアトミックに: tmp に全て書いてから mv（途中失敗で壊れたファイルを残さない）
 mkdir -p "$out_dir"
 {

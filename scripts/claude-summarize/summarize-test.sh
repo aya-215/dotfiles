@@ -177,6 +177,20 @@ else
   fails=$((fails + 1))
 fi
 
+# ==== case5: 同一 session_id の旧要約は削除される（再開セッションの重複対策） ====
+mkdir -p "$TMP/case5/stub" "$TMP/case5/sessions/2026-07-01"
+good_body > "$TMP/case5/stub/out"
+old5="$TMP/case5/sessions/2026-07-01/testproj-0900-$SID_SHORT.md"
+echo "old summary" > "$old5"
+# 別セッションのファイルは消えないことも確認する
+other5="$TMP/case5/sessions/2026-07-01/testproj-0930-99999999.md"
+echo "other session" > "$other5"
+run_summarize case5 > /dev/null
+out5="$TMP/case5/sessions/2026-07-13/testproj-1134-$SID_SHORT.md"
+assert_contains "case5: 新しい要約が生成される" "$out5" '^## 意図'
+assert_absent "case5: 同一sidの旧要約が消える" "$old5"
+assert_contains "case5: 別セッションのファイルは残る" "$other5" 'other session'
+
 # ==== 結果 ====
 if [ "$fails" -eq 0 ]; then
   echo "ALL OK"
