@@ -47,12 +47,16 @@ cwd_val="$(get_header cwd)"
 start_ts="$(get_header start)"
 end_ts="$(get_header end)"
 
-# ★ 上限ガード: extracted が極端に大きい場合は先頭 MAX_CHARS 文字に切り詰める
+# ★ 上限ガード: extracted が極端に大きい場合は先頭2/3+末尾1/3を残す（セッションの結論・フィードバックは末尾に集中するため）
 # ロケールを固定し文字単位の切り詰めを保証する
 export LANG=ja_JP.UTF-8
+# 超過時は先頭2/3 + 末尾1/3 を残す（セッションの結論・フィードバックは末尾に集中するため）
 if [ "${#extracted}" -gt "$MAX_CHARS" ]; then
-  extracted="${extracted:0:$MAX_CHARS}
-（※ 会話が長いため、ここで切り詰めています）"
+  head_n=$((MAX_CHARS * 2 / 3))
+  tail_n=$((MAX_CHARS / 3))
+  extracted="${extracted:0:$head_n}
+（※ 会話が長いため、中略しています）
+${extracted: -$tail_n}"
 fi
 
 # 対象日・時刻は end タイムスタンプ（JST）から決める。取れなければ今日/現在時刻。

@@ -191,6 +191,24 @@ assert_contains "case5: 新しい要約が生成される" "$out5" '^## 意図'
 assert_absent "case5: 同一sidの旧要約が消える" "$old5"
 assert_contains "case5: 別セッションのファイルは残る" "$other5" 'other session'
 
+# ==== case6: 長い会話は先頭2/3+末尾1/3を残す（末尾の結論を捨てない） ====
+case6_dir="$TMP/case6"
+mkdir -p "$case6_dir/stub" "$case6_dir/sessions"
+good_body > "$case6_dir/stub/out"
+# HEADMARK を先頭付近、TAILMARK を末尾に置いた長い transcript（中間は詰め物で MAX_CHARS 超過させる）
+filler="$(printf 'x%.0s' {1..2000})"
+{
+  printf '{"type":"user","sessionId":"%s","cwd":"/home/aya/testproj","timestamp":"2026-07-13T01:00:00.000Z","message":{"content":"HEADMARK 依頼開始"}}\n' "$SID"
+  printf '{"type":"assistant","sessionId":"%s","timestamp":"2026-07-13T01:10:00.000Z","message":{"content":[{"type":"text","text":"%s"},{"type":"tool_use","name":"Edit","input":{"file_path":"/home/aya/testproj/a.conf"}}]}}\n' "$SID" "$filler"
+  printf '{"type":"assistant","sessionId":"%s","timestamp":"2026-07-13T02:34:56.000Z","message":{"content":[{"type":"text","text":"TAILMARK 完了報告"}]}}\n' "$SID"
+} > "$case6_dir/transcript.jsonl"
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$case6_dir/stub" SESSIONS_ROOT="$case6_dir/sessions" MAX_CHARS=900 \
+  bash "$SCRIPT_DIR/summarize.sh" "$case6_dir/transcript.jsonl" "$SID" > /dev/null 2>&1 || true
+prompt6="$case6_dir/stub/prompt.1"
+assert_contains "case6: 先頭側が残る" "$prompt6" 'HEADMARK'
+assert_contains "case6: 末尾側が残る" "$prompt6" 'TAILMARK'
+assert_contains "case6: 中略マーカーが入る" "$prompt6" '中略'
+
 # ==== 結果 ====
 if [ "$fails" -eq 0 ]; then
   echo "ALL OK"
