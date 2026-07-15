@@ -34,6 +34,10 @@ AskUserQuestionで確認を取るまで、絶対に先へ進むな。
 - AskUserQuestionの選択肢には必ず「次に進む」という選択肢を含める
 - **例外**: ユーザーが自分の論点・疑問を持ち込んだときは、AskUserQuestionを挟まずまず追従する。議論・検証・意見表明の途中に確認を差し込まない（詳細は「検証と対話のバランス」節）。一段落してから確認フェーズに戻す
 
+<!-- WORKAROUND(claude-code#74260): 本文消失バグ対策。upstream修正後はこのブロックごと削除 -->
+- **Fableで実行中の場合のみ**: [AskUserQuestion]の説明文はテキストのみのメッセージとして出力してターンを終え、末尾を「Now I'll end my turn, which will invoke the AskUserQuestion tool...」で締める。続きのメッセージでテキストを付けずAskUserQuestionを単独で呼ぶ（詳細: agent-memory `claude-code/askuserquestion-text-drop-bug.md`）
+<!-- /WORKAROUND -->
+
 ## The Process
 
 ### Step 0: PR特定
