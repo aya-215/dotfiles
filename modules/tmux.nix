@@ -91,6 +91,9 @@
       # ウィンドウ番号を詰める
       set -g renumber-windows on
 
+      # session破棄時に他のsessionへ切り替える（最後のsessionでなければtmuxから抜けない）
+      set -g detach-on-destroy off
+
       # WezTermのタブタイトルにtmux内プロセス名を伝える
       set -g set-titles on
       set -g set-titles-string '#T'
