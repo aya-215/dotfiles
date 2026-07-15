@@ -49,9 +49,19 @@
       "Edit(yarn.lock)",
       "Edit(bun.lockb)"
     ],
+    "ask": [
+      "Bash(gh pr comment:*)",
+      "Bash(gh pr review:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh issue create:*)",
+      "mcp__gitbucket__gitbucket_add_comment",
+      "mcp__gitbucket__gitbucket_create_issue",
+      "mcp__gitbucket__gitbucket_create_pr",
+      "mcp__gitbucket__gitbucket_update_pr"
+    ],
     "defaultMode": "auto"
   },
-  "model": "claude-fable-5[1m]",
   "hooks": {
     "SessionStart": [
       {
@@ -328,5 +338,6 @@
         "server.py"
       ]
     }
-  }
+  },
+  "model": "claude-fable-5[1m]"
 }
