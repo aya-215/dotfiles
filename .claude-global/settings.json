@@ -47,10 +47,7 @@
       "Read(~/.gnupg/*)",
       "Edit(package-lock.json)",
       "Edit(yarn.lock)",
-      "Edit(bun.lockb)",
-      "Write(package-lock.json)",
-      "Write(yarn.lock)",
-      "Write(bun.lockb)"
+      "Edit(bun.lockb)"
     ],
     "defaultMode": "auto"
   },
