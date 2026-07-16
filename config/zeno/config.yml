@@ -102,9 +102,9 @@ snippets:
     snippet: gh auth switch --user eBASE-Mori && gh-dash
 
   # hunk関連
-  - name: hunk diff main (PR相当の3点差分をレビュー)
+  - name: hunk diff origin/main (PR相当の3点差分をレビュー)
     keyword: hdm
-    snippet: hunk diff main...HEAD
+    snippet: hunk diff origin/main...HEAD
 
   - name: hunk show (直近コミット/指定refをレビュー)
     keyword: hsh
