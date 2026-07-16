@@ -2,7 +2,7 @@
 name: review-pr
 description: Use when the user wants to review a pull request interactively with Claude, focusing on deep code understanding. Triggers on "/review-pr", "PRレビュー", "コードレビューしたい", "PRを理解したい", "PRを一緒に読みたい".
 allowed-tools: Bash, Read, Grep, AskUserQuestion
-version: 1.3.0
+version: 1.4.0
 ---
 
 # PR対話レビュー
@@ -67,6 +67,27 @@ gh pr diff <PR番号>
 gh pr view <PR番号> --repo <owner>/<repo>
 gh pr diff <PR番号> --repo <owner>/<repo>
 ```
+
+### Step 1.5: hunk連携（オプション）
+
+PR情報を取得したら、hunkのTUIで視覚的にレビューするか確認する。
+
+→ **[AskUserQuestion]** 「hunkのTUIで差分を見ながらレビューする？それともテキストで進める？」
+- 選択肢: 「hunkで見る」/「テキストで進める（デフォルト）」
+
+**「hunkで見る」が選ばれた場合のみ:**
+
+1. 連携手順は `references/hunk-session.md` に従う（**必ず読むこと**）
+2. **Claudeは `hunk diff` を自分で実行しない。** ユーザーに開いてもらう:
+   「`hunk diff <base>...HEAD` を自分の端末で開いてな（`<base>` はPRのマージ先）」
+   （ローカルにPRブランチがcheckout済みの前提。未checkoutなら `gh pr checkout <番号>` を案内）
+3. 「開いた」と言われたら `hunk session list` で接続
+4. 以降のStep 3（設計判断の解説）で、設計判断を説明するたびに
+   `hunk session navigate` で該当hunkへ画面を動かし、所見を `hunk session comment add` で添える
+5. `navigate` は自由・`comment` は付けたら報告・`clear`/`rm` は承認必須
+
+**「テキストで進める」が選ばれた場合:**
+従来通り `gh pr diff` のテキストベースで進行する（hunkは使わない）。
 
 ### Step 2: 全体概要の説明
 
