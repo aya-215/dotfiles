@@ -101,6 +101,15 @@ snippets:
     keyword: ghd
     snippet: gh auth switch --user eBASE-Mori && gh-dash
 
+  # hunk関連
+  - name: hunk diff main (PR相当の3点差分をレビュー)
+    keyword: hdm
+    snippet: hunk diff main...HEAD
+
+  - name: hunk show (直近コミット/指定refをレビュー)
+    keyword: hsh
+    snippet: hunk show
+
   # バックアップ
   - name: backup
     keyword: bak
