@@ -72,4 +72,20 @@ let
 in
 {
   home.packages = [ hunk ];
+
+  # hunk 設定を宣言的に管理（TUI内で変更してもNixソースが正）。
+  # prompt_save_view_preferences=false で終了時の保存プロンプトを無効化し、
+  # このconfig.tomlと実態がズレないようにする。
+  home.file.".config/hunk/config.toml".text = ''
+    theme = "catppuccin-mocha"
+    mode = "auto"
+    watch = true
+    exclude_untracked = false
+    line_numbers = true
+    wrap_lines = false
+    menu_bar = true
+    agent_notes = true
+    prompt_save_view_preferences = false
+    transparent_background = true
+  '';
 }
