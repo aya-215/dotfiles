@@ -8,6 +8,7 @@
 - GitHub CLI: 2つのアカウント（eBASE-Mori, aya-215）で認証済み。`gh` コマンドが認証エラーで失敗した場合は `gh auth switch` でアカウントを切り替えること。
 - SSH: デフォルトキーは`~/.ssh/id_ed25519_ebase`（eBASE-Mori）。aya-215用は`github-aya215`エイリアス（`~/.ssh/id_ed25519_aya215`）を使用。dotfilesリポジトリのremoteは`git@github-aya215:aya-215/dotfiles.git`に設定すること。push失敗時は`git remote set-url origin git@github-aya215:aya-215/dotfiles.git`で修正すること。
 - Git on /mnt/: `/mnt/` 配下のリポジトリで `index.lock` エラーが発生した場合は下記「index.lock 対処」に従うこと。
+- Windows側で見たいファイル（Excel、画像、HTML等）を渡したい場合は `D:\temp_wsl`（WSLからは `/mnt/d/temp_wsl`）に置くこと。ここはWindows側で開くための受け渡し専用フォルダであり、永続保存場所ではない。
 
 ## index.lock 対処
 
@@ -30,6 +31,19 @@
 ## コミュニケーションルール
 
 不明点がある場合は、解消されるまで `AskUserQuestion` で再帰的に質問すること。
+
+<!-- WORKAROUND(claude-code#74260): Fable本文消失バグ対策。upstream修正後はこのブロックごと削除 -->
+### AskUserQuestion のターン分離（Fable実行時・全skill共通）
+
+文脈説明を伴う `AskUserQuestion` は、説明テキストのみのメッセージを
+「Now I'll end my turn, which will invoke the AskUserQuestion tool...」で締めて**実際にターンを終了**し、
+Stopフック（fable-message-drop-fix）の自動継続を受けた**次のターンで単独呼び出し**すること。
+
+**禁止**: 締め文を書いた後、同一ターン内で続けて AskUserQuestion を呼ぶこと。
+「締め文を書くこと」はターン終了ではない。同一ターンで呼ぶと `thinking→text→thinking→tool_use` 形になり
+説明テキストごと消失する（Stopフックも発火しない）。
+詳細: agent-memory `claude-code/askuserquestion-text-drop-bug.md`
+<!-- /WORKAROUND -->
 
 ## Memory 管理ルール
 
