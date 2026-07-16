@@ -25,6 +25,14 @@
     ];
 
     settings = {
+      # hunk（review-first diff TUI）用エイリアス。
+      # core.pager は delta のまま維持し、レビューしたいときだけ hunk を明示的に呼ぶ。
+      #   git hdiff        → 作業ツリーの変更を hunk でレビュー
+      #   git hshow <ref>  → 特定コミットを hunk でレビュー
+      alias = {
+        hdiff = "-c core.pager=\"hunk pager\" diff";
+        hshow = "-c core.pager=\"hunk pager\" show";
+      };
       user = {
         name = "eBASE-Mori";
         email = "mori.a@ebase.co.jp";

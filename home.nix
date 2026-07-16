@@ -14,6 +14,7 @@
     ./modules/gh-dash.nix
     ./modules/glauncher.nix
     ./modules/yazi.nix
+    ./modules/hunk.nix
   ];
 
   # Home Managerのバージョン
