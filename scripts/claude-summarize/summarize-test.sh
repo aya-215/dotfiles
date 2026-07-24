@@ -11,7 +11,7 @@ trap 'rm -rf "$TMP"' EXIT
 fails=0
 
 # ---- スタブ claude ----
-# 呼び出し毎に calls をインクリメントし、受け取ったプロンプト($2)を prompt.<n> に保存、
+# 呼び出し毎に calls をインクリメントし、受け取ったプロンプト（stdin）を prompt.<n> に保存、
 # out.<n> があればそれを、なければ out を標準出力に返す。
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/claude" <<'EOF'
