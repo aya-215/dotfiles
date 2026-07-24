@@ -145,6 +145,34 @@ else
   fails=$((fails + 1))
 fi
 
+# ==== case1c: 質問終わり継続モードのエスカレーション救済 ====
+# 会話ログ末尾が質問で終わると Haiku が要約せず会話継続することがある（実データ 5a736154）。
+# attempt1 で会話返し（見出し無し）→ discard、attempt2 でエスカレーション版プロンプトで
+# 再要求し正常な7項目が返る、という救済フローを検証する。
+mkdir -p "$TMP/case1c/stub"
+# attempt1 の出力: 要約でなく会話への応答（必須見出し無し）
+cat > "$TMP/case1c/stub/out.1" <<'OUT1'
+承知しました。どの形式でまとめるのが良いか、ご希望をお聞かせください。
+OUT1
+# attempt2 の出力: 正常な7項目本文
+good_body > "$TMP/case1c/stub/out.2"
+log1c="$(run_summarize case1c)"
+out1c="$TMP/case1c/sessions/2026-07-13/testproj-1134-$SID_SHORT.md"
+# 1発目 discard→2発目で救済され md が生成される
+assert_contains "case1c: エスカレーション再試行で md 生成される" "$out1c" '^## 意図'
+assert_contains "case1c: 救済後に必須見出しが揃う" "$out1c" '^## 結論'
+# attempt1 のプロンプトに構造修正（終端デリミタ）が入っている
+assert_contains "case1c: attempt1 に終端デリミタ" "$TMP/case1c/stub/prompt.1" 'TRANSCRIPT_END'
+# attempt2 のプロンプトにエスカレーション前置きが入っている
+assert_contains "case1c: attempt2 にエスカレーション前置き" "$TMP/case1c/stub/prompt.2" '前回の出力は要約になっていませんでした'
+# 1発目の discard がログに出る
+if printf '%s\n' "$log1c" | grep -q 'discarded(attempt=1): 必須見出し不足'; then
+  echo "ok: case1c: attempt1 の discard がログに出る"
+else
+  echo "NG: case1c: attempt1 の discard がログに出ない"
+  fails=$((fails + 1))
+fi
+
 # ==== case2: コードフェンス包み・frontmatter混入の救済 ====
 mkdir -p "$TMP/case2/stub"
 {
