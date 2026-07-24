@@ -30,6 +30,7 @@ def main() -> int:
     first_ts = ""
     last_ts = ""
     lines_out: list[str] = []
+    entrypoint = ""
 
     with path.open(encoding="utf-8", errors="replace") as fh:
         for raw in fh:
@@ -37,6 +38,12 @@ def main() -> int:
                 d = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+
+            # entrypoint（対話/非対話の弁別子）を最初に見つけた値で確定する
+            if not entrypoint:
+                _ep = d.get("entrypoint")
+                if isinstance(_ep, str) and _ep:
+                    entrypoint = _ep
 
             if d.get("type") not in ("user", "assistant"):
                 continue
@@ -90,6 +97,13 @@ def main() -> int:
                         meta = ""
                     lines_out.append(f"  [tool:{name}] {meta}".rstrip())
                 # tool_result は本体を捨てる（要約に不要・巨大）
+
+    # sdk-cli(claude -p) / sdk-py(Python SDK) は非対話の自動生成実行。
+    # 要約対象外（summarize.sh の自己参照ループ防止）。明示的にこの2値の時だけ弾き、
+    # cli および entrypoint 欠落は通す（安全側=include）。
+    if entrypoint in ("sdk-cli", "sdk-py"):
+        # ヘッダのみ出力し本文は空にする → summarize.sh の「本文空なら要約しない」ガードに乗る
+        lines_out = []
 
     project = Path(cwd).name if cwd else "unknown"
     header = [

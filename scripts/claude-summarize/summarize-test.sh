@@ -19,7 +19,7 @@ cat > "$TMP/bin/claude" <<'EOF'
 set -u
 n=$(( $(cat "$STUB_DIR/calls" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$STUB_DIR/calls"
-printf '%s\n' "$2" > "$STUB_DIR/prompt.$n"
+cat > "$STUB_DIR/prompt.$n"
 if [ -f "$STUB_DIR/out.$n" ]; then cat "$STUB_DIR/out.$n"; else cat "$STUB_DIR/out"; fi
 EOF
 chmod +x "$TMP/bin/claude"
@@ -208,6 +208,23 @@ prompt6="$case6_dir/stub/prompt.1"
 assert_contains "case6: 先頭側が残る" "$prompt6" 'HEADMARK'
 assert_contains "case6: 末尾側が残る" "$prompt6" 'TAILMARK'
 assert_contains "case6: 中略マーカーが入る" "$prompt6" '中略'
+
+# ==== case7: entrypoint=sdk-cli のセッションは要約されない（自己参照ループ防止） ====
+case7_dir="$TMP/case7"
+mkdir -p "$case7_dir/stub" "$case7_dir/sessions"
+good_body > "$case7_dir/stub/out"
+cat > "$case7_dir/transcript.jsonl" <<JSONL
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","entrypoint":"sdk-cli","timestamp":"2026-07-13T01:00:00.000Z","message":{"content":"要約プロンプト本文"}}
+{"type":"assistant","sessionId":"$SID","entrypoint":"sdk-cli","timestamp":"2026-07-13T02:34:56.000Z","message":{"content":[{"type":"text","text":"要約結果"}]}}
+JSONL
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$case7_dir/stub" SESSIONS_ROOT="$case7_dir/sessions" \
+  bash "$SCRIPT_DIR/summarize.sh" "$case7_dir/transcript.jsonl" "$SID" > /dev/null 2>&1 || true
+out7="$case7_dir/sessions/2026-07-13/testproj-1134-$SID_SHORT.md"
+assert_absent "case7: sdk-cli セッションは md 生成されない" "$out7"
+
+# ==== case8: entrypoint 欠落（従来 fixture 相当）は従来通り要約される（回帰防止） ====
+# ※ case1 が既に entrypoint 無し fixture で md 生成を検証済みなので、ここは明示の再確認は省略可。
+#   万一 case1 が変わった場合の保険として本文コメントで意図を残す。
 
 # ==== 結果 ====
 if [ "$fails" -eq 0 ]; then
