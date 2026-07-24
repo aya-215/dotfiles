@@ -95,7 +95,7 @@ body=""
 claude_err="$(mktemp)"
 trap 'rm -f "$claude_err"' EXIT
 for attempt in 1 2; do
-  if ! raw="$(printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p --model haiku --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
+  if ! raw="$(printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p --model haiku --no-session-persistence --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
     echo "discarded(attempt=$attempt): claude 実行失敗: $session_id"
     sed 's/^/  claude stderr: /' "$claude_err"
     continue
