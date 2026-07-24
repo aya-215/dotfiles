@@ -19,6 +19,8 @@ cat > "$TMP/bin/claude" <<'EOF'
 set -u
 n=$(( $(cat "$STUB_DIR/calls" 2>/dev/null || echo 0) + 1 ))
 echo "$n" > "$STUB_DIR/calls"
+# 受け取った引数を1行1個で記録（フラグ検証用）
+printf '%s\n' "$@" > "$STUB_DIR/args.$n"
 cat > "$STUB_DIR/prompt.$n"
 if [ -f "$STUB_DIR/out.$n" ]; then cat "$STUB_DIR/out.$n"; else cat "$STUB_DIR/out"; fi
 EOF
@@ -117,6 +119,31 @@ else
   fails=$((fails + 1))
 fi
 assert_absent "case1: tmp ファイルが残らない" "$out1.tmp"
+
+# ==== case1b: clean config 遮断フラグが claude に渡っている ====
+# 要約サブプロセスがユーザーの CLAUDE.md/output-style（会話ペルソナ）を継承すると、
+# 要約プロンプトを会話の続きと誤解して質問返しし、必須見出し不足で discard される
+# （実データ 6件で確認）。これを決定的に防ぐため、要約専用の system-prompt と
+# 設定ソース遮断が claude 呼び出しに必ず付くことを検証する。
+args1="$TMP/case1/stub/args.1"
+assert_contains "case1b: --system-prompt が渡る" "$args1" '^--system-prompt$'
+assert_contains "case1b: --setting-sources が渡る" "$args1" '^--setting-sources$'
+assert_contains "case1b: --no-session-persistence が渡る（自己参照ループ防止・回帰ガード）" "$args1" '^--no-session-persistence$'
+# 値まで検証（真因が「設定源の継承」なので、将来 user,project 等に書き換わったら検知したい）。
+# args.1 は1引数1行。--setting-sources の次行が空（＝''）であることを確認する。
+if awk '/^--setting-sources$/{getline nxt; exit (nxt=="" ? 0 : 1)}' "$args1"; then
+  echo "ok: case1b: --setting-sources の値が空（ユーザー設定源を継承しない）"
+else
+  echo "NG: case1b: --setting-sources の値が空でない（設定源が継承され得る）"
+  fails=$((fails + 1))
+fi
+# --system-prompt の値が要約専用 system（対話禁止指示）であることを確認する。
+if awk '/^--system-prompt$/{getline nxt; exit (index(nxt,"summarization tool")>0 ? 0 : 1)}' "$args1"; then
+  echo "ok: case1b: --system-prompt が要約専用 system に置き換わっている"
+else
+  echo "NG: case1b: --system-prompt の値が要約専用 system でない"
+  fails=$((fails + 1))
+fi
 
 # ==== case2: コードフェンス包み・frontmatter混入の救済 ====
 mkdir -p "$TMP/case2/stub"

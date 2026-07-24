@@ -91,11 +91,17 @@ EOF
 # 出力は「最初の ## 意図 以降を採用 → フェンス行除去 → 必須見出し検証」で決定的に整形・検証する。
 # ★ プロンプトは stdin で渡す（引数渡しはツール使用の多い長セッションで ARG_MAX 超過 = E2BIG で即死するため）。
 # ★ stderr は捨てず一時ファイルに残し、失敗時にログへ転記する（無音の失敗で原因追跡不能になるのを防ぐ）。
+# ★ clean config で回す（決定的/非決定的の分離）:
+#   --system-prompt で要約専用の最小 system に置き換え、--setting-sources '' でユーザーの
+#   CLAUDE.md / output-style（会話ペルソナ・口調・「不明点は質問」指示）を一切継承させない。
+#   これが無いと要約サブプロセスがプロンプトを会話の続きと誤解して質問返しし、必須見出し不足で
+#   discard される（実データ 6件で確認済み）。
+readonly SUMMARIZER_SYSTEM='You are a non-interactive summarization tool. Output only the summary in the exact Markdown format the user requests, in Japanese. Never ask questions, never converse, never add preamble or closing remarks.'
 body=""
 claude_err="$(mktemp)"
 trap 'rm -f "$claude_err"' EXIT
 for attempt in 1 2; do
-  if ! raw="$(printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p --model haiku --no-session-persistence --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
+  if ! raw="$(printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p --model haiku --no-session-persistence --setting-sources '' --system-prompt "$SUMMARIZER_SYSTEM" --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
     echo "discarded(attempt=$attempt): claude 実行失敗: $session_id"
     sed 's/^/  claude stderr: /' "$claude_err"
     continue

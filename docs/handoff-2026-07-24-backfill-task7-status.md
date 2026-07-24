@@ -73,6 +73,47 @@ started-but-failed と never-started は**対処すべき性質が異なる**可
 - 極小の断片（`ai-title`/`agent-name` のみ、user/assistant行なし）が1件（`07cf0586`）。summarize.sh のガードA（tool0かつ本文200字未満）で弾かれる想定だが未実地検証。
 - 「重複に見えた」2組（`202e8e6b`/`cd2d5d89`、`202e8e6b`系のtimestampが同一に見えた件）は調査の結果、**別sidの正当な別ファイル**（resumeセッション由来）と判断。バグではない。
 
+## 追記 2026-07-24（続きセッション 549b3f6f）: 失敗原因を実データ+実測で特定
+
+ユーザー方針: 「SessionEnd非発火は原因明確。バグで止まった方は"どのバグで止まったか確認して直す必要がある"。また失敗する可能性が高いし、そもそも失敗しないのが理想」。
+→ backfillで無条件に流す前に、started-but-failed の失敗原因を特定して恒久対策する方針に転換。
+
+### 数字の再締め直し（CONFIRMED）
+引き継ぎメモ本文の「started-but-failed 26件」は **ログにstart記録がある集合（成功も含む粗い数字）**。
+`~/.local/log/claude-summarize.log` の `discarded` 行で実際に失敗記録が残るのは以下:
+
+| 失敗モード | ユニークsid | うち今もmd無（真の欠損） |
+|---|---|---|
+| 必須見出し不足 | 17 | 6 |
+| claude 実行失敗 | 6 | 2 |
+| **合計** | 23 | **8** |
+
+- 失敗23件中15件は後の別機会に md 生成済み（リトライ/再開で救済されていた）。
+- **真の欠損は8件のみ**。sid8: 見出し不足=`33c0e4b3 69f54b4d 740a64c6 84989f3e 8f0e42fa b919ffd9`、claude失敗=`57ba7847 e4fbe4e8`。
+- 8件とも jsonl 健在、mtime は 7/13〜7/22（全て会話終了済み。進行中疑いは解消）。
+
+### 失敗モード①: claude 実行失敗（2件）= ARG_MAXバグ由来（CONFIRMED・修正済み）
+- 因果突合: 失敗日時 `57ba7847`=7/15 14:01、`e4fbe4e8`=7/22 14:43 < stdin化コミット `599f360`=7/24 11:37。→ 旧ARG_MAXバグで確定。
+- **実測**: `e4fbe4e8`(1.4MB/713行) を現行 summarize.sh で tmp(SESSIONS_ROOT上書き)向け単発実行 → **7項目揃った valid md 生成成功**（3615B）。
+- 結論: stdin化＋MAX_CHARS切り詰めで**修正済み。再実行で確実に直る**。
+
+### 失敗モード②: 必須見出し不足（6件）= ペルソナ継承バグ（CONFIRMED・要恒久対策）
+- **真因**: summarize が呼ぶ `claude -p` が、ユーザーの CLAUDE.md/output-style（関西弁＋「不明点は質問」モード）を継承し、要約プロンプトを**会話の続きと誤解して質問返し**していた（「了解やで…どうしますか？」等）。→ 7見出しが出ず discard。
+- `--no-session-persistence --settings '{"disableAllHooks":true}'` だけでは **設定ソース・system-prompt までは遮断できていなかった**のが穴。
+- **discriminating test（CONFIRMED）**: 同じ `84989f3e` の extract を `--system-prompt '要約ツール。質問するな' --setting-sources ''` の clean config で再実行 → **7項目完璧に生成、質問返し消滅**。真因がペルソナ継承だと確定（質問終わり継続説はREFUTED）。
+- learned-rule「決定的/非決定的を分離」に直結: 要約という決定的タスクを対話ペルソナから切り離した clean config で回すのが恒久対策。
+- **細分**: 見出し不足6件中、実作業ありtools≥3が5件（clean config修正で救える）、tools=0の薄い1件（`69f54b4d`＝/model・/insightsのスラコマ出力のみ）はガードAの守備範囲外＝別の設計判断。
+
+### 恒久対策の候補（未実装・要ユーザー判断）
+summarize.sh 98行の claude 呼び出しに以下を追加してペルソナを決定的に遮断する:
+- `--system-prompt <要約専用の最小指示>`（デフォルトsystem promptを置換）
+- `--setting-sources ''`（ユーザー設定ソースを継承しない）
+- 必要なら `--exclude-dynamic-system-prompt-sections`
+→ これで見出し不足5件が救え、かつ**今後の全要約が失敗しなくなる**（ユーザーの「そもそも失敗しないのが理想」に直接応える）。
+
+### 全実測で安全確認済み
+tmp向け単発実行いずれも `~/.claude/projects` の jsonl 数 1697→1697（差分ゼロ＝自己参照ループ増殖なし）。cron は backfill 行 `#` 無効のまま無傷。
+
 ## 次セッションでの論点（未決定・要ユーザー判断）
 
 1. **started-but-failed(26) と never-started(20) を分けて扱うか**。分けるなら backfill.sh に「失敗履歴の有無」で区別するロジックを足すか、単に2回に分けて手動実行するかの選択。
