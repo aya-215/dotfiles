@@ -29,6 +29,15 @@ if [ ! -d "$PROJECTS_ROOT" ]; then
   exit 0
 fi
 
+# SESSIONS_ROOT が存在しないと has_summary の find が常に空を返し、全 jsonl が
+# 「未生成」扱いになって summarize が繰り返し呼ばれる無音失敗になる。
+# ただし初回実行で要約が1件も無い状態は正当にありうるため exit はせず、
+# summarize.sh の out_dir 作成（mkdir -p）と同じ流儀でディレクトリを作りつつ可視化する。
+if [ ! -d "$SESSIONS_ROOT" ]; then
+  echo "[情報] SESSIONS_ROOT が存在しないため作成します（初回実行とみなします）: $SESSIONS_ROOT" >&2
+  mkdir -p "$SESSIONS_ROOT"
+fi
+
 # has_summary <sid8> — その sid8 の要約 md が既に存在するか
 has_summary() {
   local sid8="$1"
