@@ -347,5 +347,314 @@ Expected: Step 5 を実行した場合、件数が大きく減っている（生
 ---
 
 ## 後続タスク（別プラン）
-- ① SessionEnd 非発火の原因究明（PLAUSIBLE→CONFIRMED）
 - ③ フェンス破損68本の後処理強化＋既存分の再生成
+
+---
+
+# 改訂（2026-07-24）: 自己参照ループ欠陥の修正と cli 絞り込み
+
+## 背景（実装後に判明した事実）
+
+Task 1-2 は完了・Approved 済み（commits 652220e..ee30e99）。Task 3 の実データ検証中に **2つの重大欠陥**が判明し、別セッションの原因究明（`docs/handoff-2026-07-24-sessionend-rootcause.md`）と本セッションの対照実験で以下を CONFIRMED:
+
+- **欠陥X（ゴミ生成）**: summarize.sh が `claude -p`（フラグ無し）で要約するたびに、その呼び出し自体が新規セッション jsonl（`entrypoint=sdk-cli`）として `~/.claude/projects/` に永続化される。対照実験で実証: `--no-session-persistence` 付き→jsonl差分0 / 無し→+1。
+- **欠陥Y（ゴミ収集）**: backfill の対象判定が entrypoint を見ないため、欠陥Xで生まれた要約由来 jsonl を「未要約セッション」として拾ってしまう（15本全て dry-run 対象化を確認）。→ 自己参照ループ。
+- **精度の過大評価**: 「never-started 387件」の実体は sdk-cli 280 + sdk-py 83 + cli 17 + none 7。**要約すべき真の欠損は cli の最大16件（うち極小7件を除く実質約9件）**。363件は非対話の自動生成物（要約由来269＋security-review等94）で要約対象外。
+- **entrypoint は信頼できる弁別子**: SessionEnd 発火済み（要約成功した真の対話）集合はサンプル 9/9 が全て `entrypoint=cli`、sdk 混入なし。
+
+## 修正方針（多層防御）
+
+決定的判定はコード側に置く（learned-rule: 決定的処理と非決定的処理の分離）。
+
+- **X の根絶**: summarize.sh の `claude -p` に `--no-session-persistence` を付け、要約呼び出しが jsonl を残さないようにする（本命・根絶策。実機で差分0を実証済み）。
+- **Y の防御**: extract.py と backfill.sh の両方で entrypoint フィルタを入れる（多層防御）。
+  - extract.py(b): jsonl が sdk-cli/sdk-py なら空出力で終了（summarize.sh の「本文空なら要約しない」ガードに乗る）。hook 経由・backfill 経由の両入口をカバー。
+  - backfill.sh(a): dry-run/通常の対象走査で sdk-cli/sdk-py を除外（無駄な summarize 呼び出しを未然に防ぐ）。
+
+## Global Constraints（改訂タスク共通・verbatim厳守）
+
+- **entrypoint 判定ルール**: jsonl の user/assistant/attachment 行に載る `entrypoint` 値を見て、**明示的に `sdk-cli` または `sdk-py` の時だけ除外する。`cli` および entrypoint 欠落（none）は必ず通す**。（欠落を除外にすると手作り fixture の既存テストが全滅し、実データの none 7件も取りこぼすため。安全側=include に倒す。）
+- 上記は extract.py 側・backfill.sh 側の両方で同一ルール。
+- 既存の Global Constraints（shebang/set -euo pipefail/ShellCheck/命名/sid8突合/環境変数注入）は引き続き全タスクに適用。
+- 掃除（既存の要約由来 jsonl 363本の削除）は**本プランのスコープ外**。entrypoint フィルタが入れば無害化されるため correctness に不要であり、`~/.claude/projects/`（Claude 自身のセッション履歴領域）の不可逆削除はユーザー確認を要する別判断とする。
+
+---
+
+## Task 4: summarize.sh に --no-session-persistence を追加（欠陥X根絶）
+
+**Files:**
+- Modify: `scripts/claude-summarize/summarize.sh:98`（`claude -p` 呼び出し行）
+- Test: `scripts/claude-summarize/summarize-test.sh`（スタブなのでフラグ有無は透過。回帰は e2e で担保）
+
+**Interfaces:**
+- Consumes: なし
+- Produces: summarize.sh の要約呼び出しが jsonl を永続化しない
+
+- [ ] **Step 1: 現行の呼び出し行を確認**
+
+Run: `grep -n 'disableAllHooks' scripts/claude-summarize/summarize.sh`
+Expected: 98行目に `printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p --model haiku --settings '{"disableAllHooks":true}' 2>"$claude_err"`
+
+- [ ] **Step 2: --no-session-persistence を追加**
+
+98行目を次に変更（`--model haiku` の直後にフラグを挿入）:
+
+```bash
+  if ! raw="$(printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p --model haiku --no-session-persistence --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
+```
+
+- [ ] **Step 3: 既存テストが壊れていないこと（スタブなので透過）**
+
+Run: `bash scripts/claude-summarize/summarize-test.sh`
+Expected: `ALL OK`（スタブ claude はフラグを無視するため全ケース従来通り）
+
+- [ ] **Step 4: e2e 検証（完了条件・スタブでは検証不能な本命確認）**
+
+本物の transcript 1本を実 summarize.sh に通し、(a) md が生成される (b) jsonl が増えない の両方を確認:
+
+```bash
+CLAUDE_BIN="$HOME/.local/bin/claude"
+PROJ="$HOME/.claude/projects"
+# 未要約の実 transcript を1本選ぶ（cli のもの）
+f="$(bash scripts/claude-summarize/backfill.sh --dry-run 2>/dev/null | head -1)"
+sid="$(basename "$f" .jsonl)"
+before=$(find "$PROJ" -maxdepth 2 -name '*.jsonl' | wc -l)
+bash scripts/claude-summarize/summarize.sh "$f" "$sid"
+after=$(find "$PROJ" -maxdepth 2 -name '*.jsonl' | wc -l)
+echo "jsonl差分: $((after - before)) （0であること）"
+find ~/.nb/claude/sessions -name "*-${sid:0:8}.md" -newermt "-3 min"
+```
+Expected: jsonl差分 0、かつ md が1本出る（薄いセッションなら出ない場合あり→別の1本で再確認）。**差分が0でなければこのタスクは未完了。**
+
+- [ ] **Step 5: コミット**
+
+```bash
+cd ~/.dotfiles
+git add scripts/claude-summarize/summarize.sh
+git commit -m "fix(claude-summarize): 要約呼び出しに --no-session-persistence を付与し自己参照jsonl生成を根絶"
+```
+
+---
+
+## Task 5: extract.py に entrypoint フィルタ（欠陥Y防御・多層1段目）
+
+**Files:**
+- Modify: `scripts/claude-summarize/extract.py`
+- Test: `scripts/claude-summarize/summarize-test.sh`（sdk-cli fixture で空出力→md非生成を検証）
+
+**Interfaces:**
+- Consumes: なし
+- Produces: extract.py は sdk-cli/sdk-py の jsonl に対しヘッダのみ（本文空）を出力する。cli/欠落は従来通り本文を出力。
+
+- [ ] **Step 1: 失敗するテストを summarize-test.sh に追加（case7）**
+
+`summarize-test.sh` の「==== 結果 ====」ブロックの直前に挿入。sdk-cli の transcript を作り、summarize.sh が md を生成しないことを検証:
+
+```bash
+# ==== case7: entrypoint=sdk-cli のセッションは要約されない（自己参照ループ防止） ====
+case7_dir="$TMP/case7"
+mkdir -p "$case7_dir/stub" "$case7_dir/sessions"
+good_body > "$case7_dir/stub/out"
+cat > "$case7_dir/transcript.jsonl" <<JSONL
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","entrypoint":"sdk-cli","timestamp":"2026-07-13T01:00:00.000Z","message":{"content":"要約プロンプト本文"}}
+{"type":"assistant","sessionId":"$SID","entrypoint":"sdk-cli","timestamp":"2026-07-13T02:34:56.000Z","message":{"content":[{"type":"text","text":"要約結果"}]}}
+JSONL
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$case7_dir/stub" SESSIONS_ROOT="$case7_dir/sessions" \
+  bash "$SCRIPT_DIR/summarize.sh" "$case7_dir/transcript.jsonl" "$SID" > /dev/null 2>&1 || true
+out7="$case7_dir/sessions/2026-07-13/testproj-1134-$SID_SHORT.md"
+assert_absent "case7: sdk-cli セッションは md 生成されない" "$out7"
+
+# ==== case8: entrypoint 欠落（従来 fixture 相当）は従来通り要約される（回帰防止） ====
+# ※ case1 が既に entrypoint 無し fixture で md 生成を検証済みなので、ここは明示の再確認は省略可。
+#   万一 case1 が変わった場合の保険として本文コメントで意図を残す。
+```
+
+- [ ] **Step 2: テストを実行して case7 が失敗することを確認**
+
+Run: `bash scripts/claude-summarize/summarize-test.sh`
+Expected: case7 が NG（現状 extract.py は entrypoint を見ないため sdk-cli でも本文を出力し md が生成される）
+
+- [ ] **Step 3: extract.py に entrypoint 判定を実装**
+
+`main()` 内、行ループの中で最初に entrypoint を拾い、sdk-cli/sdk-py なら本文を出さずヘッダのみで終了する。`d.get("type") not in ("user","assistant")` の continue の**前**に entrypoint 収集を置く（attachment 行にも載るため）。実装例:
+
+ループ内の冒頭付近（`d = json.loads(raw)` の直後、type チェックより前）に追加:
+
+```python
+            # entrypoint（対話/非対話の弁別子）を最初に見つけた値で確定する
+            if not entrypoint:
+                _ep = d.get("entrypoint")
+                if isinstance(_ep, str) and _ep:
+                    entrypoint = _ep
+```
+
+ループ変数の初期化（`lines_out: list[str] = []` の近く）に追加:
+
+```python
+    entrypoint = ""
+```
+
+ループを抜けた後、ヘッダ組み立ての前に判定を追加:
+
+```python
+    # sdk-cli(claude -p) / sdk-py(Python SDK) は非対話の自動生成実行。
+    # 要約対象外（summarize.sh の自己参照ループ防止）。明示的にこの2値の時だけ弾き、
+    # cli および entrypoint 欠落は通す（安全側=include）。
+    if entrypoint in ("sdk-cli", "sdk-py"):
+        # ヘッダのみ出力し本文は空にする → summarize.sh の「本文空なら要約しない」ガードに乗る
+        lines_out = []
+```
+
+（`lines_out = []` により本文空。既存のヘッダ出力ロジックはそのまま流れる。）
+
+- [ ] **Step 4: テストを実行して case7 が通ることを確認**
+
+Run: `bash scripts/claude-summarize/summarize-test.sh`
+Expected: 全ケース `ok:` → `ALL OK`（case7 含む。case1 の entrypoint 無し fixture が従来通り md 生成することも維持）
+
+- [ ] **Step 5: ShellCheck は対象外（Python）だが構文確認**
+
+Run: `python3 -c "import ast; ast.parse(open('scripts/claude-summarize/extract.py').read())"`
+Expected: エラーなし（構文OK）
+
+- [ ] **Step 6: コミット**
+
+```bash
+cd ~/.dotfiles
+git add scripts/claude-summarize/extract.py scripts/claude-summarize/summarize-test.sh
+git commit -m "fix(claude-summarize): extract.py で sdk-cli/sdk-py を要約対象外にする（多層防御1段目）"
+```
+
+---
+
+## Task 6: backfill.sh に entrypoint フィルタ（欠陥Y防御・多層2段目）＋真の欠損への絞り込み
+
+**Files:**
+- Modify: `scripts/claude-summarize/backfill.sh`（run_backfill の対象走査）
+- Test: `scripts/claude-summarize/backfill-test.sh`
+
+**Interfaces:**
+- Consumes: Task 1-2 の backfill.sh（run_backfill / has_summary / dry-run 分岐）
+- Produces: backfill が sdk-cli/sdk-py の jsonl を対象から除外する（dry-run にも出さない）
+
+- [ ] **Step 1: 失敗するテストを backfill-test.sh に追加（case5）**
+
+`setup_fixture` に sdk-cli の jsonl を1本増やし、それが dry-run 対象に出ないことを検証。まず `setup_fixture` 内の fixture 追加（既存の3セッションの後に）:
+
+```bash
+  # eeeeeeee: entrypoint=sdk-cli の非対話セッション（要約対象外・除外されるべき）
+  cat > "$proj/eeeeeeee-1111-2222-3333-444444444444.jsonl" <<'JSONL'
+{"type":"user","entrypoint":"sdk-cli","message":{"content":"要約プロンプト"}}
+JSONL
+```
+
+そして case1 の後（結果ブロックの前）に:
+
+```bash
+# ==== case5: entrypoint=sdk-cli は dry-run 対象から除外される（自己参照ループ防止） ====
+root5="$TMP/case5"; setup_fixture "$root5"
+out5="$TMP/case5.out"
+PROJECTS_ROOT="$root5/projects" SESSIONS_ROOT="$root5/sessions" \
+  bash "$SCRIPT_DIR/backfill.sh" --dry-run > "$out5" 2>/dev/null || true
+assert_not_grep "case5: sdk-cli は対象外" "$out5" 'eeeeeeee'
+assert_grep "case5: cli/欠落の未生成(aaaaaaaa)は従来通り対象" "$out5" 'aaaaaaaa-1111'
+```
+
+（注: 既存 case1 の期待「未生成2件」は、fixture に eeeeeeee を足しても sdk-cli 除外により2件のまま維持される。case1 の assert_line_count が 2 のままであることも確認すること。）
+
+- [ ] **Step 2: テストを実行して case5 が失敗することを確認**
+
+Run: `bash scripts/claude-summarize/backfill-test.sh`
+Expected: case5 の `assert_not_grep` が NG（現状 backfill は entrypoint を見ないため eeeeeeee が対象に出る）。case1 の件数アサートも 2→3 にずれて NG になる可能性あり（eeeeeeee が混入するため）。両方が Step 3 実装で解消される。
+
+- [ ] **Step 3: backfill.sh に entrypoint 判定を実装**
+
+`run_backfill` 内、`has_summary "$sid8" && continue` の**前**に entrypoint 判定を追加。jsonl 先頭の限られた行だけ見て判定する（全行読むと重いので `head` で先頭数十行に限定）:
+
+```bash
+    # entrypoint=sdk-cli/sdk-py（claude -p / Python SDK の非対話実行）は要約対象外。
+    # 明示的にこの2値の時だけ除外し、cli・欠落は通す（安全側=include）。
+    ep="$(grep -m1 -oE '"entrypoint":"[^"]*"' "$jsonl" 2>/dev/null | head -1 | sed -E 's/.*:"([^"]*)"/\1/')"
+    case "$ep" in
+      sdk-cli|sdk-py) continue ;;
+    esac
+```
+
+（`grep -m1` で最初の entrypoint 出現だけ取る。ファイル全体をパースせず高速。空＝欠落は case にマッチせず通過。）
+
+- [ ] **Step 4: テストを実行して全ケース成功を確認**
+
+Run: `bash scripts/claude-summarize/backfill-test.sh`
+Expected: case1〜case5 すべて `ok:` → `ALL OK`
+
+- [ ] **Step 5: ShellCheck**
+
+Run: `shellcheck scripts/claude-summarize/backfill.sh scripts/claude-summarize/backfill-test.sh`
+Expected: 警告なし
+
+- [ ] **Step 6: 実データ dry-run で件数が激減することを確認（欠陥Yの解消実証）**
+
+Run: `bash scripts/claude-summarize/backfill.sh --dry-run | wc -l`
+Expected: 従来の 414 前後から **cli の真の欠損（最大16件・実質約9件）程度に激減**。363件のノイズ（sdk由来）が除外されていること。件数が期待レンジ（概ね 20 件未満）に収まるか確認。大きく外れたら entrypoint 判定を再点検。
+
+- [ ] **Step 7: コミット**
+
+```bash
+cd ~/.dotfiles
+git add scripts/claude-summarize/backfill.sh scripts/claude-summarize/backfill-test.sh
+git commit -m "fix(claude-summarize): backfill で sdk-cli/sdk-py を対象除外し真の欠損のみ拾う（多層防御2段目）"
+```
+
+---
+
+## Task 7: 初回バックフィル実行と cron 再有効化
+
+**Files:**
+- Modify: crontab（`crontab -e`）
+
+**Interfaces:**
+- Consumes: Task 4-6 完成の summarize.sh / extract.py / backfill.sh
+- Produces: cli の真の欠損が要約され、crontab の backfill 行が再有効化される
+
+- [ ] **Step 1: 実データ dry-run で対象を最終確認**
+
+Run: `bash scripts/claude-summarize/backfill.sh --dry-run`
+Expected: cli の未要約セッションのみ（最大16件程度）。パスを目視し、`entrypoint=sdk-cli` の要約由来 jsonl が混じっていないことを確認。
+
+- [ ] **Step 2: backfill を実行して真の欠損を埋める（軽量なので前景で可）**
+
+Run: `bash scripts/claude-summarize/backfill.sh`
+Expected: ログに開始/完了。数件〜十数件の md が生成される。実行後に `~/.claude/projects/` の jsonl 数が**増えていない**ことも確認（Task 4 の --no-session-persistence が効いている証拠）:
+
+```bash
+before=$(find ~/.claude/projects -maxdepth 2 -name '*.jsonl' | wc -l)
+bash scripts/claude-summarize/backfill.sh
+after=$(find ~/.claude/projects -maxdepth 2 -name '*.jsonl' | wc -l)
+echo "jsonl差分: $((after - before)) （0であること＝ゴミが湧かない）"
+```
+
+- [ ] **Step 3: 冪等確認 — 再実行で対象0**
+
+Run: `bash scripts/claude-summarize/backfill.sh --dry-run | wc -l`
+Expected: Step 2 実行後は 0 件に近い（生成済みが除外される）。
+
+- [ ] **Step 4: crontab の backfill 行を再有効化**
+
+現在コメントアウト中（`# [一時無効化 2026-07-24: ...] 0 21 * * * ...`）。`crontab -e` でコメントを外し、既存2行と合わせて3行が有効になるようにする:
+
+```
+*/30 * * * * /home/aya/.dotfiles/scripts/nb-sync.sh
+0 21 * * * /home/aya/.dotfiles/scripts/claude-summarize/backfill.sh >> /home/aya/.local/log/claude-summarize-backfill.log 2>&1
+10 22 * * * /home/aya/.dotfiles/scripts/daily-review/fire-daily-review.sh >> /tmp/fire-daily-review-cron.log 2>&1
+```
+
+- [ ] **Step 5: 登録確認**
+
+Run: `crontab -l`
+Expected: nb-sync / backfill(0 21・コメントなし) / fire-daily-review(10 22) の3行が有効。
+
+---
+
+## 改訂後の後続タスク
+- ③ フェンス破損68本の後処理強化＋既存分の再生成（別プラン）
+- （任意・要ユーザー確認）既存の要約由来 jsonl 363本の掃除。entrypoint フィルタで無害化済みのため優先度低。
