@@ -89,10 +89,15 @@ EOF
 
 # Haiku で要約生成（不正出力なら1回だけリトライ）。
 # 出力は「最初の ## 意図 以降を採用 → フェンス行除去 → 必須見出し検証」で決定的に整形・検証する。
+# ★ プロンプトは stdin で渡す（引数渡しはツール使用の多い長セッションで ARG_MAX 超過 = E2BIG で即死するため）。
+# ★ stderr は捨てず一時ファイルに残し、失敗時にログへ転記する（無音の失敗で原因追跡不能になるのを防ぐ）。
 body=""
+claude_err="$(mktemp)"
+trap 'rm -f "$claude_err"' EXIT
 for attempt in 1 2; do
-  if ! raw="$("$CLAUDE_BIN" -p "$PROMPT" --model haiku --settings '{"disableAllHooks":true}' 2>/dev/null)"; then
+  if ! raw="$(printf '%s' "$PROMPT" | "$CLAUDE_BIN" -p --model haiku --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
     echo "discarded(attempt=$attempt): claude 実行失敗: $session_id"
+    sed 's/^/  claude stderr: /' "$claude_err"
     continue
   fi
   # 前置き除去（frontmatter・フェンス開始行の混入をここで捨てる）→ 残ったフェンス行を除去
