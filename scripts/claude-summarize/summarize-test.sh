@@ -213,9 +213,13 @@ assert_contains "case6: 中略マーカーが入る" "$prompt6" '中略'
 case7_dir="$TMP/case7"
 mkdir -p "$case7_dir/stub" "$case7_dir/sessions"
 good_body > "$case7_dir/stub/out"
+# entrypoint フィルタが無ければガードA（tool_count==0 かつ本文200字未満）をすり抜けて
+# md 生成される十分な内容にする（tool_use あり・本文200字以上）。
+# これにより「フィルタが実際に効いて本文を空にしている」ことを検証できる。
+case7_filler="$(printf 'あ%.0s' {1..250})"
 cat > "$case7_dir/transcript.jsonl" <<JSONL
-{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","entrypoint":"sdk-cli","timestamp":"2026-07-13T01:00:00.000Z","message":{"content":"要約プロンプト本文"}}
-{"type":"assistant","sessionId":"$SID","entrypoint":"sdk-cli","timestamp":"2026-07-13T02:34:56.000Z","message":{"content":[{"type":"text","text":"要約結果"}]}}
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","entrypoint":"sdk-cli","timestamp":"2026-07-13T01:00:00.000Z","message":{"content":"要約プロンプト本文 $case7_filler"}}
+{"type":"assistant","sessionId":"$SID","cwd":"/home/aya/testproj","entrypoint":"sdk-cli","timestamp":"2026-07-13T02:34:56.000Z","message":{"content":[{"type":"text","text":"要約結果 $case7_filler"},{"type":"tool_use","name":"Edit","input":{"file_path":"/home/aya/testproj/a.conf"}}]}}
 JSONL
 CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$case7_dir/stub" SESSIONS_ROOT="$case7_dir/sessions" \
   bash "$SCRIPT_DIR/summarize.sh" "$case7_dir/transcript.jsonl" "$SID" > /dev/null 2>&1 || true
