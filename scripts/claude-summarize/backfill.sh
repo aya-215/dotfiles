@@ -54,6 +54,12 @@ run_backfill() {
       *) continue ;;
     esac
     sid8="${fname:0:8}"
+    # entrypoint=sdk-cli/sdk-py（claude -p / Python SDK の非対話実行）は要約対象外。
+    # 明示的にこの2値の時だけ除外し、cli・欠落は通す（安全側=include）。
+    ep="$(grep -m1 -oE '"entrypoint":"[^"]*"' "$jsonl" 2>/dev/null | head -1 | sed -E 's/.*:"([^"]*)"/\1/')" || true
+    case "$ep" in
+      sdk-cli|sdk-py) continue ;;
+    esac
     has_summary "$sid8" && continue
     if [ "$dry_run" -eq 1 ]; then
       printf '%s\n' "$jsonl"

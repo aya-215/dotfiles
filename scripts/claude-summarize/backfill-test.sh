@@ -34,6 +34,10 @@ setup_fixture() {
   echo '{"type":"user"}' > "$proj/subagents/workflows/wf_x/agent-dddddddd.jsonl"
   # bbbbbbbb だけ要約 md が既に存在する
   echo '# summary' > "$sess/testproj-0900-bbbbbbbb.md"
+  # eeeeeeee: entrypoint=sdk-cli の非対話セッション（要約対象外・除外されるべき）
+  cat > "$proj/eeeeeeee-1111-2222-3333-444444444444.jsonl" <<'JSONL'
+{"type":"user","entrypoint":"sdk-cli","message":{"content":"要約プロンプト"}}
+JSONL
 }
 
 # assert_contains / assert_absent（summarize-test.sh と同型）
@@ -64,6 +68,14 @@ assert_grep "case1: aaaaaaaa が対象" "$out1" 'aaaaaaaa-1111'
 assert_grep "case1: cccccccc が対象" "$out1" 'cccccccc-1111'
 assert_not_grep "case1: bbbbbbbb(生成済み)は除外" "$out1" 'bbbbbbbb'
 assert_not_grep "case1: subagent は除外" "$out1" 'subagents'
+
+# ==== case5: entrypoint=sdk-cli は dry-run 対象から除外される（自己参照ループ防止） ====
+root5="$TMP/case5"; setup_fixture "$root5"
+out5="$TMP/case5.out"
+PROJECTS_ROOT="$root5/projects" SESSIONS_ROOT="$root5/sessions" \
+  bash "$SCRIPT_DIR/backfill.sh" --dry-run > "$out5" 2>/dev/null || true
+assert_not_grep "case5: sdk-cli は対象外" "$out5" 'eeeeeeee'
+assert_grep "case5: cli/欠落の未生成(aaaaaaaa)は従来通り対象" "$out5" 'aaaaaaaa-1111'
 
 # ==== case2: 通常実行は未生成2件だけ summarize.sh を呼ぶ（sid はフル session-id） ====
 root2="$TMP/case2"; setup_fixture "$root2"
