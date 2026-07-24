@@ -65,5 +65,36 @@ assert_grep "case1: cccccccc が対象" "$out1" 'cccccccc-1111'
 assert_not_grep "case1: bbbbbbbb(生成済み)は除外" "$out1" 'bbbbbbbb'
 assert_not_grep "case1: subagent は除外" "$out1" 'subagents'
 
+# ==== case2: 通常実行は未生成2件だけ summarize.sh を呼ぶ（sid はフル session-id） ====
+root2="$TMP/case2"; setup_fixture "$root2"
+calls2="$TMP/case2.calls"; : > "$calls2"
+PROJECTS_ROOT="$root2/projects" SESSIONS_ROOT="$root2/sessions" \
+  SUMMARIZE_BIN="$TMP/bin/summarize.sh" SUMMARIZE_CALLS="$calls2" \
+  bash "$SCRIPT_DIR/backfill.sh" > /dev/null 2>&1 || true
+assert_line_count "case2: summarize.sh が2回呼ばれる" "$calls2" 2
+assert_grep "case2: aaaaaaaa をフル session-id で渡す" "$calls2" '\.jsonl aaaaaaaa-1111-2222-3333-444444444444$'
+assert_not_grep "case2: bbbbbbbb(生成済み)は呼ばれない" "$calls2" 'bbbbbbbb'
+
+# ==== case3: 冪等 — 全 md が既にあれば summarize.sh を1回も呼ばない ====
+root3="$TMP/case3"; setup_fixture "$root3"
+# aaaaaaaa と cccccccc の md も用意して全生成済みにする
+echo '# s' > "$root3/sessions/2026-07-20/testproj-0901-aaaaaaaa.md"
+echo '# s' > "$root3/sessions/2026-07-20/testproj-0902-cccccccc.md"
+calls3="$TMP/case3.calls"; : > "$calls3"
+PROJECTS_ROOT="$root3/projects" SESSIONS_ROOT="$root3/sessions" \
+  SUMMARIZE_BIN="$TMP/bin/summarize.sh" SUMMARIZE_CALLS="$calls3" \
+  bash "$SCRIPT_DIR/backfill.sh" > /dev/null 2>&1 || true
+assert_line_count "case3: 冪等 — 呼び出し0回" "$calls3" 0
+
+# ==== case4: PROJECTS_ROOT が存在しない場合は警告して summarize を呼ばずに終了 ====
+root4="$TMP/case4"
+err4="$TMP/case4.err"
+calls4="$TMP/case4.calls"; : > "$calls4"
+PROJECTS_ROOT="$root4/projects" SESSIONS_ROOT="$root4/sessions" \
+  SUMMARIZE_BIN="$TMP/bin/summarize.sh" SUMMARIZE_CALLS="$calls4" \
+  bash "$SCRIPT_DIR/backfill.sh" > /dev/null 2>"$err4" || true
+assert_line_count "case4: summarize.sh は呼ばれない" "$calls4" 0
+assert_grep "case4: PROJECTS_ROOT 不在を stderr に警告" "$err4" 'PROJECTS_ROOT'
+
 # ==== 結果 ====
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
