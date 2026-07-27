@@ -28,6 +28,14 @@
 | `github.com` | `gh` コマンド（GitHub CLI） |
 | 社内GitBucket URL | `mcp__gitbucket__*` ツール |
 
+## Git ワークフロー
+
+- ブランチ: `main`（本番）/ `feat/*`（機能開発）/ `fix/*`（バグ修正）
+- コミット後は必ず push する
+- force push は原則禁止
+
+※ コミットメッセージのプレフィックスはリポジトリごとに異なるため、各プロジェクトの CLAUDE.md に従うこと。
+
 ## コミュニケーションルール
 
 不明点がある場合は、解消されるまで `AskUserQuestion` で再帰的に質問すること。

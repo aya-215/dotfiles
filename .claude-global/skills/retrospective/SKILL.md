@@ -58,12 +58,22 @@ Agentツールで `subagent_type: "retrospective-analyzer"` をフォアグラ�
 
 rules昇格候補があれば、**承認を求める前に候補ごとに行き先の振り分け判断を行い、判断結果と根拠を提案に含める**:
 
+**最初に問うこと（振り分けより前）: このルールは決定的に強制できるか？**
+
+強制できるなら `learned-rules.md` ではなく Hook / permission へ回す。ルール文は確率的な補助層であって強制層ではない（公式: 「Claude treats them as context, **not enforced configuration**. To block an action regardless of what Claude decides, use a PreToolUse hook instead.」）。
+
+- 実証データ: `verify-assumptions-with-real-data` は 2026-07-02 に昇格＝常時ロードされているのに、2026-07-14〜27 の2週間で pain 3件。うち2件はセッション要約自身が「学習ルールに反した」と自己記録している。**読ませるだけでは止まらないパターンが実在する**
+- 良い実例: `external-actions.md` はルール文＋`settings.json` の `ask` permission の**二段構え**（確率的な補助＋決定的なガード）になっている。これが効く形
+- 判定の目安: 「ファイルパス・コマンド名・差分の有無」等で機械判定できる → Hook 向き。「前提が妥当か」「意図が正しいか」等の判断を要する → ルール向き
+
 | パターンの性質 | 行き先 |
 |---|---|
+| 機械判定できる（パス・コマンド・差分で判定可能） | **Hook / permission を第一候補にする**（ルール昇格より優先） |
 | 価値観・構え系（いつでも効く判断原則） | `learned-rules.md` へ昇格 |
 | 手順系（「毎回この手順」の定型フロー） | スキル化を提案。**既存スキルがあればそこへの集約を優先**（新規作成しない） |
 | 「前後に必ずやる」系の機械的チェック | Hook候補として提示（実装は要相談） |
 | 既存のルール・スキル・CLAUDE.mdと重複 | 昇格せず、既存側への集約または reinforce 扱いを提案 |
+| ファイル種別・ディレクトリに限定される | `learned-rules.md` ではなく `rules/` の個別ファイル＋`paths:` frontmatter（条件ロード）を検討 |
 | プロジェクト固有（scope が global でない） | グローバルルールにしない。scope を明示して行き先を判断 |
 
 重複チェックは必ず行う: `rules/*.md`・CLAUDE.md・既存スキル（`~/.claude/skills/*/SKILL.md` の frontmatter）と突き合わせること。
@@ -82,7 +92,9 @@ rules昇格候補があれば、**承認を求める前に候補ごとに行き�
 
 2. 該当feedbackの `promoted_to` を `rules` に、`updated` を今日に更新する
 
-3. 追記後、learned-rules.md のルール数（`##` 見出しの数）を確認する。15件を超えている場合、または reinforce_count が長期間 0 のままのルールがある場合は、整理（類似ルールの統合・本文の短縮・不要ルールの削除）をユーザーに提案する。削除時は由来feedbackの `promoted_to` を `null` に戻すこと（ルールは毎セッション読み込まれるため、肥大はコンテキストを圧迫する）
+3. 追記後、learned-rules.md のルール数（`##` 見出しの数）を確認する。15件を超えている場合、または reinforce_count が長期間 0 のままのルールがある場合は、整理（類似ルールの統合・本文の短縮・不要ルールの削除）をユーザーに提案する。削除時は由来feedbackの `promoted_to` を `null` に戻すこと（`learned-rules.md` は frontmatter を持たないため毎セッション無条件で読み込まれる。肥大はコンテキストを圧迫し、公式も「Longer files consume more context and **reduce adherence**」と明記している）
+
+※ `rules/*.md` は `paths:` frontmatter を付けると**該当ファイルを読んだときだけロード**される条件ルールになる（[公式](https://code.claude.com/docs/en/memory.md)）。ファイル種別・ディレクトリに紐づくルールは `learned-rules.md` に混ぜず、個別ファイル＋`paths:` にすること。`learned-rules.md` 自体は全セッションで効かせる価値観系のみを置く前提なので frontmatter なし（無条件ロード）で正しい。
 
 ### 7. スキル化候補の提示
 
