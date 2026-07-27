@@ -203,8 +203,11 @@ paths:
 
 効果: 常時ロードから **1,045 bytes を外す**（該当ファイル編集時のみロード）。内容を失わないので「明示しておきたい」というニーズも満たす — 当初案（移設 or 削除）より明確に優れる。
 
-**検証すべき点（UNVERIFIED）**: `~/.config/nvim` → `config/nvim/` のシンボリックリンク経由で編集した場合に発火するか。公式は v2.1.198 以降「symlinked path to the project directory」をサポートと明記しているが、この構成（プロジェクト外からプロジェクト内へ入るリンク）が該当するかは実測していない。
-検証手順: frontmatter を足した後、nvim 設定を1ファイル編集して `/context` の **Memory files** に当該ルールが現れるか確認。または `InstructionsLoaded` hook でログを取る（公式が「useful for debugging path-specific rules or lazy-loaded files」と案内している方法）。
+**検証結果（2026-07-27）**: 実パス（`config/nvim/lua/plugins/colorscheme.lua`）経由での発火は **✅ 確認済み**。user-level `~/.claude/rules/` でも `paths:` は有効。詳細は §9 検証状況を参照。
+
+**残る UNVERIFIED**: `~/.config/nvim` → `config/nvim/` のシンボリックリンク経由で読んだ場合に発火するか。公式は v2.1.198 以降「symlinked path to the project directory」をサポートと明記しているが、この構成（プロジェクト外からプロジェクト内へ入るリンク）は未実測。
+
+検証手順（**注意: 当初書いていた手順は誤りだったため訂正済み**）: 条件ロードされたルールは `/context` の **Memory files には現れない** — Read 直後の **system-reminder として Messages 側に注入される**。したがって発火の確認は Memory files ではなく system-reminder の有無で行うこと。または `InstructionsLoaded` hook でログを取る（公式が「useful for debugging path-specific rules or lazy-loaded files」と案内している方法）。
 発火しない場合は `paths:` に `**/*.lua` のような拡張子パターンを併記すれば回避できる（上記案は既にそうしてある）。
 
 ### 提案C: `learned-rules.md` は現状維持、ただし昇格基準を見直す — 推奨度：高
@@ -307,7 +310,30 @@ paths:
 | symlink 経由での frontmatter 可視性 | ✅ 確認済み |
 | `external-actions.md` / `learned-rules.md` が無条件ロードのまま | ✅ 確認済み（意図どおり） |
 | git-workflow.md の3ブロックの移設先 | ✅ 削除前に全数確認 |
-| **`paths:` の実発火（symlink経由の nvim 編集）** | ⏳ **未検証** — 次に nvim 設定を編集するセッションで `/context` の Memory files を確認すること |
+| **`paths:` の実発火（実パス経由の nvim 読み込み）** | ✅ **検証済み（2026-07-27）** — 別セッションで STEP 0→1→2 を実施し発火を確認。詳細は下記 |
+| **`paths:` の実発火（symlink 経由 `~/.config/nvim/...`）** | ⏳ **未検証** — STEP 3 は独立セッション（STEP 0→3）が必要なため今回スコープ外 |
+
+#### 実発火検証の実施記録（2026-07-27・別セッション）
+
+`docs/verify-paths-frontmatter.md` の STEP 0〜2 を実行。Claude Code `2.1.220`（symlink サポート v2.1.198+ を充足）。
+
+| STEP | 操作 | Memory files | `neovim-style.md` の注入 |
+|---|---|---|---|
+| 0 | 起動直後、ツール未使用 | 4件 / 5.3k | なし |
+| 1 | `README.md` を Read（コントロール、非該当） | 4件 / 5.3k（不変） | なし |
+| 2 | `config/nvim/lua/plugins/colorscheme.lua` を Read（該当） | 4件 / 5.3k（**不変**） | **あり**（Read 直後に system-reminder として本文が注入） |
+
+**判定: ✅ `paths:` frontmatter は正しく機能している。** user-level（`~/.claude/rules/`）でも有効で、§6 提案B の前提は崩れていない。STEP 0 で `neovim-style.md` / `shell-conventions.md` が載っていなかった時点で「frontmatter 無視」ケースは棄却され、STEP 1 で非該当ファイルでは発火せず、STEP 2 の該当ファイルでのみ発火した。
+
+**⚠️ 計測方法の訂正 — `docs/verify-paths-frontmatter.md` の判定表は誤り。**
+同ファイルは「`/context` の Memory files に新しく載るか」を判定基準にしていたが、**実際には条件ロードされたルールは Memory files に現れない**。Memory files は 5.3k のまま一切変化せず、ルール本文は Read 直後の system-reminder として **Messages 側**に注入された（Messages: 29.4k → 39.3k）。
+
+- 起動時ロード（`external-actions.md` 等）→ Memory files に計上
+- `paths:` によるトリガーロード → Messages にインライン注入、Memory files には出ない
+
+したがって §6 提案B の「検証手順」および §10 に書かれた「`/context` の Memory files に現れるか確認」という手順は**この方法では永久に成功しない**。今後 `paths:` の発火を確認する場合は、Memory files ではなく **Read 直後の system-reminder の有無**（または `InstructionsLoaded` hook のログ）で判定すること。
+
+**副次的観測**: `/context` の Memory files はルールを実体パス（`~/.claude/rules/`）ではなく symlink 元の `.dotfiles/.claude-global/rules/` として表示する。
 
 ---
 
@@ -315,7 +341,8 @@ paths:
 
 ## 10. 未解決 / 次アクション候補
 
-- **提案Bの実発火は未検証**。次に nvim 設定を触るときに `/context` の **Memory files** に `neovim-style.md` が出るか確認する。出ない場合は `paths:` に `**/*.lua` を入れてあるので拡張子側で拾われる想定
+- ~~提案Bの実発火は未検証~~ → **✅ 実パス経由は検証済み（2026-07-27）**。残るは **symlink 経由（`~/.config/nvim/...`）のみ**。検証は STEP 0 → STEP 3 の順で独立セッションを立てて行う（`docs/verify-paths-frontmatter.md` STEP 3）。判定は `/context` の Memory files ではなく **Read 直後の system-reminder の有無**で行うこと（Memory files では判定できない — §9 参照）
+- `docs/verify-paths-frontmatter.md` は STEP 3 が残っているため**まだ削除しない**。ただし同ファイルの判定表は計測方法が誤っている（Memory files 基準）ので、STEP 3 を実施する際は §9 の訂正を参照すること
 - `verify-assumptions-with-real-data` の Hook 化検討（retrospective 手順7の発動条件に該当。手順6の新しい判定基準の初適用対象になる）
 - `pr-artifact-hygiene` の Hook 化検討（`.mcp.json` 混入検出は決定的に判定可能、success 4）
 - `ant` CLI 未インストールのため本監査はバイト数ベース。トークン精度が必要なら `ant` 導入後に再計測
