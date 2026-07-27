@@ -342,6 +342,7 @@ paths:
 ## 10. 未解決 / 次アクション候補
 
 - ~~提案Bの実発火は未検証~~ → **✅ 実パス経由は検証済み（2026-07-27）**。残るは **symlink 経由（`~/.config/nvim/...`）のみ**。検証は STEP 0 → STEP 3 の順で独立セッションを立てて行う（`docs/verify-paths-frontmatter.md` STEP 3）。判定は `/context` の Memory files ではなく **Read 直後の system-reminder の有無**で行うこと（Memory files では判定できない — §9 参照）
+  - **STEP 3 で読むファイルは `~/.config/nvim/README.md`（非 `.lua`）にすること。** `.lua` ファイルだと `**/*.lua` の拡張子パターンで発火してしまい、symlink のパス解決が失敗していても ✅ に見える反証不可能なテストになる（当初 `yazi.lua` を指定していたのは誤り。訂正済み）
 - `docs/verify-paths-frontmatter.md` は STEP 3 が残っているため**まだ削除しない**。ただし同ファイルの判定表は計測方法が誤っている（Memory files 基準）ので、STEP 3 を実施する際は §9 の訂正を参照すること
 - `verify-assumptions-with-real-data` の Hook 化検討（retrospective 手順7の発動条件に該当。手順6の新しい判定基準の初適用対象になる）
 - `pr-artifact-hygiene` の Hook 化検討（`.mcp.json` 混入検出は決定的に判定可能、success 4）

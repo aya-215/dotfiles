@@ -74,14 +74,29 @@
 ### STEP 3: symlink 経由でも効くか（追加検証）
 
 ```
-/home/aya/.config/nvim/lua/plugins/yazi.lua
+/home/aya/.config/nvim/README.md
 ```
 
 を Read する。`~/.config/nvim` → `/home/aya/.dotfiles/config/nvim` の symlink 経由。
 
 公式は v2.1.198 以降 symlink 経由のマッチをサポートと明記しているが、この構成（プロジェクト外からプロジェクト内へ入るリンク）が該当するかは未確認。
 
-**期待**: STEP 2 で既に載っているので差分は出ない。**STEP 2 をスキップして STEP 3 だけ単独で試すほうが綺麗**（新しいセッションで STEP 0 → STEP 3 の順でやる）。
+**⚠️ 読むファイルは必ず非 `.lua` にすること（重要）。**
+当初この STEP は `~/.config/nvim/lua/plugins/yazi.lua` を指定していたが、これは**反証不可能なテスト**だった。
+`.lua` ファイルは `config/nvim/**/*` と `**/*.lua` の両方にマッチするため、symlink のパス解決が失敗していても
+拡張子パターン側で発火してしまい、「✅ symlink も効く」という誤った結論が出る。
+
+`README.md` なら `config/nvim/**/*` にしかマッチしない（`**/*.lua` / `**/*.sh` / `**/*.bash` に当たらず、
+`scripts/**/*` はリポジトリルート直下の `scripts/` を指すので無関係）。
+したがって発火すれば **symlink 経由のパス解決が効いている証拠になる**。
+
+**手順**: 新しいセッションで STEP 0（Memory files に `neovim-style.md` が無いことを確認）→ STEP 3 の順に実施する。
+STEP 2 は実施しないこと（実パスで先に発火させると差分が観測できなくなる）。
+
+**判定**: Read 直後に `neovim-style.md` の本文が system-reminder として注入されれば ✅。
+注入されなければ symlink 経由では解決されない ＝ `**/*.lua` の拡張子パターンが実質的な保険として機能している、という結論になる
+（提案Bの構成は既に両方書いてあるので実害はない）。
+**Memory files では判定できない**（冒頭の追記参照）。
 
 ---
 
