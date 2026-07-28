@@ -139,7 +139,7 @@ room_history() {
 # history 系エンドポイントはスレッド返信を全件返さない（実測: 9返信中3件のみ）。
 # tmid / tcount からスレッドIDを集め、chat.getThreadMessages で補完する。
 expand_threads() {
-  local hist tids tid extra merged tresp
+  local hist tids tid extra tresp
   hist="$(cat)"
   # スレッドID = 返信の tmid ∪ 親の _id（tcount を持つもの）
   tids="$(printf '%s' "$hist" | python3 -c '
