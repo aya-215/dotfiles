@@ -18,6 +18,13 @@ RC_USER_ID=dummy-user
 RC_CHANNEL=mori.a-times
 EOF
 
+# RC_CHANNEL 未設定版（設定ミスによる無言劣化を検証するための env）
+cat > "$TMP/env-no-channel.local" <<'EOF'
+RC_BASE_URL=http://rc.test
+RC_TOKEN=dummy-token
+RC_USER_ID=dummy-user
+EOF
+
 # ---- curl スタブ ----
 # 引数の URL に応じて fixture を返す。rooms.get と *.history を出し分ける。
 # history 系は URL 中の oldest=/latest= を実際に見て messages を絞り込む
@@ -126,11 +133,15 @@ cat > "$TMP/fixtures/hist-noise.json" <<'EOF'
 ]}
 EOF
 
-# hist-dm: DM。自分の発言1件と相手の発言1件。
+# hist-dm: DM。自分の発言1件と相手の発言2件（うち1件はhist-ownと同様に
+# 74分後で±30分窓の外）。窓外のd3が残ることでDM全採用（rtype=="d"分岐）を
+# 直接検証できる。d1(06:05)はd2(06:06)から1分後で窓内に収まってしまうため、
+# 全採用ロジックを削除しても既存assertは空証明のまま通ってしまっていた。
 cat > "$TMP/fixtures/hist-dm.json" <<'EOF'
 {"messages":[
  {"_id":"d1","ts":"2026-07-22T06:05:00.000Z","u":{"username":"hatagami.y"},"msg":"先日の件どうでしょうか"},
- {"_id":"d2","ts":"2026-07-22T06:06:00.000Z","u":{"username":"mori.a"},"msg":"今週中に対応します"}
+ {"_id":"d2","ts":"2026-07-22T06:06:00.000Z","u":{"username":"mori.a"},"msg":"今週中に対応します"},
+ {"_id":"d3","ts":"2026-07-22T07:20:00.000Z","u":{"username":"hatagami.y"},"msg":"承知しました、では来週改めて確認します"}
 ]}
 EOF
 
@@ -256,5 +267,50 @@ assert_eq "年跨ぎでもoldestが正しいUTC変換になる" \
   "2025-12-31T15:00:00.000Z" "$(cut -f1 <<<"$window_ny")"
 assert_eq "年跨ぎでもlatestが正しいUTC変換になる" \
   "2026-01-01T15:00:00.000Z" "$(cut -f2 <<<"$window_ny")"
+
+# ===== Task 3: メッセージ絞り込み =====
+# stderr も捕捉する（room-curlfail/room-badjson のスキップメッセージが
+# 標準出力に混ざらないようにするのと、RC_CHANNEL 警告の検証に使うため）。
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm 2>"$TMP/err3.log")"
+err3="$(cat "$TMP/err3.log")"
+
+# (a) 自分のtimesは全採用 → 自分の最終発言(00:45)から62分後の議論も残る
+assert_grep "自分のtimesは尻尾が切れない(01:47)" "向こうの対応が変わった" "$out"
+assert_grep "自分のtimesは尻尾が切れない(01:56)" "同じ認識です"           "$out"
+
+# (b) 他人のtimesは時間窓で文脈を拾う（自分の発言07:37の前後30分）
+assert_grep "起点前の問いが残る(07:21)"   "MCP化したがこれでよかったか" "$out"
+assert_grep "起点前の議論が残る(07:34)"   "モデルが賢くなったので"       "$out"
+assert_grep "起点後の反応が残る(07:40)"   "認証の有無が一番大きい違い"   "$out"
+
+# (b) 窓外の雑談は落ちる
+assert_absent "窓外の雑談は落ちる(00:35)" "殺人的な暑さ" "$out"
+assert_absent "窓外の雑談は落ちる(09:45)" "欠伸が止まらん" "$out"
+
+# (a) DMは全採用 → 相手の発言も残る
+assert_grep "DMは相手の発言も残る" "先日の件どうでしょうか" "$out"
+# d3(07:20)はd2(06:06)から74分後で±30分窓の外にあるが、DM全採用なので残るはず。
+# これが無いと「DMは相手の発言も残る」assertは d1 が窓内に収まる偶然で
+# 空証明のまま通ってしまう（d1は06:05でd2の1分前のため）。
+assert_grep "DMは窓外の発言も全採用で残る(07:20)" "承知しました、では来週改めて確認します" "$out"
+
+# ===== RC_CHANNEL 未設定・不一致時の無言劣化防止 =====
+# RC_CHANNEL が未設定だと mytimes が空になり、render_room の全採用分岐
+# (rtype == "d" or (mytimes and name == mytimes)) が発火せず、自分のtimesが
+# 黙って時間窓の対象に落ちる。これはユーザーが手で見つけた「尻尾が切れる」
+# 欠陥が設定ミスで再発する経路であり、しかも無言なので気付けない。
+# stderrに警告を出す実装にし、(a)警告そのもの (b)実際に尻尾が切れて劣化する
+# ことの両方を検証する。(b)の方が本質的に重要（警告があっても劣化していない
+# ことの確認にはならないため）。
+out_nochannel="$(RC_ENV_FILE="$TMP/env-no-channel.local" \
+  RC_CURL="$TMP/bin/curl-stub.sh" \
+  RC_FIXTURE_DIR="$TMP/fixtures" \
+  RC_ME=mori.a \
+  bash "$SCRIPT_DIR/rocketchat.sh" --from 2026-07-21 --to 2026-07-28 --include-dm \
+  2>"$TMP/err-nochannel.log")"
+err_nochannel="$(cat "$TMP/err-nochannel.log")"
+assert_grep   "RC_CHANNEL未設定時にWARNがstderrに出る" "WARN" "$err_nochannel"
+assert_absent "RC_CHANNEL未設定だと自分のtimesの尻尾が黙って切れる(劣化の実証)" \
+  "向こうの対応が変わった" "$out_nochannel"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi

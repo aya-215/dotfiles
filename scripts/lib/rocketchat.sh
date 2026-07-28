@@ -16,6 +16,9 @@
 #   RC_ENV_FILE  認証情報ファイル（既定: scripts/daily-review/.env.local）
 #   RC_ME        自分のユーザー名（既定: mori.a）
 #   RC_CURL      curl の代替コマンド（テスト用フック）
+#   RC_CHANNEL   自分の times チャンネル名（.env.local 由来。全メッセージ採用の
+#                対象を決める。未設定・不一致だと自分の times が時間窓の対象に
+#                なり尻尾が切れて黙って劣化するため、その場合は stderr に警告する）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -131,30 +134,56 @@ room_history() {
   fi
 }
 
-# 1ルーム分を判定・整形する。採用されなければ何も出さない。
+# 1ルーム分を判定・絞り込み・整形する。採用されなければ何も出さない。
 # stdin: 履歴 JSON / 引数: ルーム名, ルーム種別
 render_room() {
   local name="$1" t="$2"
-  RC_ROOM_NAME="$name" RC_ROOM_T="$t" python3 -c '
-import sys, json, os
-me = os.environ["RC_ME"]
-name = os.environ["RC_ROOM_NAME"]
+  RC_ROOM_NAME="$name" RC_ROOM_T="$t" RC_WINDOW_SEC="$WINDOW_SEC" \
+  RC_MY_TIMES="${RC_CHANNEL:-}" python3 -c '
+import sys, json, os, datetime
+me      = os.environ["RC_ME"]
+name    = os.environ["RC_ROOM_NAME"]
+rtype   = os.environ["RC_ROOM_T"]
+window  = int(os.environ["RC_WINDOW_SEC"])
+mytimes = os.environ.get("RC_MY_TIMES", "")
+
+def ts(m):
+    return datetime.datetime.fromisoformat((m.get("ts") or "").replace("Z", "+00:00"))
+
 try:
     msgs = [m for m in json.load(sys.stdin).get("messages", []) if (m.get("msg") or "").strip()]
 except Exception:
     sys.exit(0)
+
 own = [m for m in msgs if m.get("u", {}).get("username") == me]
 men = [m for m in msgs if "@" + me in (m.get("msg") or "")]
 if not own and not men:
-    sys.exit(0)          # 第1段階: 採用しない
+    sys.exit(0)                       # 第1段階: 採用しない
+
+# 第2段階(a): 自分の times と DM は全メッセージ採用
+if rtype == "d" or (mytimes and name == mytimes):
+    sel = msgs
+else:
+    # 第2段階(b): 起点 + スレッド(親/兄弟) + 起点の前後 window 秒
+    seeds = own + men
+    tids  = {(m.get("tmid") or m.get("_id")) for m in seeds}
+    keep  = {m["_id"] for m in msgs
+             if m.get("_id") in tids or m.get("tmid") in tids}
+    for s in seeds:
+        st = ts(s)
+        for m in msgs:
+            if abs((ts(m) - st).total_seconds()) <= window:
+                keep.add(m["_id"])
+    sel = [m for m in msgs if m["_id"] in keep]
+
 why = []
 if own: why.append(f"発言{len(own)}")
 if men: why.append(f"@me{len(men)}")
 # f-string 内にバックスラッシュを書くと環境によって SyntaxError になるため
 # join は必ず変数に退避してから埋め込む
 tag = ",".join(why)
-print(f"===== {name} [{tag}] =====")
-for m in sorted(msgs, key=lambda x: x.get("ts", "")):
+print(f"===== {name} [{tag}] {len(sel)}/{len(msgs)}件 =====")
+for m in sorted(sel, key=lambda x: x.get("ts", "")):
     tstr = (m.get("ts") or "")[11:16]
     u = m.get("u", {}).get("username", "?")
     body = (m.get("msg") or "").replace("\n", " / ")
@@ -162,8 +191,23 @@ for m in sorted(msgs, key=lambda x: x.get("ts", "")):
 '
 }
 
-# メイン: 採用ルームを順に処理する
+# メイン: 採用ルームを順に処理する。
+#
+# mytimes_seen は RC_CHANNEL が実際に列挙されたルーム名のいずれかと一致したかを
+# 追跡する。未設定・不一致だと render_room の全採用分岐が発火せず、自分の times
+# が時間窓の対象になって黙って尻尾が切れる（ユーザーが手で見つけた欠陥の設定
+# ミスによる再発経路）ため、検出できる範囲で stderr に警告する。
+mytimes_seen=0
 while IFS=$'\t' read -r rid t name; do
   [ -n "$rid" ] || continue
+  if [ -n "${RC_CHANNEL:-}" ] && [ "$name" = "${RC_CHANNEL}" ]; then
+    mytimes_seen=1
+  fi
   room_history "$rid" "$t" | render_room "$name" "$t"
 done < <(list_active_rooms)
+
+if [ -z "${RC_CHANNEL:-}" ]; then
+  echo "WARN: RC_CHANNEL が未設定のため、自分の times が全採用されず時間窓の対象になっています" >&2
+elif [ "$mytimes_seen" -eq 0 ]; then
+  echo "WARN: RC_CHANNEL=$RC_CHANNEL が列挙されたルーム名のいずれとも一致しませんでした（設定ミスの可能性。対象期間に times への投稿が無い場合はこの警告は無視して構いません）" >&2
+fi
