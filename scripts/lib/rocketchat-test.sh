@@ -39,12 +39,18 @@ qparam() {
 
 fx=""
 case "$url" in
-  *rooms.get*)          cat "$RC_FIXTURE_DIR/rooms.json"; exit 0 ;;
-  *roomId=room-own*)    fx="$RC_FIXTURE_DIR/hist-own.json" ;;
-  *roomId=room-other*)  fx="$RC_FIXTURE_DIR/hist-other.json" ;;
-  *roomId=room-noise*)  fx="$RC_FIXTURE_DIR/hist-noise.json" ;;
-  *roomId=room-dm*)     fx="$RC_FIXTURE_DIR/hist-dm.json" ;;
-  *)                    echo '{"messages":[]}'; exit 0 ;;
+  *rooms.get*)           cat "$RC_FIXTURE_DIR/rooms.json"; exit 0 ;;
+  *roomId=room-own*)     fx="$RC_FIXTURE_DIR/hist-own.json" ;;
+  *roomId=room-other*)   fx="$RC_FIXTURE_DIR/hist-other.json" ;;
+  *roomId=room-noise*)   fx="$RC_FIXTURE_DIR/hist-noise.json" ;;
+  *roomId=room-dm*)      fx="$RC_FIXTURE_DIR/hist-dm.json" ;;
+  *roomId=room-atall*)   fx="$RC_FIXTURE_DIR/hist-atall.json" ;;
+  *roomId=room-badjson*) echo '<html>error</html>'; exit 0 ;;
+  # curl コマンド自体が失敗するケース（ネットワークエラー等）を模擬する。
+  # room_history の `|| true` がこれを受け止め、後続ルームの処理を止めない
+  # ことを検証するための分岐。
+  *roomId=room-curlfail*) echo 'connection refused' >&2; exit 7 ;;
+  *)                     echo '{"messages":[]}'; exit 0 ;;
 esac
 
 RC_Q_OLDEST="$(qparam oldest)" RC_Q_LATEST="$(qparam latest)" python3 -c '
@@ -65,15 +71,20 @@ chmod +x "$TMP/bin/curl-stub.sh"
 
 # ---- fixture ----
 mkdir -p "$TMP/fixtures"
-# 4ルーム: 自分のtimes / 他人のtimes / 自動投稿(ノイズ) / DM
+# 8ルーム: 障害注入用2件(curl失敗/不正JSON)を先頭に配置し、途中で処理が
+# 中断されていないか（＝後続ルームが正常処理されるか）を検出できるようにする。
+# 残りは既存通り: 自分のtimes / 他人のtimes / 自動投稿(ノイズ) / DM / @allのみ(ノイズ)
 # lm は期間内(7/22)と期間外(7/10)を混ぜる
 cat > "$TMP/fixtures/rooms.json" <<'EOF'
 {"update":[
+ {"_id":"room-curlfail","t":"c","name":"curl-fail-room","lm":"2026-07-22T04:00:00.000Z"},
+ {"_id":"room-badjson","t":"c","name":"broken-room","lm":"2026-07-22T10:00:00.000Z"},
  {"_id":"room-own","t":"p","name":"mori.a-times","lm":"2026-07-22T05:00:00.000Z"},
  {"_id":"room-other","t":"p","name":"kawai.t-times","lm":"2026-07-22T06:00:00.000Z"},
  {"_id":"room-noise","t":"p","name":"grafana-alert","lm":"2026-07-22T07:00:00.000Z"},
  {"_id":"room-dm","t":"d","usernames":["mori.a","hatagami.y"],"lm":"2026-07-22T08:00:00.000Z"},
- {"_id":"room-stale","t":"c","name":"old-channel","lm":"2026-07-10T00:00:00.000Z"}
+ {"_id":"room-stale","t":"c","name":"old-channel","lm":"2026-07-10T00:00:00.000Z"},
+ {"_id":"room-atall","t":"p","name":"general","lm":"2026-07-22T09:00:00.000Z"}
 ]}
 EOF
 
@@ -120,6 +131,16 @@ cat > "$TMP/fixtures/hist-dm.json" <<'EOF'
 {"messages":[
  {"_id":"d1","ts":"2026-07-22T06:05:00.000Z","u":{"username":"hatagami.y"},"msg":"先日の件どうでしょうか"},
  {"_id":"d2","ts":"2026-07-22T06:06:00.000Z","u":{"username":"mori.a"},"msg":"今週中に対応します"}
+]}
+EOF
+
+# hist-atall: @all のみを含むルーム。自分の発言も @mori.a メンションも無い。
+# @all/@here は採用条件に含めない設計（実データ検証でノイズしか拾わなかったため）
+# の回帰を防ぐための fixture。
+cat > "$TMP/fixtures/hist-atall.json" <<'EOF'
+{"messages":[
+ {"_id":"a1","ts":"2026-07-22T09:00:00.000Z","u":{"username":"suzuki.n"},"msg":"@all 新人紹介です、よろしくお願いします"},
+ {"_id":"a2","ts":"2026-07-22T09:05:00.000Z","u":{"username":"yamada.k"},"msg":"@all 誰か教えてください"}
 ]}
 EOF
 
@@ -173,7 +194,10 @@ assert_eq   ".env.local不在時はexit 1"          "1"      "$rc"
 assert_grep ".env.local不在時にERROR:で始まるメッセージが出る" "ERROR:" "$out"
 
 # ===== Task 2: ルーム採用判定 =====
-out="$(run_rc --from 2026-07-21 --to 2026-07-28)"
+# rooms.json の先頭2件（room-curlfail, room-badjson）は障害注入用。
+# stdout/stderr を両方捕捉し、後続ルームが正常処理されることも合わせて検証する。
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 2>"$TMP/err.log")"
+err="$(cat "$TMP/err.log")"
 assert_grep   "自分の発言があるルームは採用"     "mori.a-times"   "$out"
 assert_grep   "自分の発言があるルームは採用(他人times)" "kawai.t-times" "$out"
 assert_absent "自動投稿のみのルームは除外"       "grafana-alert"  "$out"
@@ -182,6 +206,26 @@ assert_grep   "採用理由がヘッダに出る"           "発言"           "
 # 期間外の番兵メッセージ(2026-08-01)が漏れて混入する。range-aware スタブが
 # oldest/latest を実際に見て絞り込むことでこれを検出する。
 assert_absent "期間外(latest超)のメッセージは含まれない" "OUT-OF-RANGE-SENTINEL" "$out"
+# @all/@here は採用条件に含めない設計の回帰防止。将来 men の判定に @all を
+# 足す変異が入っても、このテストが無いと気付けない（実データ検証で
+# @all はノイズしか拾わないことが分かっているため、意図的に除外している）。
+assert_absent "@allのみのルームは採用されない" "general" "$out"
+# 1ルームの不正レスポンス(非JSON)が全体を落とさず、そのルームだけスキップされ、
+# 他のルームは正常に処理され続けることを確認する（brief要求の耐性の本質）。
+# room-badjson は rooms.json の先頭付近にあるため、ここで後続の mori.a-times /
+# kawai.t-times が採用されていることが「途中で処理が止まっていない」ことの証拠になる
+# （末尾に置くと、中断していても手前のルームは既に出力済みで見分けが付かない）。
+assert_absent "不正JSON応答のルームはスキップされる"     "broken-room"    "$out"
+assert_grep   "他のルームは不正JSON応答の影響を受けない" "mori.a-times"   "$out"
+# room_history 内で JSON 妥当性チェックが機能したことは render_room 側の
+# try/except でも見た目上の出力（スキップ）は同じになってしまい stdout だけでは
+# 判別できない。room_history 自身が出す stderr メッセージを直接検証する。
+assert_grep   "不正JSON応答はstderrに記録される" "ルーム room-badjson の取得に失敗しスキップ" "$err"
+# curl コマンド自体の失敗（`|| true` で受ける経路）でも同様にスキップされ、
+# 後続ルームの処理が止まらないことを確認する。
+assert_absent "curl失敗のルームはスキップされる"         "curl-fail-room" "$out"
+assert_grep   "curl失敗はstderrに記録される" "ルーム room-curlfail の取得に失敗しスキップ" "$err"
+assert_grep   "curl失敗後も他のルームは正常処理される"   "mori.a-times"   "$out"
 
 # ===== 日付変換バグ修正の検証 =====
 # oldest/latest の計算結果そのものを --print-window で直接検証する。
