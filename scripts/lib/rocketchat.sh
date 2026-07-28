@@ -155,6 +155,25 @@ try:
 except Exception:
     sys.exit(0)
 
+# ts が壊れている（不正なISO8601）メッセージだけを除外する。room_history の
+# JSON妥当性チェックはレスポンス全体の JSON としての妥当性しか見ておらず、
+# 個々のメッセージの ts フィールドの中身までは検証していない。ts() は
+# fromisoformat に失敗すると例外を投げるため、ここで弾かないと1件の不正な
+# ts が render_room 全体をクラッシュさせ、Task 2 で確保した「1ルームの失敗が
+# 全体を落とさない」耐性を迂回してしまう（room_history の防御はレスポンス
+# 単位、これはメッセージ単位の防御）。
+def ts_ok(m):
+    try:
+        ts(m)
+        return True
+    except Exception:
+        return False
+
+bad = [m for m in msgs if not ts_ok(m)]
+if bad:
+    print(f"(Rocket Chat: {name} の ts 不正メッセージ{len(bad)}件を除外)", file=sys.stderr)
+msgs = [m for m in msgs if ts_ok(m)]
+
 own = [m for m in msgs if m.get("u", {}).get("username") == me]
 men = [m for m in msgs if "@" + me in (m.get("msg") or "")]
 if not own and not men:

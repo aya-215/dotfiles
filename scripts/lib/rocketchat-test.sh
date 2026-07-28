@@ -25,6 +25,17 @@ RC_TOKEN=dummy-token
 RC_USER_ID=dummy-user
 EOF
 
+# RC_CHANNEL が設定されているが実際のルーム名と一致しない版（typo相当）。
+# 「未設定」と「列挙されたが不一致」は render_room の全採用分岐がどちらも
+# 発火しないという点で同じ劣化が起きるが、警告メッセージの分岐(elif)が
+# 別なので個別に検証する。
+cat > "$TMP/env-wrong-channel.local" <<'EOF'
+RC_BASE_URL=http://rc.test
+RC_TOKEN=dummy-token
+RC_USER_ID=dummy-user
+RC_CHANNEL=mori.a-timez
+EOF
+
 # ---- curl スタブ ----
 # 引数の URL に応じて fixture を返す。rooms.get と *.history を出し分ける。
 # history 系は URL 中の oldest=/latest= を実際に見て messages を絞り込む
@@ -52,6 +63,8 @@ case "$url" in
   *roomId=room-noise*)   fx="$RC_FIXTURE_DIR/hist-noise.json" ;;
   *roomId=room-dm*)      fx="$RC_FIXTURE_DIR/hist-dm.json" ;;
   *roomId=room-atall*)   fx="$RC_FIXTURE_DIR/hist-atall.json" ;;
+  *roomId=room-badts*)   fx="$RC_FIXTURE_DIR/hist-badts.json" ;;
+  *roomId=room-thread*)  fx="$RC_FIXTURE_DIR/hist-thread.json" ;;
   *roomId=room-badjson*) echo '<html>error</html>'; exit 0 ;;
   # curl コマンド自体が失敗するケース（ネットワークエラー等）を模擬する。
   # room_history の `|| true` がこれを受け止め、後続ルームの処理を止めない
@@ -78,20 +91,25 @@ chmod +x "$TMP/bin/curl-stub.sh"
 
 # ---- fixture ----
 mkdir -p "$TMP/fixtures"
-# 8ルーム: 障害注入用2件(curl失敗/不正JSON)を先頭に配置し、途中で処理が
-# 中断されていないか（＝後続ルームが正常処理されるか）を検出できるようにする。
-# 残りは既存通り: 自分のtimes / 他人のtimes / 自動投稿(ノイズ) / DM / @allのみ(ノイズ)
+# 9ルーム: 障害/構造注入用3件(curl失敗/不正JSON/ts不正メッセージ)を先頭に
+# 配置し、途中で処理が中断されていないか（＝後続ルームが正常処理されるか）を
+# 検出できるようにする。room-badts は room-own より前に置くことで、ts不正の
+# ガードが無いと後続の mori.a-times/kawai.t-times が処理されず中断が
+# 可視化できる設計にしてある。
+# 残りは既存通り: 自分のtimes / 他人のtimes / 自動投稿(ノイズ) / DM / @allのみ(ノイズ) / スレッド検証用
 # lm は期間内(7/22)と期間外(7/10)を混ぜる
 cat > "$TMP/fixtures/rooms.json" <<'EOF'
 {"update":[
  {"_id":"room-curlfail","t":"c","name":"curl-fail-room","lm":"2026-07-22T04:00:00.000Z"},
  {"_id":"room-badjson","t":"c","name":"broken-room","lm":"2026-07-22T10:00:00.000Z"},
+ {"_id":"room-badts","t":"p","name":"quality-check-room","lm":"2026-07-22T11:00:00.000Z"},
  {"_id":"room-own","t":"p","name":"mori.a-times","lm":"2026-07-22T05:00:00.000Z"},
  {"_id":"room-other","t":"p","name":"kawai.t-times","lm":"2026-07-22T06:00:00.000Z"},
  {"_id":"room-noise","t":"p","name":"grafana-alert","lm":"2026-07-22T07:00:00.000Z"},
  {"_id":"room-dm","t":"d","usernames":["mori.a","hatagami.y"],"lm":"2026-07-22T08:00:00.000Z"},
  {"_id":"room-stale","t":"c","name":"old-channel","lm":"2026-07-10T00:00:00.000Z"},
- {"_id":"room-atall","t":"p","name":"general","lm":"2026-07-22T09:00:00.000Z"}
+ {"_id":"room-atall","t":"p","name":"general","lm":"2026-07-22T09:00:00.000Z"},
+ {"_id":"room-thread","t":"p","name":"thread-room","lm":"2026-07-22T12:00:00.000Z"}
 ]}
 EOF
 
@@ -109,6 +127,18 @@ cat > "$TMP/fixtures/hist-own.json" <<'EOF'
  {"_id":"o4","ts":"2026-07-22T01:47:00.000Z","u":{"username":"matsumoto.h"},"msg":"向こうの対応が変わったってことですかね"},
  {"_id":"o5","ts":"2026-07-22T01:56:00.000Z","u":{"username":"tanaka.k"},"msg":"はい、自分も同じ認識です"},
  {"_id":"o9","ts":"2026-08-01T00:00:00.000Z","u":{"username":"matsumoto.h"},"msg":"OUT-OF-RANGE-SENTINEL"}
+]}
+EOF
+
+# hist-badts: ts が不正な(パース不能な)メッセージを含むルーム。room-badts は
+# t="p" で RC_CHANNEL(mori.a-times) と名前が違うため時間窓分岐を通る。
+# b2 の ts="...T99:99:99.000Z" は文字列比較では oldest<=ts<=latest の範囲内に
+# 収まる（curlスタブのrange-awareフィルタを通過する）が、fromisoformatは
+# hour=99でValueErrorになる。b1(mori.aの正常発言)がありルーム自体は採用される。
+cat > "$TMP/fixtures/hist-badts.json" <<'EOF'
+{"messages":[
+ {"_id":"b1","ts":"2026-07-22T03:00:00.000Z","u":{"username":"mori.a"},"msg":"badtsルームでの正常発言"},
+ {"_id":"b2","ts":"2026-07-22T99:99:99.000Z","u":{"username":"kawai.t"},"msg":"TS-BROKEN-SENTINEL"}
 ]}
 EOF
 
@@ -142,6 +172,25 @@ cat > "$TMP/fixtures/hist-dm.json" <<'EOF'
  {"_id":"d1","ts":"2026-07-22T06:05:00.000Z","u":{"username":"hatagami.y"},"msg":"先日の件どうでしょうか"},
  {"_id":"d2","ts":"2026-07-22T06:06:00.000Z","u":{"username":"mori.a"},"msg":"今週中に対応します"},
  {"_id":"d3","ts":"2026-07-22T07:20:00.000Z","u":{"username":"hatagami.y"},"msg":"承知しました、では来週改めて確認します"}
+]}
+EOF
+
+# hist-thread: スレッド(tmid)の親・兄弟返信が時間窓の外でも残ることを検証する。
+# render_room の tids/keep 集合演算の両半分を別々に踏む:
+#   - 子/兄弟: シード th1(tmid無し, 07:00) に対し th2 が tmid=th1._id を持ち
+#     103分後(08:43)。tmid in tids で拾われる。
+#   - 親: シード th3(mori.aの発言, tmid="th-parent"を持つ)自体が返信であり、
+#     tids には親のID("th-parent")が入る。親メッセージ th-parent 自体が
+#     104分前(05:16)に投稿されている。_id in tids で拾われる。
+# th4は窓外・スレッド無関係の雑談で、tids/keep どちらにも該当せず落ちるはず
+# （169-171行の tids/keep 初期化を削除する変異では逆に残ってしまう対照点）。
+cat > "$TMP/fixtures/hist-thread.json" <<'EOF'
+{"messages":[
+ {"_id":"th-parent","ts":"2026-07-22T05:16:00.000Z","u":{"username":"suzuki.n"},"msg":"THREAD-PARENT-FAR"},
+ {"_id":"th1","ts":"2026-07-22T07:00:00.000Z","u":{"username":"mori.a"},"msg":"seed発言(tmid無し)"},
+ {"_id":"th2","ts":"2026-07-22T08:43:00.000Z","tmid":"th1","u":{"username":"yamada.k"},"msg":"THREAD-CHILD-FAR"},
+ {"_id":"th3","ts":"2026-07-22T07:02:00.000Z","tmid":"th-parent","u":{"username":"mori.a"},"msg":"親スレッドへの返信seed"},
+ {"_id":"th4","ts":"2026-07-22T12:00:00.000Z","u":{"username":"kawai.t"},"msg":"THREAD-UNRELATED-NOISE"}
 ]}
 EOF
 
@@ -294,6 +343,32 @@ assert_grep "DMは相手の発言も残る" "先日の件どうでしょうか" 
 # 空証明のまま通ってしまう（d1は06:05でd2の1分前のため）。
 assert_grep "DMは窓外の発言も全採用で残る(07:20)" "承知しました、では来週改めて確認します" "$out"
 
+# (c) ts が不正なメッセージが1件あっても、そのメッセージだけが除外され、
+# ルーム自体の処理・後続ルームの処理は継続する（Task 2 の「1ルームの失敗が
+# 全体を落とさない」耐性を、render_room 側の新しい失敗モード(ts例外)からも
+# 守れているかの検証）。room-badts は rooms.json で room-own より前にあるため、
+# ここで mori.a-times/kawai.t-times が採用されていることが「中断していない」
+# ことの直接的な証拠になる。
+assert_absent "ts不正メッセージそのものは出力に含まれない" "TS-BROKEN-SENTINEL" "$out"
+assert_grep   "ts不正メッセージがあってもルームの他の発言は残る" "badtsルームでの正常発言" "$out"
+assert_grep   "ts不正メッセージ以降のルームも正常処理される(own)" "mori.a-times"   "$out"
+assert_grep   "ts不正メッセージ以降のルームも正常処理される(other)" "kawai.t-times" "$out"
+assert_grep   "ts不正メッセージの除外がstderrに記録される" "ts 不正メッセージ" "$err3"
+
+# (d) スレッド(tmid)の親・兄弟返信は時間窓の外でも残る（brief第2段階(b)の
+# 「スレッドの親と兄弟返信」の検証。既存fixtureにはtmid付きメッセージが
+# 無かったため、tids/keep集合演算(169-171行)が実質未検証だった）。
+assert_grep   "スレッド子/兄弟返信は窓外でも残る" "THREAD-CHILD-FAR"  "$out"
+assert_grep   "スレッド親メッセージは窓外でも残る" "THREAD-PARENT-FAR" "$out"
+assert_absent "スレッドと無関係な窓外雑談は落ちる" "THREAD-UNRELATED-NOISE" "$out"
+
+# 正常運用（RC_CHANNEL が実際のルーム名と一致している）では WARN が出ないこと。
+# mytimes_seen の永続化は process substitution（`done < <(...)`）が現在シェルで
+# 実行されることに依存しており、将来 `list_active_rooms | while ...`（パイプ=
+# サブシェル）に書き換えると mytimes_seen がループ外で0に戻り正常時でも誤発火
+# する回帰経路がある。err3 を見ないと気付けないため明示的に検証する。
+assert_absent "正常時はWARNが出ない" "WARN" "$err3"
+
 # ===== RC_CHANNEL 未設定・不一致時の無言劣化防止 =====
 # RC_CHANNEL が未設定だと mytimes が空になり、render_room の全採用分岐
 # (rtype == "d" or (mytimes and name == mytimes)) が発火せず、自分のtimesが
@@ -312,5 +387,18 @@ err_nochannel="$(cat "$TMP/err-nochannel.log")"
 assert_grep   "RC_CHANNEL未設定時にWARNがstderrに出る" "WARN" "$err_nochannel"
 assert_absent "RC_CHANNEL未設定だと自分のtimesの尻尾が黙って切れる(劣化の実証)" \
   "向こうの対応が変わった" "$out_nochannel"
+
+# RC_CHANNEL が設定されているが実際のルーム名と一致しない場合（typo等）。
+# メインループの elif 分岐（未設定ではなく「列挙されたが不一致」）を検証する。
+out_wrongchannel="$(RC_ENV_FILE="$TMP/env-wrong-channel.local" \
+  RC_CURL="$TMP/bin/curl-stub.sh" \
+  RC_FIXTURE_DIR="$TMP/fixtures" \
+  RC_ME=mori.a \
+  bash "$SCRIPT_DIR/rocketchat.sh" --from 2026-07-21 --to 2026-07-28 --include-dm \
+  2>"$TMP/err-wrongchannel.log")"
+err_wrongchannel="$(cat "$TMP/err-wrongchannel.log")"
+assert_grep   "RC_CHANNEL不一致時にWARNがstderrに出る(elif分岐)" "WARN" "$err_wrongchannel"
+assert_absent "RC_CHANNEL不一致でも自分のtimesの尻尾が黙って切れる(劣化の実証)" \
+  "向こうの対応が変わった" "$out_wrongchannel"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
