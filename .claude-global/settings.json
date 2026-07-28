@@ -322,7 +322,7 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "effortLevel": "low",
+  "effortLevel": "high",
   "advisorModel": "opus",
   "plansDirectory": "./.claude/plans",
   "tui": "fullscreen",
@@ -338,6 +338,5 @@
         "server.py"
       ]
     }
-  },
-  "model": "claude-fable-5[1m]"
+  }
 }

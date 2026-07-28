@@ -40,19 +40,6 @@
 
 不明点がある場合は、解消されるまで `AskUserQuestion` で再帰的に質問すること。
 
-<!-- WORKAROUND(claude-code#74260): Fable本文消失バグ対策。upstream修正後はこのブロックごと削除 -->
-### AskUserQuestion のターン分離（Fable実行時・全skill共通）
-
-文脈説明を伴う `AskUserQuestion` は、説明テキストのみのメッセージを
-「Now I'll end my turn, which will invoke the AskUserQuestion tool...」で締めて**実際にターンを終了**し、
-Stopフック（fable-message-drop-fix）の自動継続を受けた**次のターンで単独呼び出し**すること。
-
-**禁止**: 締め文を書いた後、同一ターン内で続けて AskUserQuestion を呼ぶこと。
-「締め文を書くこと」はターン終了ではない。同一ターンで呼ぶと `thinking→text→thinking→tool_use` 形になり
-説明テキストごと消失する（Stopフックも発火しない）。
-詳細: agent-memory `claude-code/askuserquestion-text-drop-bug.md`
-<!-- /WORKAROUND -->
-
 ## Memory 管理ルール
 
 **メモリの実体は `agent-memory` スキル（`~/.claude/skills/agent-memory/memories/`、グローバル共有）に一元管理する。**
