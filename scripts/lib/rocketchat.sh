@@ -139,7 +139,7 @@ room_history() {
 # history 系エンドポイントはスレッド返信を全件返さない（実測: 9返信中3件のみ）。
 # tmid / tcount からスレッドIDを集め、chat.getThreadMessages で補完する。
 expand_threads() {
-  local hist tids tid extra merged
+  local hist tids tid extra merged tresp
   hist="$(cat)"
   # スレッドID = 返信の tmid ∪ 親の _id（tcount を持つもの）
   tids="$(printf '%s' "$hist" | python3 -c '
@@ -162,18 +162,33 @@ for i in sorted(ids):
   extra="[]"
   while IFS= read -r tid; do
     [ -n "$tid" ] || continue
-    extra="$(printf '%s\n%s' "$extra" \
-      "$(rc_api "chat.getThreadMessages" "tmid=${tid}&count=200")" \
+    # room_history と同じ形の防御: chat.getThreadMessages 単体の失敗（curl失敗・
+    # HTMLエラーページ等）が無音で全メッセージ消失に繋がらないよう、JSON妥当性を
+    # 検証し、失敗時は stderr に警告して空配列で継続する（Task 4 Fix round 1）。
+    tresp="$(rc_api "chat.getThreadMessages" "tmid=${tid}&count=200" || true)"
+    if ! printf '%s' "$tresp" | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null; then
+      echo "(Rocket Chat: スレッド $tid の取得に失敗しスキップ)" >&2
+      tresp='{"messages":[]}'
+    fi
+    # $acc（累積extra）と $tresp の受け渡しに改行区切りの printf '%s\n%s' を使うと、
+    # メッセージ本文に改行を含むJSON（fromisoformat等ではなく通常の複数行メッセージ）
+    # が来た際に split("\n", 1) がJSON片の途中で分断され、パースが無音で失敗して
+    # メッセージが全消失する（Task 4 レビューで指摘、実測でも再現確認済み）。
+    # \x1e（Record Separator, 0x1E）は RFC 8259 上 JSON 文字列中に生では出現し得ない
+    # （U+0000-U+001Fは必ずエスケープされる）ため、区切り文字として安全に使える。
+    extra="$(printf '%s\x1e%s' "$extra" "$tresp" \
       | python3 -c '
 import sys, json
-lines = sys.stdin.read().split("\n", 1)
+lines = sys.stdin.read().split("\x1e", 1)
 try:
     acc = json.loads(lines[0])
-except Exception:
+except Exception as e:
+    print(f"(Rocket Chat: スレッド累積データのパースに失敗: {e})", file=sys.stderr)
     acc = []
 try:
     new = json.loads(lines[1]).get("messages", [])
-except Exception:
+except Exception as e:
+    print(f"(Rocket Chat: スレッド応答のパースに失敗: {e})", file=sys.stderr)
     new = []
 print(json.dumps(acc + new, ensure_ascii=False))
 ')"
@@ -185,19 +200,25 @@ print(json.dumps(acc + new, ensure_ascii=False))
   # ありだと0件になり、なしだと9件全部返る）。API 側で絞れないため取得後に ts で
   # 自前フィルタする。これを省くと、生きているスレッドの全履歴が毎日の日報に
   # 混入し続ける（例: 7/22 の日程調整が 7/27 の日報に入る）。
-  printf '%s\n%s' "$hist" "$extra" \
+  #
+  # ここも $hist（history側のJSON）と $extra（スレッド側のJSON）の結合に改行を
+  # 使うと同じ理由で無音消失する。特にこちらは history 由来のメッセージも巻き
+  # 込むため被害が最大（history由来・thread由来が両方消える）。\x1e で結合する。
+  printf '%s\x1e%s' "$hist" "$extra" \
   | RC_OLDEST_F="$oldest" RC_LATEST_F="$latest" python3 -c '
 import sys, json, os
 oldest = os.environ["RC_OLDEST_F"]
 latest = os.environ["RC_LATEST_F"]
-raw = sys.stdin.read().split("\n", 1)
+raw = sys.stdin.read().split("\x1e", 1)
 try:
     base = json.loads(raw[0]).get("messages", [])
-except Exception:
+except Exception as e:
+    print(f"(Rocket Chat: history側データのパースに失敗: {e})", file=sys.stderr)
     base = []
 try:
     extra = json.loads(raw[1])
-except Exception:
+except Exception as e:
+    print(f"(Rocket Chat: スレッド展開データのパースに失敗: {e})", file=sys.stderr)
     extra = []
 seen, out = set(), []
 for m in base + extra:

@@ -64,6 +64,13 @@ case "$url" in
   *chat.getThreadMessages*tmid=thr-ejikunabi-1*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-1.json"; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-ejikunabi-2*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-2.json"; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-ejikunabi-3*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-3.json"; exit 0 ;;
+  # thread-newline.json は expand_threads の \x1e 区切り修正（Task 4 Fix round 1）
+  # を検証するため、pretty-print（改行入り）のまま生で返す必要がある。他の
+  # chat.getThreadMessages 分岐と同じく cat で生返しする。
+  *chat.getThreadMessages*tmid=nl-parent*) cat "$RC_FIXTURE_DIR/thread-newline.json"; exit 0 ;;
+  # room-tfail: history 自体は正常。chat.getThreadMessages だけが失敗する
+  # ケースを模擬する（expand_threads 内の rc_api 呼び出しの無音失敗対策の検証用）。
+  *chat.getThreadMessages*tmid=tf-parent*) echo 'thread fetch failed' >&2; exit 7 ;;
   *roomId=room-own*)     fx="$RC_FIXTURE_DIR/hist-own.json" ;;
   *roomId=room-other*)   fx="$RC_FIXTURE_DIR/hist-other.json" ;;
   *roomId=room-noise*)   fx="$RC_FIXTURE_DIR/hist-noise.json" ;;
@@ -73,6 +80,12 @@ case "$url" in
   *roomId=room-thread*)  fx="$RC_FIXTURE_DIR/hist-thread.json" ;;
   *roomId=room-ejikunabi*) fx="$RC_FIXTURE_DIR/hist-ejikunabi.json" ;;
   *roomId=room-mention*) fx="$RC_FIXTURE_DIR/hist-mention.json" ;;
+  # room-newline: history 応答自体が pretty-print（改行入り）のまま来るケースを
+  # 模擬する。range-awareフィルタ（後段のpython）を通すと json.dumps で
+  # compact化され改行が消えてしまうため、他の fixture と違い生 cat する
+  # （expand_threads の $hist ⇔ $extra マージ側の \x1e 修正を検証するため）。
+  *roomId=room-newline*) cat "$RC_FIXTURE_DIR/hist-newline.json"; exit 0 ;;
+  *roomId=room-tfail*)   fx="$RC_FIXTURE_DIR/hist-tfail.json" ;;
   *roomId=room-badjson*) echo '<html>error</html>'; exit 0 ;;
   # curl コマンド自体が失敗するケース（ネットワークエラー等）を模擬する。
   # room_history の `|| true` がこれを受け止め、後続ルームの処理を止めない
@@ -113,6 +126,12 @@ mkdir -p "$TMP/fixtures"
 # 検出できるようにしている。
 # 残りは既存通り: 自分のtimes / 他人のtimes / 自動投稿(ノイズ) / DM / @allのみ(ノイズ) / スレッド検証用
 # lm は期間内(7/22)と期間外(7/10)を混ぜる
+#
+# room-newline/room-tfail は Task 4 Fix round 1 で追加。どちらも末尾（room-thread
+# の後）に置く。Task 5 の budget=600 テストは優先度1グループの列挙順先頭2ルーム
+# （quality-check-room + mori.a-times = 418B）で break する前提のため、この2つを
+# 先頭寄りに挿入すると budget を消費してしまい `優先度の高いルームが残る` が
+# 壊れる（自分の申し送り事項）。末尾に置くことで Task 5 のテストに影響しない。
 cat > "$TMP/fixtures/rooms.json" <<'EOF'
 {"update":[
  {"_id":"room-curlfail","t":"c","name":"curl-fail-room","lm":"2026-07-22T04:00:00.000Z"},
@@ -126,7 +145,9 @@ cat > "$TMP/fixtures/rooms.json" <<'EOF'
  {"_id":"room-ejikunabi","t":"c","name":"e食なび","lm":"2026-07-22T05:05:00.000Z"},
  {"_id":"room-stale","t":"c","name":"old-channel","lm":"2026-07-10T00:00:00.000Z"},
  {"_id":"room-atall","t":"p","name":"general","lm":"2026-07-22T09:00:00.000Z"},
- {"_id":"room-thread","t":"p","name":"thread-room","lm":"2026-07-22T12:00:00.000Z"}
+ {"_id":"room-thread","t":"p","name":"thread-room","lm":"2026-07-22T12:00:00.000Z"},
+ {"_id":"room-newline","t":"c","name":"newline-safe-room","lm":"2026-07-22T14:00:00.000Z"},
+ {"_id":"room-tfail","t":"c","name":"thread-fetch-fail-room","lm":"2026-07-22T15:00:00.000Z"}
 ]}
 EOF
 
@@ -269,6 +290,72 @@ cat > "$TMP/fixtures/hist-thread.json" <<'EOF'
  {"_id":"th2","ts":"2026-07-22T08:43:00.000Z","tmid":"th1","u":{"username":"yamada.k"},"msg":"THREAD-CHILD-FAR"},
  {"_id":"th3","ts":"2026-07-22T07:02:00.000Z","tmid":"th-parent","u":{"username":"mori.a"},"msg":"親スレッドへの返信seed"},
  {"_id":"th4","ts":"2026-07-22T12:00:00.000Z","u":{"username":"kawai.t"},"msg":"THREAD-UNRELATED-NOISE"}
+]}
+EOF
+
+# ===== Task 4 Fix round 1 =====
+# hist-newline / thread-newline: expand_threads の $hist <-> $extra マージが
+# 改行区切り(printf '%s\n%s')だと、応答JSONが pretty-print（改行入り）で
+# 来た場合に split("\n", 1) がJSONの途中で分断されパース失敗 -> 無音で
+# メッセージ全消失することを検証する。curl-stub.sh 側で room-newline と
+# chat.getThreadMessages(tmid=nl-parent) の両方を「生 cat」にしてあり、
+# range-awareフィルタ(python json.dumps によるcompact化)を経由させない
+# ことで pretty-print のまま expand_threads に渡している。
+# nl-parent は tcount を持つ親メッセージ。nl-reply(NEWLINE-SAFE-SENTINEL)は
+# history には無く、chat.getThreadMessages 経由でのみ得られる（thread側の
+# マージ = extra 蓄積ループの split 箇所を踏む）。nl-parent 自身の本文も
+# history 側マージ（$hist <-> $extra の最終結合）を踏む。
+cat > "$TMP/fixtures/hist-newline.json" <<'EOF'
+{
+  "messages": [
+    {
+      "_id": "nl-parent",
+      "ts": "2026-07-22T02:00:00.000Z",
+      "u": {
+        "username": "mori.a"
+      },
+      "msg": "NEWLINE-PARENT-SENTINEL",
+      "tcount": 1
+    }
+  ]
+}
+EOF
+
+cat > "$TMP/fixtures/thread-newline.json" <<'EOF'
+{
+  "messages": [
+    {
+      "_id": "nl-parent",
+      "ts": "2026-07-22T02:00:00.000Z",
+      "u": {
+        "username": "mori.a"
+      },
+      "msg": "NEWLINE-PARENT-SENTINEL",
+      "tcount": 1
+    },
+    {
+      "_id": "nl-reply",
+      "ts": "2026-07-22T02:05:00.000Z",
+      "u": {
+        "username": "other.p"
+      },
+      "msg": "NEWLINE-SAFE-SENTINEL",
+      "tmid": "nl-parent"
+    }
+  ]
+}
+EOF
+
+# hist-tfail: history 応答自体は正常（compact JSON、通常どおり range-aware
+# フィルタを経由）。tf-parent が tcount を持つため expand_threads が
+# chat.getThreadMessages(tmid=tf-parent) を呼ぶが、curl-stub.sh 側でこの
+# tmid だけ意図的に exit 7 で失敗させてある（room_history の room-curlfail
+# と同じ考え方）。rc_api 呼び出しに `|| true` と JSON妥当性チェック +
+# stderr警告が無いと、この失敗が無音になり、tf-parent 自身の採用判定にも
+# 気づかれない劣化が起きる。
+cat > "$TMP/fixtures/hist-tfail.json" <<'EOF'
+{"messages":[
+ {"_id":"tf-parent","ts":"2026-07-22T03:00:00.000Z","u":{"username":"mori.a"},"msg":"THREAD-FETCH-FAIL-PARENT","tcount":1}
 ]}
 EOF
 
@@ -558,5 +645,17 @@ assert_grep   "優先度の低いルームが省略マーカーに載る" "menti
 # 予算未指定なら省略マーカーは出ない
 out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm)"
 assert_absent "予算未指定なら省略マーカーなし" "容量制限のため" "$out"
+
+# ===== Task 4 Fix round 1: expand_threads の改行耐性・スレッド取得失敗の可視化 =====
+# room-newline/room-tfail は budget を絡めず単体で検証したいので、budgetなしで
+# 再実行する。stderr も別途捕捉し直す（"スレッド取得失敗がstderrに記録される"の
+# 検証に必要。直近の $err は budget=600 実行時点のログのままで tf-parent の
+# 警告を含まないため、ここで上書きしないと空証明になる）。
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm 2>"$TMP/err-task4fix.log")"
+err="$(cat "$TMP/err-task4fix.log")"
+assert_grep "改行入りJSONでもhistory由来メッセージが残る"   "NEWLINE-PARENT-SENTINEL" "$out"
+assert_grep "改行入りJSONでもthread由来メッセージが展開される" "NEWLINE-SAFE-SENTINEL"   "$out"
+assert_grep "スレッド取得失敗でもhistory由来メッセージは残る" "THREAD-FETCH-FAIL-PARENT" "$out"
+assert_grep "スレッド取得失敗がstderrに記録される" "スレッド tf-parent の取得に失敗しスキップ" "$err"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
