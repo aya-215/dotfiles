@@ -20,9 +20,18 @@ fi
 source "$ENV_FILE"
 
 target_date="${1:-$(TZ=Asia/Tokyo date +%Y-%m-%d)}"
-# 対象日 JST 00:00〜翌 00:00 を UTC ISO8601 に変換
-oldest=$(TZ=Asia/Tokyo date -d "$target_date 00:00" -u +%Y-%m-%dT%H:%M:%S.000Z)
-latest=$(TZ=Asia/Tokyo date -d "$target_date 00:00 +1 day" -u +%Y-%m-%dT%H:%M:%S.000Z)
+# 対象日 JST 00:00〜翌 00:00 を UTC ISO8601 に変換。
+#
+# 注意: `TZ=Asia/Tokyo date -d "..." -u ...` という書き方は使わないこと。
+# GNU date は `-u`/`--utc` を「オプション解析時点で TZ=UTC0 を設定する」のと
+# 等価に扱うため、-d の入力文字列の解釈自体が JST ではなく UTC になってしまう
+# （出力だけでなく入力もUTC化される）。オフセットは入力文字列側に明示し、
+# `-u` は出力フォーマットのみに効かせる。
+# また "00:00 +1 day" のように書くと `+1` が数値UTCオフセットとして先に
+# 消費され `day` だけが相対指定として残る誤動作があるため、オフセットは
+# 必ず `T00:00:00+09:00` の形で日時側に付け、加算は " +1 day" のみにする。
+oldest=$(date -u -d "${target_date}T00:00:00+09:00" +%Y-%m-%dT%H:%M:%S.000Z)
+latest=$(date -u -d "${target_date}T00:00:00+09:00 +1 day" +%Y-%m-%dT%H:%M:%S.000Z)
 
 # 認証ヘッダ付き curl のラッパー
 rc_get() {

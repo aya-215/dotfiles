@@ -183,4 +183,34 @@ assert_grep   "採用理由がヘッダに出る"           "発言"           "
 # oldest/latest を実際に見て絞り込むことでこれを検出する。
 assert_absent "期間外(latest超)のメッセージは含まれない" "OUT-OF-RANGE-SENTINEL" "$out"
 
+# ===== 日付変換バグ修正の検証 =====
+# oldest/latest の計算結果そのものを --print-window で直接検証する。
+# JST 00:00 境界が正しく UTC に変換されているか（TZ=Asia/Tokyo + `-u` の
+# 組み合わせが入力解釈まで UTC 化してしまう、`+1 day` が数値オフセットとして
+# 誤解釈される、という2つの独立したバグが無いこと）を確認する。
+window="$(run_rc --from 2026-07-21 --to 2026-07-28 --print-window)"
+assert_eq "oldestがJST 00:00の正しいUTC変換になる" \
+  "2026-07-20T15:00:00.000Z" "$(cut -f1 <<<"$window")"
+assert_eq "latestが翌日JST 00:00の正しいUTC変換になる" \
+  "2026-07-28T15:00:00.000Z" "$(cut -f2 <<<"$window")"
+
+# 単日指定（from=to）でも範囲がちょうど24時間であることを確認する
+window_1day="$(run_rc --from 2026-07-27 --to 2026-07-27 --print-window)"
+hours="$(python3 -c '
+import sys
+from datetime import datetime
+o, l = sys.argv[1].split("\t")
+fmt = "%Y-%m-%dT%H:%M:%S.%fZ"
+d = (datetime.strptime(l, fmt) - datetime.strptime(o, fmt)).total_seconds() / 3600
+print(d)
+' "$window_1day")"
+assert_eq "単日指定の範囲がちょうど24時間になる" "24.0" "$hours"
+
+# 年跨ぎでも正しく変換されることを確認する
+window_ny="$(run_rc --from 2026-01-01 --to 2026-01-01 --print-window)"
+assert_eq "年跨ぎでもoldestが正しいUTC変換になる" \
+  "2025-12-31T15:00:00.000Z" "$(cut -f1 <<<"$window_ny")"
+assert_eq "年跨ぎでもlatestが正しいUTC変換になる" \
+  "2026-01-01T15:00:00.000Z" "$(cut -f2 <<<"$window_ny")"
+
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi

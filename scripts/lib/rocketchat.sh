@@ -10,6 +10,7 @@
 # 使用方法:
 #   rocketchat.sh --from 2026-07-21 --to 2026-07-28 [--include-dm] [--budget N]
 #   rocketchat.sh --from ... --to ... --list-rooms      # 採用ルームの一覧だけ出す（デバッグ用）
+#   rocketchat.sh --from ... --to ... --print-window    # oldest/latest の計算結果だけ出す（デバッグ用）
 #
 # 環境変数:
 #   RC_ENV_FILE  認証情報ファイル（既定: scripts/daily-review/.env.local）
@@ -26,14 +27,15 @@ env_file="${RC_ENV_FILE:-$DEFAULT_ENV_FILE}"
 me="${RC_ME:-mori.a}"
 curl_cmd="${RC_CURL:-curl}"
 
-from="" to="" include_dm=0 budget=0 list_rooms=0
+from="" to="" include_dm=0 budget=0 list_rooms=0 print_window=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --from)       from="$2"; shift 2 ;;
-    --to)         to="$2"; shift 2 ;;
-    --include-dm) include_dm=1; shift ;;
-    --budget)     budget="$2"; shift 2 ;;
-    --list-rooms) list_rooms=1; shift ;;
+    --from)         from="$2"; shift 2 ;;
+    --to)           to="$2"; shift 2 ;;
+    --include-dm)   include_dm=1; shift ;;
+    --budget)       budget="$2"; shift 2 ;;
+    --list-rooms)   list_rooms=1; shift ;;
+    --print-window) print_window=1; shift ;;
     *) echo "不明な引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -46,9 +48,23 @@ fi
 # shellcheck disable=SC1090
 source "$env_file"
 
-# JST の日付範囲を UTC ISO8601 に変換する
-oldest="$(TZ=Asia/Tokyo date -d "$from 00:00" -u +%Y-%m-%dT%H:%M:%S.000Z)"
-latest="$(TZ=Asia/Tokyo date -d "$to 00:00 +1 day" -u +%Y-%m-%dT%H:%M:%S.000Z)"
+# JST の日付範囲を UTC ISO8601 に変換する。
+#
+# 注意: `TZ=Asia/Tokyo date -d "..." -u ...` という書き方は使わないこと。
+# GNU date は `-u`/`--utc` を「オプション解析時点で TZ=UTC0 を設定する」のと
+# 等価に扱うため、-d の入力文字列の解釈自体が JST ではなく UTC になってしまう
+# （出力だけでなく入力もUTC化される）。オフセットは入力文字列側に明示し、
+# `-u` は出力フォーマットのみに効かせる。
+# また "00:00 +1 day" のように書くと `+1` が数値UTCオフセットとして先に
+# 消費され `day` だけが相対指定として残る誤動作があるため、オフセットは
+# 必ず `T00:00:00+09:00` の形で日時側に付け、加算は " +1 day" のみにする。
+oldest="$(date -u -d "${from}T00:00:00+09:00" +%Y-%m-%dT%H:%M:%S.000Z)"
+latest="$(date -u -d "${to}T00:00:00+09:00 +1 day" +%Y-%m-%dT%H:%M:%S.000Z)"
+
+if [ "$print_window" -eq 1 ]; then
+  printf '%s\t%s\n' "$oldest" "$latest"
+  exit 0
+fi
 
 # rc_api <path> [query-string]
 rc_api() {
