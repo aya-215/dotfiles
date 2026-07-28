@@ -134,6 +134,85 @@ room_history() {
   fi
 }
 
+# expand_threads : stdin の履歴 JSON に、含まれるスレッドの全返信をマージして返す
+#
+# history 系エンドポイントはスレッド返信を全件返さない（実測: 9返信中3件のみ）。
+# tmid / tcount からスレッドIDを集め、chat.getThreadMessages で補完する。
+expand_threads() {
+  local hist tids tid extra merged
+  hist="$(cat)"
+  # スレッドID = 返信の tmid ∪ 親の _id（tcount を持つもの）
+  tids="$(printf '%s' "$hist" | python3 -c '
+import sys, json
+try:
+    ms = json.load(sys.stdin).get("messages", [])
+except Exception:
+    sys.exit(0)
+ids = set()
+for m in ms:
+    if m.get("tmid"):
+        ids.add(m["tmid"])
+    if m.get("tcount"):
+        ids.add(m["_id"])
+for i in sorted(ids):
+    print(i)
+')"
+  [ -n "$tids" ] || { printf '%s' "$hist"; return; }
+
+  extra="[]"
+  while IFS= read -r tid; do
+    [ -n "$tid" ] || continue
+    extra="$(printf '%s\n%s' "$extra" \
+      "$(rc_api "chat.getThreadMessages" "tmid=${tid}&count=200")" \
+      | python3 -c '
+import sys, json
+lines = sys.stdin.read().split("\n", 1)
+try:
+    acc = json.loads(lines[0])
+except Exception:
+    acc = []
+try:
+    new = json.loads(lines[1]).get("messages", [])
+except Exception:
+    new = []
+print(json.dumps(acc + new, ensure_ascii=False))
+')"
+  done <<< "$tids"
+
+  # _id で重複排除してマージし、対象期間外のメッセージを落とす
+  #
+  # chat.getThreadMessages は oldest/latest を無視して全返信を返す（実測: 期間指定
+  # ありだと0件になり、なしだと9件全部返る）。API 側で絞れないため取得後に ts で
+  # 自前フィルタする。これを省くと、生きているスレッドの全履歴が毎日の日報に
+  # 混入し続ける（例: 7/22 の日程調整が 7/27 の日報に入る）。
+  printf '%s\n%s' "$hist" "$extra" \
+  | RC_OLDEST_F="$oldest" RC_LATEST_F="$latest" python3 -c '
+import sys, json, os
+oldest = os.environ["RC_OLDEST_F"]
+latest = os.environ["RC_LATEST_F"]
+raw = sys.stdin.read().split("\n", 1)
+try:
+    base = json.loads(raw[0]).get("messages", [])
+except Exception:
+    base = []
+try:
+    extra = json.loads(raw[1])
+except Exception:
+    extra = []
+seen, out = set(), []
+for m in base + extra:
+    mid = m.get("_id")
+    if not mid or mid in seen:
+        continue
+    ts = m.get("ts") or ""
+    if ts < oldest or ts >= latest:   # 対象期間外は落とす
+        continue
+    seen.add(mid)
+    out.append(m)
+print(json.dumps({"messages": out}, ensure_ascii=False))
+'
+}
+
 # 1ルーム分を判定・絞り込み・整形する。採用されなければ何も出さない。
 # stdin: 履歴 JSON / 引数: ルーム名, ルーム種別
 render_room() {
@@ -222,7 +301,7 @@ while IFS=$'\t' read -r rid t name; do
   if [ -n "${RC_CHANNEL:-}" ] && [ "$name" = "${RC_CHANNEL}" ]; then
     mytimes_seen=1
   fi
-  room_history "$rid" "$t" | render_room "$name" "$t"
+  room_history "$rid" "$t" | expand_threads | render_room "$name" "$t"
 done < <(list_active_rooms)
 
 if [ -z "${RC_CHANNEL:-}" ]; then

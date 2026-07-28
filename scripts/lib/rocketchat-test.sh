@@ -58,6 +58,12 @@ qparam() {
 fx=""
 case "$url" in
   *rooms.get*)           cat "$RC_FIXTURE_DIR/rooms.json"; exit 0 ;;
+  # chat.getThreadMessages は oldest/latest を無視して全件返す実物のAPI仕様を
+  # 模擬するため、range-awareフィルタを通さず fixture をそのまま返す
+  # （expand_threads 側の自前期間フィルタを検証するために必要）。
+  *chat.getThreadMessages*tmid=thr-ejikunabi-1*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-1.json"; exit 0 ;;
+  *chat.getThreadMessages*tmid=thr-ejikunabi-2*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-2.json"; exit 0 ;;
+  *chat.getThreadMessages*tmid=thr-ejikunabi-3*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-3.json"; exit 0 ;;
   *roomId=room-own*)     fx="$RC_FIXTURE_DIR/hist-own.json" ;;
   *roomId=room-other*)   fx="$RC_FIXTURE_DIR/hist-other.json" ;;
   *roomId=room-noise*)   fx="$RC_FIXTURE_DIR/hist-noise.json" ;;
@@ -65,6 +71,7 @@ case "$url" in
   *roomId=room-atall*)   fx="$RC_FIXTURE_DIR/hist-atall.json" ;;
   *roomId=room-badts*)   fx="$RC_FIXTURE_DIR/hist-badts.json" ;;
   *roomId=room-thread*)  fx="$RC_FIXTURE_DIR/hist-thread.json" ;;
+  *roomId=room-ejikunabi*) fx="$RC_FIXTURE_DIR/hist-ejikunabi.json" ;;
   *roomId=room-badjson*) echo '<html>error</html>'; exit 0 ;;
   # curl コマンド自体が失敗するケース（ネットワークエラー等）を模擬する。
   # room_history の `|| true` がこれを受け止め、後続ルームの処理を止めない
@@ -107,6 +114,7 @@ cat > "$TMP/fixtures/rooms.json" <<'EOF'
  {"_id":"room-other","t":"p","name":"kawai.t-times","lm":"2026-07-22T06:00:00.000Z"},
  {"_id":"room-noise","t":"p","name":"grafana-alert","lm":"2026-07-22T07:00:00.000Z"},
  {"_id":"room-dm","t":"d","usernames":["mori.a","hatagami.y"],"lm":"2026-07-22T08:00:00.000Z"},
+ {"_id":"room-ejikunabi","t":"c","name":"e食なび","lm":"2026-07-22T05:05:00.000Z"},
  {"_id":"room-stale","t":"c","name":"old-channel","lm":"2026-07-10T00:00:00.000Z"},
  {"_id":"room-atall","t":"p","name":"general","lm":"2026-07-22T09:00:00.000Z"},
  {"_id":"room-thread","t":"p","name":"thread-room","lm":"2026-07-22T12:00:00.000Z"}
@@ -172,6 +180,67 @@ cat > "$TMP/fixtures/hist-dm.json" <<'EOF'
  {"_id":"d1","ts":"2026-07-22T06:05:00.000Z","u":{"username":"hatagami.y"},"msg":"先日の件どうでしょうか"},
  {"_id":"d2","ts":"2026-07-22T06:06:00.000Z","u":{"username":"mori.a"},"msg":"今週中に対応します"},
  {"_id":"d3","ts":"2026-07-22T07:20:00.000Z","u":{"username":"hatagami.y"},"msg":"承知しました、では来週改めて確認します"}
+]}
+EOF
+
+# hist-ejikunabi: スレッドを持つルーム（Task 4: スレッド展開）。
+# history はスレッド返信を一部しか返さない実物のAPI挙動を模擬する。
+# room-ejikunabi/hist-ejikunabi.json/thread-ejikunabi-1.json という識別子は
+# Task 3 fix round 1 で追加済みの room-thread/hist-thread.json（tmid/tcountの
+# 集合演算検証。目的が異なる）と衝突しないよう意図的にリネームしてある。
+# thr-ejikunabi-2/3 は tcount 由来・tmid 由来のスレッドID収集がそれぞれ
+# 単独でも機能することを検証するための追加(ブリーフ範囲外の品質保証)。
+# thr-ejikunabi-1 は tcount と tmid の両方から同じIDが得られてしまうため、
+# どちらか一方を無効化する変異では検出できない（両者が同じ結果を導く空証明）
+# ことが変異テストで判明したため追加した。
+#   - thr-ejikunabi-2: tcount のみが手がかり。history内に tmid で指す返信が
+#     無い（tcount経由でしか thread ID が収集できない）。ejk2-reply は
+#     mori.a の発言なので render_room 自身の seed にもなり得るが、
+#     tcount収集が無いと expand_threads が chat.getThreadMessages を
+#     一切呼ばず ejk2-reply 自体が history に無いため出力に出ない。
+#   - thr-ejikunabi-3: tmid のみが手がかり。ejk3-reply(mori.a, tmid指定)が
+#     historyにあるが、親 thr-ejikunabi-3 自体は history に存在しない
+#     （tcountを持つメッセージがどこにも無い）。
+cat > "$TMP/fixtures/hist-ejikunabi.json" <<'EOF'
+{"messages":[
+ {"_id":"thr-ejikunabi-1","ts":"2026-07-22T00:30:00.000Z","u":{"username":"other.p"},"msg":"打ち合わせお願いします","tcount":3},
+ {"_id":"th-a","ts":"2026-07-22T00:40:00.000Z","u":{"username":"mori.a"},"msg":"資料いただけますか","tmid":"thr-ejikunabi-1"},
+ {"_id":"thr-ejikunabi-2","ts":"2026-07-22T06:00:00.000Z","u":{"username":"other.p"},"msg":"別スレッドの親","tcount":2},
+ {"_id":"ejk3-reply","ts":"2026-07-22T10:00:00.000Z","u":{"username":"mori.a"},"msg":"ejk3への返信","tmid":"thr-ejikunabi-3"}
+]}
+EOF
+
+# thread-ejikunabi-2: tcount 由来でのみ発見できるスレッド。親(thr-ejikunabi-2)
+# 自体は mori.a の発言ではないが、返信 ejk2-reply が mori.a の発言のため
+# render_room 自身の seed になり、tids に加わって残る。tcount収集が無いと
+# chat.getThreadMessages 自体が呼ばれず ejk2-reply は出力に出ない。
+cat > "$TMP/fixtures/thread-ejikunabi-2.json" <<'EOF'
+{"messages":[
+ {"_id":"thr-ejikunabi-2","ts":"2026-07-22T06:00:00.000Z","u":{"username":"other.p"},"msg":"別スレッドの親","tcount":2},
+ {"_id":"ejk2-reply","ts":"2026-07-22T11:00:00.000Z","u":{"username":"mori.a"},"msg":"THREAD2-TCOUNT-ONLY-SENTINEL","tmid":"thr-ejikunabi-2"}
+]}
+EOF
+
+# thread-ejikunabi-3: tmid 由来でのみ発見できるスレッド。親(thr-ejikunabi-3)は
+# history に存在しない（tcountを持つメッセージがどこにも無い）ため、
+# tmid収集が無いと chat.getThreadMessages 自体が呼ばれず兄弟返信が出ない。
+cat > "$TMP/fixtures/thread-ejikunabi-3.json" <<'EOF'
+{"messages":[
+ {"_id":"ejk3-reply","ts":"2026-07-22T10:00:00.000Z","u":{"username":"mori.a"},"msg":"ejk3への返信","tmid":"thr-ejikunabi-3"},
+ {"_id":"ejk3-sibling","ts":"2026-07-22T13:00:00.000Z","u":{"username":"other.p"},"msg":"THREAD3-TMID-ONLY-SENTINEL","tmid":"thr-ejikunabi-3"}
+]}
+EOF
+
+# thread-ejikunabi-1: 同スレッドの全返信。
+# history に無い th-b / th-c と、対象期間外(7/10)の th-old を含む。
+# chat.getThreadMessages は oldest/latest を無視して全返信を返すため、
+# 期間外が落ちることを検証する必要がある。
+cat > "$TMP/fixtures/thread-ejikunabi-1.json" <<'EOF'
+{"messages":[
+ {"_id":"th-old","ts":"2026-07-10T00:00:00.000Z","u":{"username":"other.p"},"msg":"ずっと前の日程調整です","tmid":"thr-ejikunabi-1"},
+ {"_id":"th-a","ts":"2026-07-22T00:40:00.000Z","u":{"username":"mori.a"},"msg":"資料いただけますか","tmid":"thr-ejikunabi-1"},
+ {"_id":"th-b","ts":"2026-07-22T05:00:00.000Z","u":{"username":"other.p"},"msg":"これですかね（リンク）","tmid":"thr-ejikunabi-1"},
+ {"_id":"th-c","ts":"2026-07-22T05:05:00.000Z","u":{"username":"mori.a"},"msg":"そちらです！助かります","tmid":"thr-ejikunabi-1"}
 ]}
 EOF
 
@@ -400,5 +469,30 @@ err_wrongchannel="$(cat "$TMP/err-wrongchannel.log")"
 assert_grep   "RC_CHANNEL不一致時にWARNがstderrに出る(elif分岐)" "WARN" "$err_wrongchannel"
 assert_absent "RC_CHANNEL不一致でも自分のtimesの尻尾が黙って切れる(劣化の実証)" \
   "向こうの対応が変わった" "$out_wrongchannel"
+
+# ===== Task 4: スレッド展開 =====
+out="$(run_rc --from 2026-07-21 --to 2026-07-28)"
+assert_grep "history にあるスレッド返信は出る"   "資料いただけますか"     "$out"
+assert_grep "history に無い返信も展開される(th-b)" "これですかね"         "$out"
+assert_grep "history に無い返信も展開される(th-c)" "そちらです"           "$out"
+assert_grep "スレッド親も出る"                   "打ち合わせお願いします" "$out"
+# chat.getThreadMessages は期間指定を無視するため自前フィルタが必要
+assert_absent "対象期間外のスレッド返信は落ちる" "ずっと前の日程調整" "$out"
+
+# 日次実行でも期間外が混入しないこと（生きているスレッドの全履歴混入の回帰）
+out_day="$(run_rc --from 2026-07-22 --to 2026-07-22)"
+assert_absent "日次実行でも期間外は混入しない" "ずっと前の日程調整" "$out_day"
+
+# thr-ejikunabi-1 は tcount と tmid の両方から同じスレッドIDが得られてしまう
+# ため、どちらか一方の収集ロジックだけを無効化する変異では検出できない
+# （もう片方が同じ結果を導いてしまう空証明）。tcount専用・tmid専用の
+# スレッドをそれぞれ用意して、両方の収集経路を独立に検証する。
+assert_grep "tcount由来のみで発見できるスレッドの返信が展開される" "THREAD2-TCOUNT-ONLY-SENTINEL" "$out"
+assert_grep "tmid由来のみで発見できるスレッドの返信が展開される"   "THREAD3-TMID-ONLY-SENTINEL"    "$out"
+
+# history と chat.getThreadMessages の両方に含まれるメッセージ(th-a)が
+# _id による重複排除で1回だけ出力されること。assert_grep は1件でも2件でも
+# 通ってしまうため、出現回数を数える。
+assert_eq "historyとthreadの重複メッセージは1回だけ出力される" "1" "$(grep -c '資料いただけますか' <<<"$out")"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
