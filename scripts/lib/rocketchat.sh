@@ -92,5 +92,62 @@ if [ "$list_rooms" -eq 1 ]; then
   exit 0
 fi
 
-# 履歴取得・絞り込みは Task 2 以降で実装する
-list_active_rooms
+# room_history <room_id> <t> : 期間内のメッセージ JSON を返す
+#
+# 1回の実行で数十ルーム分を叩くため、1ルームの失敗で全体を落とさない。
+# curl が失敗した場合は空の messages を返してそのルームだけスキップさせる
+# （set -e 下でも止まらないよう || で受ける）。
+room_history() {
+  local rid="$1" t="$2" path out
+  case "$t" in
+    c) path="channels.history" ;;
+    p) path="groups.history" ;;
+    d) path="im.history" ;;
+    *) echo '{"messages":[]}'; return ;;
+  esac
+  out="$(rc_api "$path" "roomId=${rid}&oldest=${oldest}&latest=${latest}&count=200" || true)"
+  # JSON として妥当かを検証する（HTMLエラーページ等が返る場合に備える）
+  if printf '%s' "$out" | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null; then
+    printf '%s' "$out"
+  else
+    echo "(Rocket Chat: ルーム $rid の取得に失敗しスキップ)" >&2
+    echo '{"messages":[]}'
+  fi
+}
+
+# 1ルーム分を判定・整形する。採用されなければ何も出さない。
+# stdin: 履歴 JSON / 引数: ルーム名, ルーム種別
+render_room() {
+  local name="$1" t="$2"
+  RC_ROOM_NAME="$name" RC_ROOM_T="$t" python3 -c '
+import sys, json, os
+me = os.environ["RC_ME"]
+name = os.environ["RC_ROOM_NAME"]
+try:
+    msgs = [m for m in json.load(sys.stdin).get("messages", []) if (m.get("msg") or "").strip()]
+except Exception:
+    sys.exit(0)
+own = [m for m in msgs if m.get("u", {}).get("username") == me]
+men = [m for m in msgs if "@" + me in (m.get("msg") or "")]
+if not own and not men:
+    sys.exit(0)          # 第1段階: 採用しない
+why = []
+if own: why.append(f"発言{len(own)}")
+if men: why.append(f"@me{len(men)}")
+# f-string 内にバックスラッシュを書くと環境によって SyntaxError になるため
+# join は必ず変数に退避してから埋め込む
+tag = ",".join(why)
+print(f"===== {name} [{tag}] =====")
+for m in sorted(msgs, key=lambda x: x.get("ts", "")):
+    tstr = (m.get("ts") or "")[11:16]
+    u = m.get("u", {}).get("username", "?")
+    body = (m.get("msg") or "").replace("\n", " / ")
+    print(f"  {tstr} {u}: {body}")
+'
+}
+
+# メイン: 採用ルームを順に処理する
+while IFS=$'\t' read -r rid t name; do
+  [ -n "$rid" ] || continue
+  room_history "$rid" "$t" | render_room "$name" "$t"
+done < <(list_active_rooms)

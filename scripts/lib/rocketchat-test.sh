@@ -20,19 +20,46 @@ EOF
 
 # ---- curl スタブ ----
 # 引数の URL に応じて fixture を返す。rooms.get と *.history を出し分ける。
+# history 系は URL 中の oldest=/latest= を実際に見て messages を絞り込む
+# （range-aware）。rocketchat.sh 側が oldest/latest をクエリに渡し忘れる、
+# または渡す値を間違えるバグを fixture 側で検出できるようにするため。
+# Task 2 で追加（Task 1 時点では rooms.get の lm 絞り込みのみで足りていた）。
 mkdir -p "$TMP/bin"
 cat > "$TMP/bin/curl-stub.sh" <<'EOF'
 #!/bin/bash
 set -u
 url="${!#}"   # 最後の引数が URL
+
+qparam() {
+  local name="$1"
+  if [[ "$url" =~ (^|[?\&])$name=([^\&]*) ]]; then
+    printf '%s' "${BASH_REMATCH[2]}"
+  fi
+}
+
+fx=""
 case "$url" in
-  *rooms.get*)      cat "$RC_FIXTURE_DIR/rooms.json" ;;
-  *roomId=room-own*)  cat "$RC_FIXTURE_DIR/hist-own.json" ;;
-  *roomId=room-other*) cat "$RC_FIXTURE_DIR/hist-other.json" ;;
-  *roomId=room-noise*) cat "$RC_FIXTURE_DIR/hist-noise.json" ;;
-  *roomId=room-dm*)   cat "$RC_FIXTURE_DIR/hist-dm.json" ;;
-  *)                echo '{"messages":[]}' ;;
+  *rooms.get*)          cat "$RC_FIXTURE_DIR/rooms.json"; exit 0 ;;
+  *roomId=room-own*)    fx="$RC_FIXTURE_DIR/hist-own.json" ;;
+  *roomId=room-other*)  fx="$RC_FIXTURE_DIR/hist-other.json" ;;
+  *roomId=room-noise*)  fx="$RC_FIXTURE_DIR/hist-noise.json" ;;
+  *roomId=room-dm*)     fx="$RC_FIXTURE_DIR/hist-dm.json" ;;
+  *)                    echo '{"messages":[]}'; exit 0 ;;
 esac
+
+RC_Q_OLDEST="$(qparam oldest)" RC_Q_LATEST="$(qparam latest)" python3 -c '
+import sys, json, os
+oldest = os.environ.get("RC_Q_OLDEST", "")
+latest = os.environ.get("RC_Q_LATEST", "")
+d = json.load(sys.stdin)
+msgs = d.get("messages", [])
+if oldest:
+    msgs = [m for m in msgs if (m.get("ts") or "") >= oldest]
+if latest:
+    msgs = [m for m in msgs if (m.get("ts") or "") <= latest]
+d["messages"] = msgs
+print(json.dumps(d, ensure_ascii=False))
+' < "$fx"
 EOF
 chmod +x "$TMP/bin/curl-stub.sh"
 
@@ -47,6 +74,52 @@ cat > "$TMP/fixtures/rooms.json" <<'EOF'
  {"_id":"room-noise","t":"p","name":"grafana-alert","lm":"2026-07-22T07:00:00.000Z"},
  {"_id":"room-dm","t":"d","usernames":["mori.a","hatagami.y"],"lm":"2026-07-22T08:00:00.000Z"},
  {"_id":"room-stale","t":"c","name":"old-channel","lm":"2026-07-10T00:00:00.000Z"}
+]}
+EOF
+
+# hist-own: 自分のtimes。自分の発言2件 + 他人の反応3件（うち2件は自分の最終発言から30分超）
+# o9 は期間外(番兵)メッセージ。--to 2026-07-28 の latest がどんな値になっても
+# （現在の latest 計算に日付跨ぎ処理のバグがあっても）確実に latest より後になる
+# よう 2026-08-01 にしている。room_history が latest をクエリに渡し忘れると
+# このメッセージが漏れて混入する。自分以外・@mori.aメンション無しの発言にして
+# 採用判定・[発言N]カウントに影響を与えないようにしてある。
+cat > "$TMP/fixtures/hist-own.json" <<'EOF'
+{"messages":[
+ {"_id":"o1","ts":"2026-07-22T00:42:00.000Z","u":{"username":"mori.a"},"msg":"APIの利用上限に達しました"},
+ {"_id":"o2","ts":"2026-07-22T00:45:00.000Z","u":{"username":"mori.a"},"msg":"ログです"},
+ {"_id":"o3","ts":"2026-07-22T00:55:00.000Z","u":{"username":"matsumoto.h"},"msg":"自動支払いが止まってました"},
+ {"_id":"o4","ts":"2026-07-22T01:47:00.000Z","u":{"username":"matsumoto.h"},"msg":"向こうの対応が変わったってことですかね"},
+ {"_id":"o5","ts":"2026-07-22T01:56:00.000Z","u":{"username":"tanaka.k"},"msg":"はい、自分も同じ認識です"},
+ {"_id":"o9","ts":"2026-08-01T00:00:00.000Z","u":{"username":"matsumoto.h"},"msg":"OUT-OF-RANGE-SENTINEL"}
+]}
+EOF
+
+# hist-other: 他人のtimes。スレッドを使わないフラット会話。
+# 自分の発言1件(07:37)の前後30分に議論があり、遠く離れた雑談もある。
+cat > "$TMP/fixtures/hist-other.json" <<'EOF'
+{"messages":[
+ {"_id":"t1","ts":"2026-07-22T00:35:00.000Z","u":{"username":"kawai.t"},"msg":"殺人的な暑さ過ぎる"},
+ {"_id":"t2","ts":"2026-07-22T07:21:00.000Z","u":{"username":"kawai.t"},"msg":"MCP化したがこれでよかったか分からん"},
+ {"_id":"t3","ts":"2026-07-22T07:34:00.000Z","u":{"username":"sato.m"},"msg":"モデルが賢くなったのでCLIでいい"},
+ {"_id":"t4","ts":"2026-07-22T07:37:00.000Z","u":{"username":"mori.a"},"msg":"自分で作る分には全てskillでいいと思ってます"},
+ {"_id":"t5","ts":"2026-07-22T07:40:00.000Z","u":{"username":"kawai.t"},"msg":"確かに認証の有無が一番大きい違いですね"},
+ {"_id":"t6","ts":"2026-07-22T09:45:00.000Z","u":{"username":"kawai.t"},"msg":"欠伸が止まらん"}
+]}
+EOF
+
+# hist-noise: 自動投稿のみ。自分の発言もメンションも無い。
+cat > "$TMP/fixtures/hist-noise.json" <<'EOF'
+{"messages":[
+ {"_id":"n1","ts":"2026-07-22T07:00:00.000Z","u":{"username":"grafana"},"msg":"[FIRING] disk usage high"},
+ {"_id":"n2","ts":"2026-07-22T07:01:00.000Z","u":{"username":"grafana"},"msg":"[RESOLVED] disk usage high"}
+]}
+EOF
+
+# hist-dm: DM。自分の発言1件と相手の発言1件。
+cat > "$TMP/fixtures/hist-dm.json" <<'EOF'
+{"messages":[
+ {"_id":"d1","ts":"2026-07-22T06:05:00.000Z","u":{"username":"hatagami.y"},"msg":"先日の件どうでしょうか"},
+ {"_id":"d2","ts":"2026-07-22T06:06:00.000Z","u":{"username":"mori.a"},"msg":"今週中に対応します"}
 ]}
 EOF
 
@@ -98,5 +171,16 @@ out="$(RC_ENV_FILE="$TMP/no-such-env.local" \
   bash "$SCRIPT_DIR/rocketchat.sh" --from 2026-07-21 --to 2026-07-28 --list-rooms 2>&1)" || rc=$?
 assert_eq   ".env.local不在時はexit 1"          "1"      "$rc"
 assert_grep ".env.local不在時にERROR:で始まるメッセージが出る" "ERROR:" "$out"
+
+# ===== Task 2: ルーム採用判定 =====
+out="$(run_rc --from 2026-07-21 --to 2026-07-28)"
+assert_grep   "自分の発言があるルームは採用"     "mori.a-times"   "$out"
+assert_grep   "自分の発言があるルームは採用(他人times)" "kawai.t-times" "$out"
+assert_absent "自動投稿のみのルームは除外"       "grafana-alert"  "$out"
+assert_grep   "採用理由がヘッダに出る"           "発言"           "$out"
+# room_history が latest をクエリに渡し忘れる（または渡す値が壊れる）と
+# 期間外の番兵メッセージ(2026-08-01)が漏れて混入する。range-aware スタブが
+# oldest/latest を実際に見て絞り込むことでこれを検出する。
+assert_absent "期間外(latest超)のメッセージは含まれない" "OUT-OF-RANGE-SENTINEL" "$out"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
