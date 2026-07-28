@@ -60,7 +60,7 @@ echo "対象期間: $start_date 〜 $end_date"
 | 日報の📝サマリー（Work欄） | `aya-215/life` の日報 Issue（open）または `blog/YYYYMMDD.md`（close済み） | 対象期間内の各日からWork欄を抽出 |
 | gitログ（AIカテゴリ） | `~/src/github.com/ebase-dev/*`、`/mnt/d/tomcat/webapps/eb-api-extended` | 日報の書き漏れを補完 |
 | gitログ（その他カテゴリ） | `/mnt/d/tomcat/webapps/hankyu` | 日報の書き漏れを補完 |
-| Rocket Chat（`mori.a-times`） | `mcp__rocketchat__*` ツール | 自分の作業・レビュー作業を対象期間で取得 |
+| Rocket Chat（購読ルーム全体） | `scripts/lib/rocketchat.sh` | 自分の作業・レビュー作業・自分宛の依頼を対象期間で取得 |
 | Claudeセッション要約 | `~/.nb/claude/sessions/YYYY-MM-DD/*.md` | git対象外の「その他」仕事関連作業（hankyu以外）を補完 |
 
 ## gh CLI の認証
@@ -168,15 +168,26 @@ done
 
 ### Rocket Chat 取得
 
-```bash
-# room_id特定
-# mcp__rocketchat__list_channels（filter: "mori.a-times"）を使う
+MCP ツールは使わない。共通シェル層 `scripts/lib/rocketchat.sh` を呼ぶ。
+購読ルーム全体から自分の発言・`@mori.a` メンションに関係するものが収集される
+（自分の times と DM は全メッセージ、他ルームは起点の前後30分＋スレッド）。
 
-# 対象期間の発言取得（oldest/latestで絞り込み、JST→UTC変換に注意）
-# mcp__rocketchat__get_channel_history（room_id, oldest: "${start_date}T00:00:00.000Z", latest: "${end_date}T23:59:59.000Z"）
-# username = mori.a の発言のみ抽出
-# threadIdがあるメッセージは mcp__rocketchat__get_thread_messages でスレッド展開
+```bash
+bash ~/.dotfiles/scripts/lib/rocketchat.sh \
+  --from "$start_date" --to "$end_date" --include-dm
 ```
+
+出力形式は `===== <ルーム名> [発言N,@meN] M/N件 =====` のヘッダごとに
+`HH:MM username: 本文` が並ぶプレーンテキスト。
+
+- `--include-dm` を付けるのは work-report（ローカル処理）のみ。日報 cron は
+  外部エンドポイントへ送信するため DM を含めない
+- `grafana-alert` のような自動投稿チャンネルは判定で自動的に落ちる
+- スレッド展開・ルーム絞り込みはスクリプト側で完結するため、追加の MCP 呼び出しは不要
+- **既知の限界**: 対象期間の history が0件のルームでは、スレッド内に期間内メッセージが
+  あっても取り逃す（そのルームが出力から丸ごと消える）。頻度は低い（6日調査で1日・6件）が、
+  「特定のルームの記録が丸ごと無い」場合はこれを疑うこと
+- 設計の詳細と既知の限界の全文: `docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md`
 
 ---
 
