@@ -289,23 +289,110 @@ for m in sorted(sel, key=lambda x: x.get("ts", "")):
 '
 }
 
-# メイン: 採用ルームを順に処理する。
+# メイン: 採用ルームをブロックごとに集め、予算に応じて落とす。
 #
+# rooms は list_active_rooms の結果を1回だけ取得してメインシェルの変数に
+# 保持する。mytimes_seen の判定と collect_blocks 双方がこれを参照する。
+# collect_blocks は `blocks="$(collect_blocks)"` のようにコマンド置換で
+# 呼ばれるためサブシェルで実行される。もし collect_blocks の中で
+# list_active_rooms を再度呼んで mytimes_seen を更新しようとすると、
+# その更新はサブシェルの中だけで完結しメインシェルには伝わらない
+# （Task 3 のレビューで指摘された、process substitution 依存の脆弱性と
+# 同種の罠）。そのため mytimes_seen の判定はメインシェルの while ループで
+# 完結させ、collect_blocks には rooms を渡すだけにする。
+rooms="$(list_active_rooms)"
+
 # mytimes_seen は RC_CHANNEL が実際に列挙されたルーム名のいずれかと一致したかを
 # 追跡する。未設定・不一致だと render_room の全採用分岐が発火せず、自分の times
 # が時間窓の対象になって黙って尻尾が切れる（ユーザーが手で見つけた欠陥の設定
 # ミスによる再発経路）ため、検出できる範囲で stderr に警告する。
 mytimes_seen=0
-while IFS=$'\t' read -r rid t name; do
-  [ -n "$rid" ] || continue
+while IFS=$'\t' read -r _ _ name; do
+  [ -n "$name" ] || continue
   if [ -n "${RC_CHANNEL:-}" ] && [ "$name" = "${RC_CHANNEL}" ]; then
     mytimes_seen=1
   fi
-  room_history "$rid" "$t" | expand_threads | render_room "$name" "$t"
-done < <(list_active_rooms)
+done <<<"$rooms"
 
 if [ -z "${RC_CHANNEL:-}" ]; then
   echo "WARN: RC_CHANNEL が未設定のため、自分の times が全採用されず時間窓の対象になっています" >&2
 elif [ "$mytimes_seen" -eq 0 ]; then
   echo "WARN: RC_CHANNEL=$RC_CHANNEL が列挙されたルーム名のいずれとも一致しませんでした（設定ミスの可能性。対象期間に times への投稿が無い場合はこの警告は無視して構いません）" >&2
+fi
+
+# 各ブロックは "優先度<TAB>ルーム名<TAB>本文(base64)" の1行にして扱う。
+# 優先度: 1=自分の発言あり / 2=@meのみ / 3=それ以外
+collect_blocks() {
+  while IFS=$'\t' read -r rid t name; do
+    [ -n "$rid" ] || continue
+    local block prio
+    # Task 4 で追加した expand_threads を必ず通す（外すとスレッド返信が欠落する）
+    block="$(room_history "$rid" "$t" | expand_threads | render_room "$name" "$t")"
+    [ -n "$block" ] || continue
+    if grep -q '\[発言' <<<"$block"; then prio=1
+    elif grep -q '\[@me' <<<"$block"; then prio=2
+    else prio=3; fi
+    printf '%s\t%s\t%s\n' "$prio" "$name" "$(printf '%s' "$block" | base64 -w0)"
+  done <<<"$rooms"
+}
+
+blocks="$(collect_blocks)"
+[ -n "$blocks" ] || { echo "(Rocket Chat: 対象期間の該当メッセージなし)"; exit 0; }
+
+# 優先度昇順に採用し、予算を超えたら以降を落とす。
+#
+# 予算はバイト数で比較する。fire-daily-review.sh（呼び出し側）は `${#var}`
+# で判定するが、これは LANG が未設定の cron 環境ではバイト数になる
+# （実測: LANG=ja_JP.UTF-8 だと文字数、LANG未設定だとバイト数で3倍程度
+# 変わる）。rocketchat.sh 側が文字数で判定すると「こちらは収まっていると
+# 思っているのに呼び出し側では超過判定される」というズレが起きるため、
+# `wc -c` で環境に依存しないバイト数を明示的に測る。
+#
+# ソート済みの全行を配列に読み込んでから for で回す（while <(...) だと
+# break した時点で未読の行がプロセス置換ごと破棄され、残りを dropped に
+# 積めない）。超過を検出したら break で走査自体を止める（continue で次の
+# ブロックを試すと、優先度は低いがサイズが小さい後続ブロックだけ拾えて
+# しまい、「優先度の低い方から落とす」という仕様に反する。実際に
+# quality-check-room のような小さい prio=1 ブロックが先に埋まり、同じ
+# prio=1 でもサイズが大きい mori.a-times が後回しにされて先に弾かれる
+# 逆転が起きた）。break した時点で未処理の行は同一優先度グループの残りか
+# より低い優先度のグループなので、全部まとめて dropped に積む。
+#
+# `-s`（stable sort）が無いと、GNU sort は prio が同点の行を「行全体の
+# 辞書式比較」で副次的に並べ替えてしまう（-k1,1n は第1キーの比較方法を
+# 指定するだけで、同点時に他フィールドを見ないようにする指定ではない）。
+# その結果、同じ prio=1 でも room 名の文字コード順（"DM:..." が "mori.a-
+# times" や "quality-check-room" より前に来る等）でソートが決まってしまい、
+# ルームサイズや採用順とは無関係な理由で入れ替わりが起きた。-s を付けると
+# 同点時は入力順（= collect_blocks の処理順 = list_active_rooms の列挙順）
+# を保つため、少なくとも実行のたびに結果が変わることはない。
+mapfile -t sorted_blocks < <(printf '%s\n' "$blocks" | sort -t$'\t' -k1,1n -s)
+
+dropped=()
+out=""
+budget_hit=0
+for line in "${sorted_blocks[@]}"; do
+  IFS=$'\t' read -r _ name b64 <<<"$line"
+  [ -n "$b64" ] || continue
+  if [ "$budget_hit" -eq 1 ]; then
+    dropped+=("$name")
+    continue
+  fi
+  block="$(printf '%s' "$b64" | base64 -d)"
+  if [ "$budget" -gt 0 ]; then
+    candidate="${out}${block}"$'\n\n'
+    candidate_bytes="$(printf '%s' "$candidate" | wc -c)"
+    if [ "$candidate_bytes" -gt "$budget" ] && [ -n "$out" ]; then
+      dropped+=("$name")
+      budget_hit=1
+      continue
+    fi
+  fi
+  out="${out}${block}"$'\n\n'
+done
+
+printf '%s' "$out"
+if [ "${#dropped[@]}" -gt 0 ]; then
+  printf '（※ 容量制限のため %d ルームを省略: %s）\n' \
+    "${#dropped[@]}" "$(IFS=, ; echo "${dropped[*]}")"
 fi

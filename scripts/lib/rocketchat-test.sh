@@ -72,6 +72,7 @@ case "$url" in
   *roomId=room-badts*)   fx="$RC_FIXTURE_DIR/hist-badts.json" ;;
   *roomId=room-thread*)  fx="$RC_FIXTURE_DIR/hist-thread.json" ;;
   *roomId=room-ejikunabi*) fx="$RC_FIXTURE_DIR/hist-ejikunabi.json" ;;
+  *roomId=room-mention*) fx="$RC_FIXTURE_DIR/hist-mention.json" ;;
   *roomId=room-badjson*) echo '<html>error</html>'; exit 0 ;;
   # curl コマンド自体が失敗するケース（ネットワークエラー等）を模擬する。
   # room_history の `|| true` がこれを受け止め、後続ルームの処理を止めない
@@ -103,6 +104,13 @@ mkdir -p "$TMP/fixtures"
 # 検出できるようにする。room-badts は room-own より前に置くことで、ts不正の
 # ガードが無いと後続の mori.a-times/kawai.t-times が処理されず中断が
 # 可視化できる設計にしてある。
+# room-mention（優先度2: @meのみ）は room-badts の直後、他の優先度1ルーム群
+# より前に置く。予算処理の優先度ソートは -s (stable) で同点時に入力順を
+# 保つ設計のため、room-mention がもともと列挙順の最後にあると「優先度
+# ソートを丸ごと外しても入力順どおり最後に来る」という空証明になり、
+# ソートが実際に効いているかを検出できない（Task 5 のレビューで発覚）。
+# 優先度1ルーム群の間に置くことで、ソートを外す変異テストで確実に
+# 検出できるようにしている。
 # 残りは既存通り: 自分のtimes / 他人のtimes / 自動投稿(ノイズ) / DM / @allのみ(ノイズ) / スレッド検証用
 # lm は期間内(7/22)と期間外(7/10)を混ぜる
 cat > "$TMP/fixtures/rooms.json" <<'EOF'
@@ -110,6 +118,7 @@ cat > "$TMP/fixtures/rooms.json" <<'EOF'
  {"_id":"room-curlfail","t":"c","name":"curl-fail-room","lm":"2026-07-22T04:00:00.000Z"},
  {"_id":"room-badjson","t":"c","name":"broken-room","lm":"2026-07-22T10:00:00.000Z"},
  {"_id":"room-badts","t":"p","name":"quality-check-room","lm":"2026-07-22T11:00:00.000Z"},
+ {"_id":"room-mention","t":"p","name":"mention-only-room","lm":"2026-07-22T13:00:00.000Z"},
  {"_id":"room-own","t":"p","name":"mori.a-times","lm":"2026-07-22T05:00:00.000Z"},
  {"_id":"room-other","t":"p","name":"kawai.t-times","lm":"2026-07-22T06:00:00.000Z"},
  {"_id":"room-noise","t":"p","name":"grafana-alert","lm":"2026-07-22T07:00:00.000Z"},
@@ -270,6 +279,18 @@ cat > "$TMP/fixtures/hist-atall.json" <<'EOF'
 {"messages":[
  {"_id":"a1","ts":"2026-07-22T09:00:00.000Z","u":{"username":"suzuki.n"},"msg":"@all 新人紹介です、よろしくお願いします"},
  {"_id":"a2","ts":"2026-07-22T09:05:00.000Z","u":{"username":"yamada.k"},"msg":"@all 誰か教えてください"}
+]}
+EOF
+
+# hist-mention: mori.a自身の発言は無いが @mori.a メンションのみで採用される
+# ルーム（優先度2: [@meN] のみ）。Task 5 の予算処理で優先度ソートを検証する
+# には prio=1 と prio=2 の両方が必要だが、既存fixtureは採用される全ルームに
+# mori.aの発言が含まれておりどれも prio=1 になってしまう（優先度ソートが
+# 空証明になる）ため追加した。
+cat > "$TMP/fixtures/hist-mention.json" <<'EOF'
+{"messages":[
+ {"_id":"mtA","ts":"2026-07-22T14:00:00.000Z","u":{"username":"suzuki.n"},"msg":"@mori.a MENTION-ONLY-SENTINEL 確認お願いします"},
+ {"_id":"mtB","ts":"2026-07-22T14:05:00.000Z","u":{"username":"yamada.k"},"msg":"確かに気になりますね"}
 ]}
 EOF
 
@@ -494,5 +515,48 @@ assert_grep "tmid由来のみで発見できるスレッドの返信が展開さ
 # _id による重複排除で1回だけ出力されること。assert_grep は1件でも2件でも
 # 通ってしまうため、出現回数を数える。
 assert_eq "historyとthreadの重複メッセージは1回だけ出力される" "1" "$(grep -c '資料いただけますか' <<<"$out")"
+
+# ===== Task 5: 予算処理 =====
+# 全ルーム分では収まらない小さな予算を与える。
+# --budget はバイト数基準（fire-daily-review.sh の ${#var} は LANG 未設定の
+# cron環境でバイト数になるため、rocketchat.sh 側もバイト数に合わせる。詳細は
+# task-5-report.md 参照）。
+#
+# budget=400 だと、優先度1グループ内の先頭2ルームだけで
+# quality-check-room(98B) + mori.a-times(418B累計) = 418B が既に400を
+# 超えてしまい、「mori.a-times が残る」こと自体が算術的に成立しない
+# （優先度1グループ内の順序は list_active_rooms の列挙順に従うだけで、
+# spec は同一優先度内の順序を規定していない。個々のルームサイズと
+# fixture の並び順から budget を逆算する必要がある）。
+# quality-check-room + mori.a-times の2ルームがちょうど収まり、
+# 3ルーム目(kawai.t-times)以降が確実に超過する 600 を使う。
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm --budget 600)"
+len="$(printf '%s' "$out" | wc -c)"
+if [ "$len" -le 800 ]; then   # 省略マーカー分の余裕を見て 800
+  echo "ok: 予算内に収まる（${len}バイト）"
+else
+  echo "NG: 予算超過（${len}バイト）"; fails=$((fails + 1))
+fi
+assert_grep "省略マーカーが出る" "容量制限のため" "$out"
+# 空証明の修正: 省略マーカー自体に落ちたルーム名が列挙されるため、
+# "mori.a-times" という文字列だけを assert_grep すると、実際には
+# mori.a-times が「落ちた側」としてマーカーに載っているだけでも一致して
+# しまう。ヘッダの出現有無で判定する（ヘッダはマーカー内には出ない）。
+assert_grep "優先度の高いルームが残る" "===== mori.a-times \[" "$out"
+# 優先度2(mention-only-room, @meのみ)は優先度1のルーム群より先に落ちるはず。
+# 全ルームがprio=1だと優先度ソート自体が何も並び替えないため検出力が無い
+# （既存fixtureの採用ルームは全部mori.aの発言を含みprio=1になってしまう）。
+# hist-mention.json(prio=2)を追加してこの空証明を解消した。
+# さらに room-mention を rooms.json の優先度1グループの間（先頭寄り）に
+# 配置してあるため、優先度ソートを丸ごと外す変異では mention-only-room が
+# 本文に残ってしまい（budget=600だと 98+167=265 で採用される）、この
+# assert が正しく落ちる。ソートが末尾のルームを末尾に残すだけの空証明を
+# 避けている。
+assert_absent "優先度の低いルームは先に落ちる" "===== mention-only-room \[" "$out"
+assert_grep   "優先度の低いルームが省略マーカーに載る" "mention-only-room" "$out"
+
+# 予算未指定なら省略マーカーは出ない
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm)"
+assert_absent "予算未指定なら省略マーカーなし" "容量制限のため" "$out"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
