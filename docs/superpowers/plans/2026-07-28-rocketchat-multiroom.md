@@ -22,6 +22,9 @@
 - 自分のユーザー名は `mori.a`（環境変数 `RC_ME` で上書き可能、既定値 `mori.a`）
 - 時間窓は起点の前後 **30分**（1800秒）
 - 予算超過時は**ルーム単位で丸ごと落とす**。バイト位置での切り捨ては行わない
+- **`chat.getThreadMessages` は `oldest`/`latest` を無視する**（実測: 期間指定ありで0件、なしで全9件）。スレッド展開後は必ず `ts` で対象期間外を落とすこと。省くと生きているスレッドの全履歴が毎日の日報に混入する
+- **予算判定はバイト数で行われる。** `fire-daily-review.sh` の `${#var}` は cron 環境（`LANG` 未設定）でバイト数を数える。日本語は1文字約3バイトなので、文字数で見積もると実使用率を3倍過小評価する。サイズ確認時は必ず `wc -c`（バイト）も測る
+- 1回の実行で数十ルームを叩くため、**1ルームの失敗で全体を落とさない**。失敗したルームはスキップして stderr に記録する
 
 ## File Structure
 
@@ -48,7 +51,7 @@
 **Interfaces:**
 - Consumes: なし（最初のタスク）
 - Produces:
-  - CLI: `rocketchat.sh --from YYYY-MM-DD --to YYYY-MM-DD [--include-dm] [--budget N] [--format text|json]`
+  - CLI: `rocketchat.sh --from YYYY-MM-DD --to YYYY-MM-DD [--include-dm] [--budget N]`
   - 環境変数: `RC_ENV_FILE`（`.env.local` のパス）/ `RC_ME`（自分のユーザー名、既定 `mori.a`）
   - 内部関数 `rc_api <endpoint> [query...]`: curl のラッパー。`$RC_CURL` が設定されていればそれを curl の代わりに使う（テスト用のフック）
   - 内部関数 `list_active_rooms <from> <to> <include_dm>`: `_id\t<t>\t<name>` を1行1ルームで stdout に出す
@@ -183,7 +186,7 @@ env_file="${RC_ENV_FILE:-$DEFAULT_ENV_FILE}"
 me="${RC_ME:-mori.a}"
 curl_cmd="${RC_CURL:-curl}"
 
-from="" to="" include_dm=0 budget=0 list_rooms=0 format=text
+from="" to="" include_dm=0 budget=0 list_rooms=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --from)       from="$2"; shift 2 ;;
@@ -191,7 +194,6 @@ while [ $# -gt 0 ]; do
     --include-dm) include_dm=1; shift ;;
     --budget)     budget="$2"; shift 2 ;;
     --list-rooms) list_rooms=1; shift ;;
-    --format)     format="$2"; shift 2 ;;
     *) echo "不明な引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -371,15 +373,26 @@ list_active_rooms
 
 ```bash
 # room_history <room_id> <t> : 期間内のメッセージ JSON を返す
+#
+# 1回の実行で数十ルーム分を叩くため、1ルームの失敗で全体を落とさない。
+# curl が失敗した場合は空の messages を返してそのルームだけスキップさせる
+# （set -e 下でも止まらないよう || で受ける）。
 room_history() {
-  local rid="$1" t="$2" path
+  local rid="$1" t="$2" path out
   case "$t" in
     c) path="channels.history" ;;
     p) path="groups.history" ;;
     d) path="im.history" ;;
     *) echo '{"messages":[]}'; return ;;
   esac
-  rc_api "$path" "roomId=${rid}&oldest=${oldest}&latest=${latest}&count=200"
+  out="$(rc_api "$path" "roomId=${rid}&oldest=${oldest}&latest=${latest}&count=200" || true)"
+  # JSON として妥当かを検証する（HTMLエラーページ等が返る場合に備える）
+  if printf '%s' "$out" | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null; then
+    printf '%s' "$out"
+  else
+    echo "(Rocket Chat: ルーム $rid の取得に失敗しスキップ)" >&2
+    echo '{"messages":[]}'
+  fi
 }
 
 # 1ルーム分を判定・整形する。採用されなければ何も出さない。
@@ -616,9 +629,13 @@ cat > "$TMP/fixtures/hist-thread.json" <<'EOF'
 ]}
 EOF
 
-# thread-1: 同スレッドの全返信（history に無い th-b / th-c を含む）
+# thread-1: 同スレッドの全返信。
+# history に無い th-b / th-c と、対象期間外(7/10)の th-old を含む。
+# chat.getThreadMessages は oldest/latest を無視して全返信を返すため、
+# 期間外が落ちることを検証する必要がある。
 cat > "$TMP/fixtures/thread-1.json" <<'EOF'
 {"messages":[
+ {"_id":"th-old","ts":"2026-07-10T00:00:00.000Z","u":{"username":"other.p"},"msg":"ずっと前の日程調整です","tmid":"thr-1"},
  {"_id":"th-a","ts":"2026-07-22T00:40:00.000Z","u":{"username":"mori.a"},"msg":"資料いただけますか","tmid":"thr-1"},
  {"_id":"th-b","ts":"2026-07-22T05:00:00.000Z","u":{"username":"other.p"},"msg":"これですかね（リンク）","tmid":"thr-1"},
  {"_id":"th-c","ts":"2026-07-22T05:05:00.000Z","u":{"username":"mori.a"},"msg":"そちらです！助かります","tmid":"thr-1"}
@@ -647,6 +664,12 @@ assert_grep "history にあるスレッド返信は出る"   "資料いただけ
 assert_grep "history に無い返信も展開される(th-b)" "これですかね"         "$out"
 assert_grep "history に無い返信も展開される(th-c)" "そちらです"           "$out"
 assert_grep "スレッド親も出る"                   "打ち合わせお願いします" "$out"
+# chat.getThreadMessages は期間指定を無視するため自前フィルタが必要
+assert_absent "対象期間外のスレッド返信は落ちる" "ずっと前の日程調整" "$out"
+
+# 日次実行でも期間外が混入しないこと（生きているスレッドの全履歴混入の回帰）
+out_day="$(run_rc --from 2026-07-22 --to 2026-07-22)"
+assert_absent "日次実行でも期間外は混入しない" "ずっと前の日程調整" "$out_day"
 ```
 
 - [ ] **Step 2: テストを実行して失敗を確認**
@@ -704,9 +727,17 @@ print(json.dumps(acc + new, ensure_ascii=False))
 ')"
   done <<< "$tids"
 
-  # _id で重複排除してマージする
-  printf '%s\n%s' "$hist" "$extra" | python3 -c '
-import sys, json
+  # _id で重複排除してマージし、対象期間外のメッセージを落とす
+  #
+  # chat.getThreadMessages は oldest/latest を無視して全返信を返す（実測: 期間指定
+  # ありだと0件になり、なしだと9件全部返る）。API 側で絞れないため取得後に ts で
+  # 自前フィルタする。これを省くと、生きているスレッドの全履歴が毎日の日報に
+  # 混入し続ける（例: 7/22 の日程調整が 7/27 の日報に入る）。
+  printf '%s\n%s' "$hist" "$extra" \
+  | RC_OLDEST_F="$oldest" RC_LATEST_F="$latest" python3 -c '
+import sys, json, os
+oldest = os.environ["RC_OLDEST_F"]
+latest = os.environ["RC_LATEST_F"]
 raw = sys.stdin.read().split("\n", 1)
 try:
     base = json.loads(raw[0]).get("messages", [])
@@ -720,6 +751,9 @@ seen, out = set(), []
 for m in base + extra:
     mid = m.get("_id")
     if not mid or mid in seen:
+        continue
+    ts = m.get("ts") or ""
+    if ts < oldest or ts >= latest:   # 対象期間外は落とす
         continue
     seen.add(mid)
     out.append(m)
@@ -802,7 +836,16 @@ Expected: FAIL（`--budget` が未実装のため出力が予算を超え、省�
 
 - [ ] **Step 3: 最小実装を書く**
 
-`scripts/lib/rocketchat.sh` のメインループ（`while IFS=$'\t' read -r rid t name; do` から `done < <(list_active_rooms)` まで）を以下に置き換える:
+`scripts/lib/rocketchat.sh` のメインループを置き換える。Task 4 適用後は以下の3行になっているはずなので、これを丸ごと差し替える:
+
+```bash
+while IFS=$'\t' read -r rid t name; do
+  [ -n "$rid" ] || continue
+  room_history "$rid" "$t" | expand_threads | render_room "$name" "$t"
+done < <(list_active_rooms)
+```
+
+置き換え後（`expand_threads` を維持したまま予算処理を追加する）:
 
 ```bash
 # メイン: 採用ルームをブロックごとに集め、予算に応じて落とす
@@ -811,7 +854,8 @@ collect_blocks() {
   while IFS=$'\t' read -r rid t name; do
     [ -n "$rid" ] || continue
     local block prio
-    block="$(room_history "$rid" "$t" | render_room "$name" "$t")"
+    # Task 4 で追加した expand_threads を必ず通す（外すとスレッド返信が欠落する）
+    block="$(room_history "$rid" "$t" | expand_threads | render_room "$name" "$t")"
     [ -n "$block" ] || continue
     # 優先度: 発言ありなら1、@meのみなら2、それ以外3
     if grep -q '\[発言' <<<"$block"; then prio=1
@@ -878,17 +922,22 @@ git commit -m "feat: 予算処理をルーム単位ドロップで実装
 
 このタスクは実 API を叩く。`scripts/daily-review/.env.local` の実認証情報を使う。**取得のみで投稿は行わない。**
 
-- [ ] **Step 1: 期間指定で実行して取り逃していた情報が拾えることを確認**
+- [ ] **Step 1: 期間指定で実行してサイズを実測・記録する**
+
+**注意:** spec に記載の 13,633文字 / 日次最大4,303文字は**スレッド展開の実装前に計測した値**であり、Task 4 で history が返さない返信が追加されるため増加する。ここでは固定値を assert せず、実測して記録する（Step 5 で spec を更新する）。
 
 Run:
 ```bash
 cd /home/aya/.dotfiles
 bash scripts/lib/rocketchat.sh --from 2026-07-21 --to 2026-07-28 --include-dm > /tmp/rc-week.txt
-wc -c /tmp/rc-week.txt
-grep -c '^=====' /tmp/rc-week.txt
+echo "文字数: $(python3 -c 'print(len(open("/tmp/rc-week.txt").read()))')"
+echo "バイト数: $(wc -c < /tmp/rc-week.txt)"
+echo "採用ルーム数: $(grep -c '^=====' /tmp/rc-week.txt)"
 ```
 
-Expected: 13,000〜14,000文字程度、採用ルーム 11件前後（spec の実測値 13,633文字）
+Expected: 採用ルームが 11件以上（スレッド展開で `e食なび` 等の内容が増える）。文字数・バイト数は記録して Step 5 で spec に反映する。
+
+**バイト数を測る理由:** `fire-daily-review.sh` の予算判定は bash の `${#var}` で行われ、これは cron 環境（`LANG` 未設定）では**バイト数**を数える。日本語は1文字約3バイトなので、文字数ベースの見積もりでは実使用率を3倍過小評価する。
 
 - [ ] **Step 2: spec の検証項目1〜3を確認**
 
@@ -924,31 +973,58 @@ grep -c "殺人的な暑さ\|欠伸が止まらん" /tmp/rc-week.txt || true
 
 Expected: 文脈5項目は各1以上、雑談は 0
 
-- [ ] **Step 4: 日次実行で予算に収まることを確認**
+- [ ] **Step 4: 日次実行のサイズを実測し、バイト数で予算内か確認**
 
 Run:
 ```bash
-for d in 2026-07-22 2026-07-23 2026-07-27; do
-  n=$(bash scripts/lib/rocketchat.sh --from "$d" --to "$d" | wc -c)
-  echo "$d: ${n}文字"
+cd /home/aya/.dotfiles
+for d in 2026-07-21 2026-07-22 2026-07-23 2026-07-24 2026-07-27; do
+  f=/tmp/rc-day-$d.txt
+  bash scripts/lib/rocketchat.sh --from "$d" --to "$d" > "$f"
+  printf '%s: %s文字 / %sバイト\n' "$d" \
+    "$(python3 -c "print(len(open('$f').read()))")" "$(wc -c < "$f")"
 done
 ```
 
-Expected: いずれも 5,000文字未満（spec の実測は最大4,303文字）
+Expected: **バイト数**が `MAX_RC_CHARS=15000` を下回ること（bash の `${#var}` はバイト数で判定するため、こちらが実際の制約）。1日でも超える場合は Step 5 で `MAX_RC_CHARS` の引き上げか `--budget` の調整を検討する。
 
-- [ ] **Step 5: 結果を記録してコミット**
+- [ ] **Step 4.5: 期間外スレッド返信の混入がないことを確認**
 
-検証結果に spec との差異があれば `rocketchat.sh` を修正し、Step 1〜4 を再実行する。差異がなければ検証結果を spec に追記する:
+`chat.getThreadMessages` は期間指定を無視するため、日次実行で古いスレッド返信が混入しないことを実データで確認する。`e食なび` のスレッド `C2TgNffumtDKqiGaf` は 7/22〜7/27 に跨る。
+
+Run:
+```bash
+cd /home/aya/.dotfiles
+echo "--- 7/27単日に7/22の日程調整が混入していないこと（0であること） ---"
+grep -c "通院のため遅刻" /tmp/rc-day-2026-07-27.txt || true
+echo "--- 7/27単日に7/27の資料受領が入っていること（1以上） ---"
+grep -c "そちらです" /tmp/rc-day-2026-07-27.txt || true
+```
+
+Expected: 前者が 0、後者が 1以上
+
+- [ ] **Step 5: spec の実測値を更新してコミット**
+
+Step 2・3・4.5 の内容チェックが1つでも失敗したら `rocketchat.sh` を修正し、Step 1〜4.5 を再実行する。
+
+内容チェックが全て通ったら、spec の「#### 実測値」表と「#### 実測: cron では予算問題は発生しない」表を Step 1・4 で得た**実測値（スレッド展開込み）**に書き換える。合わせて以下を明記する:
+
+- 週次の文字数・バイト数
+- 日次の最大文字数・最大バイト数
+- `MAX_RC_CHARS=15000` に対するバイト数ベースの使用率
+- スレッド展開の追加によって旧値（13,633文字 / 日次4,303文字）からどれだけ増えたか
 
 ```bash
 cd /home/aya/.dotfiles
 rm -f .git/index.lock
-git add docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md
+git add docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md scripts/lib/rocketchat.sh
 rm -f .git/index.lock
-git commit -m "docs: rocketchat.sh の実データ回帰確認の結果を記録"
-```
+git commit -m "docs: スレッド展開込みの実測値でspecの数値を更新
 
-（`rocketchat.sh` を修正した場合はそれも `git add` に含める）
+旧値はスレッド展開の実装前に計測したもの。history が返さない
+スレッド返信が加わるため増加する。予算判定は bash の \${#var}
+=バイト数で行われるため、バイト数も併記する。"
+```
 
 ---
 
@@ -1173,11 +1249,23 @@ Expected: 両テストが `ALL OK`、dry-run が `dry-run OK`
 
 - [ ] **Step 2: redaction が効いていることを確認**
 
+**注意:** トークンの値をコマンドライン引数に展開しない（argv はプロセス一覧・シェル履歴・トランスクリプトに残る）。`grep -f` でファイル経由で渡す。
+
 Run:
 ```bash
 cd /home/aya/.dotfiles
-bash scripts/daily-review/fire-daily-review.sh --dry-run 2>/dev/null | grep -c "X-Auth-Token: [^[]" || echo "0（トークン露出なし）"
-bash scripts/daily-review/fire-daily-review.sh --dry-run 2>/dev/null | grep -c "$(grep '^RC_TOKEN=' scripts/daily-review/.env.local | cut -d= -f2)" || echo "0（RC_TOKENの露出なし）"
+bash scripts/daily-review/fire-daily-review.sh --dry-run > /tmp/payload-check.txt 2>/dev/null
+
+echo "--- X-Auth-Token の生値が出ていないこと ---"
+grep -c "X-Auth-Token: [^[]" /tmp/payload-check.txt || echo "0（露出なし）"
+
+echo "--- RC_TOKEN / RC_USER_ID の生値が出ていないこと ---"
+# パターンを一時ファイル経由で渡し、値を argv に載せない
+grep -hE '^(RC_TOKEN|RC_USER_ID)=' scripts/daily-review/.env.local \
+  | sed -E 's/^[^=]+=//' > /tmp/secrets.pat
+grep -c -F -f /tmp/secrets.pat /tmp/payload-check.txt || echo "0（露出なし）"
+shred -u /tmp/secrets.pat 2>/dev/null || rm -f /tmp/secrets.pat
+rm -f /tmp/payload-check.txt
 ```
 
 Expected: どちらも 0
