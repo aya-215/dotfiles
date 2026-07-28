@@ -69,6 +69,11 @@ assert_absent() {
     echo "NG: $desc → '$pattern' が出力に含まれている"; fails=$((fails + 1))
   else echo "ok: $desc"; fi
 }
+assert_eq() {
+  local desc="$1" want="$2" got="$3"
+  if [ "$want" = "$got" ]; then echo "ok: $desc"
+  else echo "NG: $desc → want=$want got=$got"; fails=$((fails + 1)); fi
+}
 
 # ===== Task 1: ルーム列挙 =====
 out="$(run_rc --from 2026-07-21 --to 2026-07-28 --list-rooms)"
@@ -79,5 +84,19 @@ assert_absent "DMは既定で除外される"              "room-dm"       "$out
 
 out="$(run_rc --from 2026-07-21 --to 2026-07-28 --list-rooms --include-dm)"
 assert_grep "--include-dm でDMが含まれる" "room-dm" "$out"
+# usernames: ["mori.a","hatagami.y"] から RC_ME=mori.a を除いた相手のみが name に出ること。
+# 自分が誤って混入する（例: DM:mori.a,hatagami.y になる）バグを検出するための検証。
+assert_grep   "DM名から自分(RC_ME)が除外され相手のみになる" "DM:hatagami.y"     "$out"
+assert_absent "DM名に自分(RC_ME)が混入しない"               "DM:mori.a"         "$out"
+
+# ===== .env.local 不在時は ERROR: を出して exit 1（既存 fetch-rocketchat.sh の慣習に合わせる） =====
+rc=0
+out="$(RC_ENV_FILE="$TMP/no-such-env.local" \
+  RC_CURL="$TMP/bin/curl-stub.sh" \
+  RC_FIXTURE_DIR="$TMP/fixtures" \
+  RC_ME=mori.a \
+  bash "$SCRIPT_DIR/rocketchat.sh" --from 2026-07-21 --to 2026-07-28 --list-rooms 2>&1)" || rc=$?
+assert_eq   ".env.local不在時はexit 1"          "1"      "$rc"
+assert_grep ".env.local不在時にERROR:で始まるメッセージが出る" "ERROR:" "$out"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi

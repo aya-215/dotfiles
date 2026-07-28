@@ -40,8 +40,8 @@ done
 [ -n "$from" ] && [ -n "$to" ] || { echo "--from と --to は必須" >&2; exit 2; }
 
 if [ ! -f "$env_file" ]; then
-  echo "(Rocket Chat: $env_file が見つかりません)" >&2
-  exit 0
+  echo "ERROR: $env_file が見つかりません" >&2
+  exit 1
 fi
 # shellcheck disable=SC1090
 source "$env_file"
