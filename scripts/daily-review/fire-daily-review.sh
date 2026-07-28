@@ -46,11 +46,13 @@ fi
 target_date="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
 
 # Rocket Chat 当日履歴（失敗してもプレースホルダで続行）
-rocketchat_log="$(bash "$SCRIPT_DIR/fetch-rocketchat.sh" "$target_date" 2>/dev/null || echo "(Rocket Chat: 取得失敗)")"
-if [ "${#rocketchat_log}" -gt "$MAX_RC_CHARS" ]; then
-  rocketchat_log="${rocketchat_log:0:$MAX_RC_CHARS}
-（※ Rocket Chat 履歴が長いため切り詰め）"
-fi
+# 購読ルーム全体から自分の発言・メンションに関係するものを収集する。
+# DM は外部送信のため含めない（設計: docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md）。
+# 文字数制御は rocketchat.sh 側の --budget（ルーム単位ドロップ）に委ねるため、
+# ここでのバイト位置切り詰めは行わない。
+rocketchat_log="$(bash "$SCRIPT_DIR/../lib/rocketchat.sh" \
+  --from "$target_date" --to "$target_date" \
+  --budget "$MAX_RC_CHARS" 2>/dev/null || echo "(Rocket Chat: 取得失敗)")"
 
 # 当日の自分のコミットをローカルリポジトリから収集する
 # ローカル収集なので push 前のコミットも拾える（GitHub API より新鮮）うえ、
@@ -164,7 +166,7 @@ while :; do
 【git活動（当日コミット・ローカル収集）】
 ${git_log}
 
-【Rocket Chat 当日履歴（mori.a-times）】
+【Rocket Chat 当日履歴（購読ルーム横断・DM除く）】
 ${rocketchat_log}
 
 【セッション要約（${target_date}・時刻順）】
