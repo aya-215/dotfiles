@@ -139,7 +139,8 @@ room_history() {
 # history 系エンドポイントはスレッド返信を全件返さない（実測: 9返信中3件のみ）。
 # tmid / tcount からスレッドIDを集め、chat.getThreadMessages で補完する。
 expand_threads() {
-  local hist tids tid extra tresp
+  local rid="$1"
+  local hist tids tid extra tresp sresp stids
   hist="$(cat)"
   # スレッドID = 返信の tmid ∪ 親の _id（tcount を持つもの）
   tids="$(printf '%s' "$hist" | python3 -c '
@@ -157,6 +158,35 @@ for m in ms:
 for i in sorted(ids):
     print(i)
 ')"
+  # chat.syncThreadsList で「期間内に更新されたスレッド」の親IDを直接引く。
+  #
+  # history 系エンドポイントは tshow=None（通常のスレッド返信）を返さないため、
+  # 「親が対象期間外・返信が期間内」のスレッドは tmid/tcount 収集では構造的に
+  # 発見できない（実測: 7/27 の e食なび で7件を取り逃していた）。
+  # syncThreadsList は各スレッドの tlm(thread last message) を返すので、
+  # 親の ts が期間外でも tlm が期間内なら発見できる。
+  #
+  # 従来の tmid/tcount 由来と和集合を取る。updatedSince の厳密な意味論
+  # （境界の開閉・サーバ側の更新判定）を確定できていないため、従来経路を
+  # 残して片方が取りこぼしても現状より悪化しないようにしてある。
+  # 重複は後段の _id ベース重複排除が吸収する。
+  sresp="$(rc_api "chat.syncThreadsList" "rid=${rid}&updatedSince=${oldest}" || true)"
+  stids="$(printf '%s' "$sresp" | RC_SYNC_OLDEST="$oldest" python3 -c '
+import sys, json, os
+oldest = os.environ["RC_SYNC_OLDEST"]
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+for th in (d.get("threads", {}) or {}).get("update", []) or []:
+    # tlm が期間内のスレッドだけを対象にする。updatedSince が期待通り効かない
+    # 場合でも、ここで絞れば古いスレッドを引き込まない。
+    if (th.get("tlm") or "") >= oldest and th.get("_id"):
+        print(th["_id"])
+' 2>/dev/null || true)"
+  if [ -n "$stids" ]; then
+    tids="$(printf '%s\n%s' "$tids" "$stids" | grep -v '^$' | sort -u)"
+  fi
   [ -n "$tids" ] || { printf '%s' "$hist"; return; }
 
   extra="[]"
@@ -348,7 +378,7 @@ collect_blocks() {
     [ -n "$rid" ] || continue
     local block prio
     # Task 4 で追加した expand_threads を必ず通す（外すとスレッド返信が欠落する）
-    block="$(room_history "$rid" "$t" | expand_threads | render_room "$name" "$t")"
+    block="$(room_history "$rid" "$t" | expand_threads "$rid" | render_room "$name" "$t")"
     [ -n "$block" ] || continue
     if grep -q '\[発言' <<<"$block"; then prio=1
     elif grep -q '\[@me' <<<"$block"; then prio=2
