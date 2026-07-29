@@ -170,7 +170,12 @@ for i in sorted(ids):
   # （境界の開閉・サーバ側の更新判定）を確定できていないため、従来経路を
   # 残して片方が取りこぼしても現状より悪化しないようにしてある。
   # 重複は後段の _id ベース重複排除が吸収する。
-  sresp="$(rc_api "chat.syncThreadsList" "rid=${rid}&updatedSince=${oldest}&count=200" || true)"
+  # count は付けないこと。chat.syncThreadsList は未知パラメータを拒否し
+  # {"success":false,"error":"must NOT have additional properties"} を返す
+  # （実API実測）。兄弟の history 系は count=200 を受けるが、この
+  # エンドポイントだけは受け付けない。付けると全ルームが失敗扱いになり
+  # スレッド発見が丸ごと無効化される。
+  sresp="$(rc_api "chat.syncThreadsList" "rid=${rid}&updatedSince=${oldest}" || true)"
   # room_history と同じ防御: HTMLエラーページ等が返った場合に無音で
   # スレッド発見が消えないよう、JSON妥当性を検証して警告を出す。
   # さらに `{"success":false,"error":"..."}` のように JSON としては妥当でも
