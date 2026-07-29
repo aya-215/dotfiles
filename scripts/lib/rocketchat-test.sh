@@ -64,6 +64,14 @@ case "$url" in
   *chat.getThreadMessages*tmid=thr-ejikunabi-1*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-1.json"; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-ejikunabi-2*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-2.json"; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-ejikunabi-3*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-3.json"; exit 0 ;;
+  # chat.syncThreadsList: 期間内に更新されたスレッドの親一覧を返す。
+  # 親の ts が対象期間外(7/10)でも tlm が期間内(7/22)なら返るという
+  # 実APIの挙動を模擬する。oldest/latest のrange-awareフィルタは通さず
+  # 生返しする（threads は messages キーではないためフィルタが効かない）。
+  *chat.syncThreadsList*rid=room-ejikunabi*) cat "$RC_FIXTURE_DIR/sync-ejikunabi.json"; exit 0 ;;
+  # 上記以外のルームの syncThreadsList は空を返す（既定）。
+  *chat.syncThreadsList*) echo '{"success":true,"threads":{"update":[],"remove":[]}}'; exit 0 ;;
+  *chat.getThreadMessages*tmid=thr-ejikunabi-4*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-4.json"; exit 0 ;;
   # thread-newline.json は expand_threads の \x1e 区切り修正（Task 4 Fix round 1）
   # を検証するため、pretty-print（改行入り）のまま生で返す必要がある。他の
   # chat.getThreadMessages 分岐と同じく cat で生返しする。
@@ -271,6 +279,37 @@ cat > "$TMP/fixtures/thread-ejikunabi-1.json" <<'EOF'
  {"_id":"th-a","ts":"2026-07-22T00:40:00.000Z","u":{"username":"mori.a"},"msg":"資料いただけますか","tmid":"thr-ejikunabi-1"},
  {"_id":"th-b","ts":"2026-07-22T05:00:00.000Z","u":{"username":"other.p"},"msg":"これですかね（リンク）","tmid":"thr-ejikunabi-1"},
  {"_id":"th-c","ts":"2026-07-22T05:05:00.000Z","u":{"username":"mori.a"},"msg":"そちらです！助かります","tmid":"thr-ejikunabi-1"}
+]}
+EOF
+
+# sync-ejikunabi: chat.syncThreadsList のレスポンス。
+# thr-ejikunabi-4 は「親の ts が対象期間外(7/10)、tlm が期間内(7/22)」という
+# 本変更の主目的のケース。history には親も返信も一切現れないため、
+# 従来の tmid/tcount 収集では発見できない（= syncThreadsList でのみ発見可能）。
+#
+# 重要: 親 ts は必ず期間外(7/10)に置く。期間内にすると history 側の
+# tcount/tmid 経路でも同じIDが導出され、syncThreadsList を無効化しても
+# テストが通ってしまう（既存の空証明「tmid/tcount の独立性」と同型）。
+#
+# thr-ejikunabi-1 も併記する。これは従来経路でも発見できるIDであり、
+# 和集合が正しく重複排除されること（二重取得で壊れないこと）の確認用。
+cat > "$TMP/fixtures/sync-ejikunabi.json" <<'EOF'
+{"success":true,"threads":{"update":[
+ {"_id":"thr-ejikunabi-4","ts":"2026-07-10T00:00:00.000Z","tlm":"2026-07-22T14:30:00.000Z","tcount":2},
+ {"_id":"thr-ejikunabi-1","ts":"2026-07-22T00:30:00.000Z","tlm":"2026-07-22T02:00:00.000Z","tcount":3}
+],"remove":[]}}
+EOF
+
+# thread-ejikunabi-4: 親が期間外のスレッドの全返信。
+# ejk4-reply は mori.a の発言なので render_room の第1段階(own)を満たし、
+# このスレッドが発見されればルームは採用される。
+# ejk4-outside は期間外(7/11)。chat.getThreadMessages は oldest/latest を
+# 無視して全件返すため、expand_threads 側の ts フィルタが効くことの検証用。
+cat > "$TMP/fixtures/thread-ejikunabi-4.json" <<'EOF'
+{"messages":[
+ {"_id":"thr-ejikunabi-4","ts":"2026-07-10T00:00:00.000Z","u":{"username":"other.p"},"msg":"期間外の親メッセージ","tmid":"thr-ejikunabi-4"},
+ {"_id":"ejk4-outside","ts":"2026-07-11T00:00:00.000Z","u":{"username":"other.p"},"msg":"SYNC-OUTSIDE-RANGE-SENTINEL","tmid":"thr-ejikunabi-4"},
+ {"_id":"ejk4-reply","ts":"2026-07-22T14:30:00.000Z","u":{"username":"mori.a"},"msg":"SYNC-OUTSIDE-PARENT-SENTINEL","tmid":"thr-ejikunabi-4"}
 ]}
 EOF
 
@@ -657,5 +696,15 @@ assert_grep "改行入りJSONでもhistory由来メッセージが残る"   "NEW
 assert_grep "改行入りJSONでもthread由来メッセージが展開される" "NEWLINE-SAFE-SENTINEL"   "$out"
 assert_grep "スレッド取得失敗でもhistory由来メッセージは残る" "THREAD-FETCH-FAIL-PARENT" "$out"
 assert_grep "スレッド取得失敗がstderrに記録される" "スレッド tf-parent の取得に失敗しスキップ" "$err"
+
+# ===== syncThreadsList によるスレッド発見 =====
+# 親が対象期間外にあるスレッドの期間内返信が回収されることを検証する。
+# 従来の tmid/tcount 収集は期間内 history のみを見るため、このケースを
+# 構造的に発見できない（真因は tshow=None の返信が history に出ないこと）。
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 2>/dev/null)"
+assert_grep "親が期間外のスレッドの期間内返信が回収される" \
+  "SYNC-OUTSIDE-PARENT-SENTINEL" "$out"
+assert_absent "syncThreadsListで発見したスレッドでも期間外は落ちる" \
+  "SYNC-OUTSIDE-RANGE-SENTINEL" "$out"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
