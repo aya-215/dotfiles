@@ -17,7 +17,6 @@ P='\033[38;2;250;179;135m'  # Peach #FAB387 - model
 S='\033[38;2;108;112;134m'  # Overlay0 #6C7086 - separator
 M='\033[38;2;203;166;247m'  # Mauve #CBA6F7 - context
 G='\033[38;2;166;227;161m'  # Green #A6E3A1 - todo
-T='\033[38;2;148;226;213m'  # Teal #94E2D5 - effort
 R='\033[0m'                  # Reset
 
 # --- Parse all fields in a single jq pass ---
@@ -196,12 +195,13 @@ printf "${B}%s %s${R}" "$icon_folder" "$current_dir"
 printf " ${S}|${R} "
 printf "${L}%s %s${R}${Y}%s${R}" "$icon_branch" "$git_branch" "$git_dirty"
 printf " ${S}|${R} "
-printf "${P}%s %s${R}" "$icon_model" "$model_short"
-# Live session effort level (changes via /effort), shown in the slot vacated by
-# the context-size suffix. Absent on models without reasoning effort.
-if [ -n "$effort_level" ]; then
-  printf " ${S}(${T}%s${S})${R}" "$effort_level"
-fi
+# Model, with the live session effort level (changes via /effort) in the slot
+# vacated by the context-size suffix. Effort belongs to the model, so it shares
+# the model's colour rather than introducing a second one inside the segment.
+# Omitted entirely on models without reasoning effort.
+effort_suffix=""
+[ -n "$effort_level" ] && effort_suffix=" ($effort_level)"
+printf "${P}%s %s%s${R}" "$icon_model" "$model_short" "$effort_suffix"
 printf " ${S}|${R} "
 printf "${M}%s %s${R}" "$icon_context" "$context_info"
 if [ "$todo_count" -gt 0 ] 2>/dev/null; then
