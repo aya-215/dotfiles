@@ -88,6 +88,19 @@ fi
 
 current_dir=$(basename "$current_dir")
 
+# Drop a trailing parenthesised suffix from the model name -- "Opus 5 (1M
+# context)" becomes "Opus 5". The context size is static for a session and is
+# already implied by the window figures below, so the space is better spent on
+# the effort level. Anything unexpected (no parens, empty result) falls back to
+# the name as given rather than rendering blank.
+model_short=$model
+case $model in
+  *' ('*')')
+    _stripped=${model% (*}
+    [ -n "$_stripped" ] && model_short=$_stripped
+    ;;
+esac
+
 # Format number as K (e.g., 35000 -> 35K)
 format_k() {
   local n=$1
@@ -183,13 +196,11 @@ printf "${B}%s %s${R}" "$icon_folder" "$current_dir"
 printf " ${S}|${R} "
 printf "${L}%s %s${R}${Y}%s${R}" "$icon_branch" "$git_branch" "$git_dirty"
 printf " ${S}|${R} "
-printf "${P}%s %s${R}" "$icon_model" "$model"
-# Live session effort level (changes via /effort). Rendered as "model / effort"
-# so it reads as a property of the model rather than a separate segment; the
-# whole suffix disappears on models without reasoning effort.
+printf "${P}%s %s${R}" "$icon_model" "$model_short"
+# Live session effort level (changes via /effort), shown in the slot vacated by
+# the context-size suffix. Absent on models without reasoning effort.
 if [ -n "$effort_level" ]; then
-  printf " ${S}/${R} "
-  printf "${T}%s${R}" "$effort_level"
+  printf " ${S}(${T}%s${S})${R}" "$effort_level"
 fi
 printf " ${S}|${R} "
 printf "${M}%s %s${R}" "$icon_context" "$context_info"
