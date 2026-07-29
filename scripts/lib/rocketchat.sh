@@ -171,6 +171,13 @@ for i in sorted(ids):
   # 残して片方が取りこぼしても現状より悪化しないようにしてある。
   # 重複は後段の _id ベース重複排除が吸収する。
   sresp="$(rc_api "chat.syncThreadsList" "rid=${rid}&updatedSince=${oldest}" || true)"
+  # room_history と同じ防御: HTMLエラーページ等が返った場合に無音で
+  # スレッド発見が消えないよう、JSON妥当性を検証して警告を出す。
+  # 失敗しても従来の tmid/tcount 経路は生きているため処理は継続する。
+  if ! printf '%s' "$sresp" | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null; then
+    echo "(Rocket Chat: ルーム $rid のスレッド一覧取得に失敗しスキップ)" >&2
+    sresp='{"threads":{"update":[]}}'
+  fi
   stids="$(printf '%s' "$sresp" | RC_SYNC_OLDEST="$oldest" python3 -c '
 import sys, json, os
 oldest = os.environ["RC_SYNC_OLDEST"]

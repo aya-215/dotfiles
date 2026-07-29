@@ -74,9 +74,14 @@ case "$url" in
   # syncThreadsList 挿入より前に来ると発火してしまい、このスレッドを
   # 発見できなくなる（配置の正しさをテストで担保するための専用fixture）。
   *chat.syncThreadsList*rid=room-emptyhist*) cat "$RC_FIXTURE_DIR/sync-emptyhist.json"; exit 0 ;;
+  # room-syncfail: history と getThreadMessages は正常だが syncThreadsList
+  # だけが HTML エラーページを返すケース。従来の tmid/tcount 経路のみで
+  # 継続することを検証する。
+  *chat.syncThreadsList*rid=room-syncfail*) echo '<html>error</html>'; exit 0 ;;
   # 上記以外のルームの syncThreadsList は空を返す（既定）。
   *chat.syncThreadsList*) echo '{"success":true,"threads":{"update":[],"remove":[]}}'; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-ejikunabi-4*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-4.json"; exit 0 ;;
+  *chat.getThreadMessages*tmid=sf-parent*) cat "$RC_FIXTURE_DIR/thread-syncfail.json"; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-emptyhist-1*) cat "$RC_FIXTURE_DIR/thread-emptyhist-1.json"; exit 0 ;;
   # thread-newline.json は expand_threads の \x1e 区切り修正（Task 4 Fix round 1）
   # を検証するため、pretty-print（改行入り）のまま生で返す必要がある。他の
@@ -100,6 +105,7 @@ case "$url" in
   # （expand_threads の $hist ⇔ $extra マージ側の \x1e 修正を検証するため）。
   *roomId=room-newline*) cat "$RC_FIXTURE_DIR/hist-newline.json"; exit 0 ;;
   *roomId=room-tfail*)   fx="$RC_FIXTURE_DIR/hist-tfail.json" ;;
+  *roomId=room-syncfail*) fx="$RC_FIXTURE_DIR/hist-syncfail.json" ;;
   # room-emptyhist: in-window history が常に0件（このルーム自体は存在するが
   # 対象期間には親メッセージも返信も一切現れない）。syncThreadsList 経由での
   # み発見できるスレッドを持たせる。
@@ -166,7 +172,8 @@ cat > "$TMP/fixtures/rooms.json" <<'EOF'
  {"_id":"room-thread","t":"p","name":"thread-room","lm":"2026-07-22T12:00:00.000Z"},
  {"_id":"room-newline","t":"c","name":"newline-safe-room","lm":"2026-07-22T14:00:00.000Z"},
  {"_id":"room-tfail","t":"c","name":"thread-fetch-fail-room","lm":"2026-07-22T15:00:00.000Z"},
- {"_id":"room-emptyhist","t":"c","name":"empty-history-room","lm":"2026-07-22T17:00:00.000Z"}
+ {"_id":"room-emptyhist","t":"c","name":"empty-history-room","lm":"2026-07-22T17:00:00.000Z"},
+ {"_id":"room-syncfail","t":"c","name":"sync-fail-room","lm":"2026-07-22T16:00:00.000Z"}
 ]}
 EOF
 
@@ -321,6 +328,24 @@ cat > "$TMP/fixtures/thread-ejikunabi-4.json" <<'EOF'
  {"_id":"thr-ejikunabi-4","ts":"2026-07-10T00:00:00.000Z","u":{"username":"other.p"},"msg":"期間外の親メッセージ","tmid":"thr-ejikunabi-4"},
  {"_id":"ejk4-outside","ts":"2026-07-11T00:00:00.000Z","u":{"username":"other.p"},"msg":"SYNC-OUTSIDE-RANGE-SENTINEL","tmid":"thr-ejikunabi-4"},
  {"_id":"ejk4-reply","ts":"2026-07-22T14:30:00.000Z","u":{"username":"mori.a"},"msg":"SYNC-OUTSIDE-PARENT-SENTINEL","tmid":"thr-ejikunabi-4"}
+]}
+EOF
+
+# hist-syncfail: syncThreadsList が失敗しても、従来の tmid/tcount 経路で
+# 発見できるスレッドは回収され続けることを検証するための history。
+# sf-parent は tcount を持つので tmid/tcount 経路で発見できる。
+cat > "$TMP/fixtures/hist-syncfail.json" <<'EOF'
+{"messages":[
+ {"_id":"sf-parent","ts":"2026-07-22T16:00:00.000Z","u":{"username":"mori.a"},"msg":"従来経路の親","tcount":2}
+]}
+EOF
+
+# thread-syncfail: 従来経路(tcount)で発見されるスレッドの返信。
+# syncThreadsList が失敗してもこれが出力に残ることを検証する。
+cat > "$TMP/fixtures/thread-syncfail.json" <<'EOF'
+{"messages":[
+ {"_id":"sf-parent","ts":"2026-07-22T16:00:00.000Z","u":{"username":"mori.a"},"msg":"従来経路の親","tcount":2},
+ {"_id":"sf-reply","ts":"2026-07-22T16:30:00.000Z","u":{"username":"other.p"},"msg":"SYNCFAIL-FALLBACK-SENTINEL","tmid":"sf-parent"}
 ]}
 EOF
 
@@ -756,5 +781,15 @@ assert_absent "syncThreadsListで発見したスレッドでも期間外は落�
 # アサーション）。
 assert_grep "in-window historyが空のルームでもsyncThreadsList経由でスレッドが発見される" \
   "EMPTY-HISTORY-SYNC-SENTINEL" "$out"
+
+# syncThreadsList が失敗しても従来経路(tmid/tcount)で継続する
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 2>"$TMP/syncfail.err")"
+err="$(cat "$TMP/syncfail.err")"
+assert_grep "syncThreadsList失敗でも従来経路のスレッドは残る" \
+  "SYNCFAIL-FALLBACK-SENTINEL" "$out"
+assert_grep "syncThreadsList失敗がstderrに記録される" \
+  "ルーム room-syncfail のスレッド一覧取得に失敗しスキップ" "$err"
+assert_grep "syncThreadsList失敗後も他のルームは正常処理される" \
+  "mori.a-times" "$out"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
