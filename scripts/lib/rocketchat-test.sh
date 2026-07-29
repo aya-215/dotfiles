@@ -69,9 +69,15 @@ case "$url" in
   # 実APIの挙動を模擬する。oldest/latest のrange-awareフィルタは通さず
   # 生返しする（threads は messages キーではないためフィルタが効かない）。
   *chat.syncThreadsList*rid=room-ejikunabi*) cat "$RC_FIXTURE_DIR/sync-ejikunabi.json"; exit 0 ;;
+  # room-emptyhist: in-window history が0件のルーム。tids が空になるため
+  # expand_threads の早期return（[ -n "$tids" ] || { ...; return; }）が
+  # syncThreadsList 挿入より前に来ると発火してしまい、このスレッドを
+  # 発見できなくなる（配置の正しさをテストで担保するための専用fixture）。
+  *chat.syncThreadsList*rid=room-emptyhist*) cat "$RC_FIXTURE_DIR/sync-emptyhist.json"; exit 0 ;;
   # 上記以外のルームの syncThreadsList は空を返す（既定）。
   *chat.syncThreadsList*) echo '{"success":true,"threads":{"update":[],"remove":[]}}'; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-ejikunabi-4*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-4.json"; exit 0 ;;
+  *chat.getThreadMessages*tmid=thr-emptyhist-1*) cat "$RC_FIXTURE_DIR/thread-emptyhist-1.json"; exit 0 ;;
   # thread-newline.json は expand_threads の \x1e 区切り修正（Task 4 Fix round 1）
   # を検証するため、pretty-print（改行入り）のまま生で返す必要がある。他の
   # chat.getThreadMessages 分岐と同じく cat で生返しする。
@@ -94,6 +100,10 @@ case "$url" in
   # （expand_threads の $hist ⇔ $extra マージ側の \x1e 修正を検証するため）。
   *roomId=room-newline*) cat "$RC_FIXTURE_DIR/hist-newline.json"; exit 0 ;;
   *roomId=room-tfail*)   fx="$RC_FIXTURE_DIR/hist-tfail.json" ;;
+  # room-emptyhist: in-window history が常に0件（このルーム自体は存在するが
+  # 対象期間には親メッセージも返信も一切現れない）。syncThreadsList 経由での
+  # み発見できるスレッドを持たせる。
+  *roomId=room-emptyhist*) fx="$RC_FIXTURE_DIR/hist-emptyhist.json" ;;
   *roomId=room-badjson*) echo '<html>error</html>'; exit 0 ;;
   # curl コマンド自体が失敗するケース（ネットワークエラー等）を模擬する。
   # room_history の `|| true` がこれを受け止め、後続ルームの処理を止めない
@@ -155,7 +165,8 @@ cat > "$TMP/fixtures/rooms.json" <<'EOF'
  {"_id":"room-atall","t":"p","name":"general","lm":"2026-07-22T09:00:00.000Z"},
  {"_id":"room-thread","t":"p","name":"thread-room","lm":"2026-07-22T12:00:00.000Z"},
  {"_id":"room-newline","t":"c","name":"newline-safe-room","lm":"2026-07-22T14:00:00.000Z"},
- {"_id":"room-tfail","t":"c","name":"thread-fetch-fail-room","lm":"2026-07-22T15:00:00.000Z"}
+ {"_id":"room-tfail","t":"c","name":"thread-fetch-fail-room","lm":"2026-07-22T15:00:00.000Z"},
+ {"_id":"room-emptyhist","t":"c","name":"empty-history-room","lm":"2026-07-22T17:00:00.000Z"}
 ]}
 EOF
 
@@ -310,6 +321,35 @@ cat > "$TMP/fixtures/thread-ejikunabi-4.json" <<'EOF'
  {"_id":"thr-ejikunabi-4","ts":"2026-07-10T00:00:00.000Z","u":{"username":"other.p"},"msg":"期間外の親メッセージ","tmid":"thr-ejikunabi-4"},
  {"_id":"ejk4-outside","ts":"2026-07-11T00:00:00.000Z","u":{"username":"other.p"},"msg":"SYNC-OUTSIDE-RANGE-SENTINEL","tmid":"thr-ejikunabi-4"},
  {"_id":"ejk4-reply","ts":"2026-07-22T14:30:00.000Z","u":{"username":"mori.a"},"msg":"SYNC-OUTSIDE-PARENT-SENTINEL","tmid":"thr-ejikunabi-4"}
+]}
+EOF
+
+# hist-emptyhist: room-emptyhist の in-window history。常に空。
+# これにより expand_threads の $tids が tmid/tcount 経路からは絶対に
+# 非空にならず、syncThreadsList を挿入する前に早期returnしてしまう配置ミスを
+# このルーム1つで機械的に検出できる（team-lead のmutation testで発覚した
+# 「早期return後に置いても既存69アサーションが通ってしまう」空証明を埋める）。
+cat > "$TMP/fixtures/hist-emptyhist.json" <<'EOF'
+{"messages":[]}
+EOF
+
+# sync-emptyhist: room-emptyhist 用の chat.syncThreadsList レスポンス。
+# 親 ts はここでも必ず期間外(7/10)に置く（sync-ejikunabi と同じ理由:
+# 期間内にすると in-window history 経由でも同じIDが導出されてしまい、
+# 「syncThreadsList 由来でしか発見できない」という前提が崩れる。ただし
+# このルームの history は常に空なのでその経路自体が存在しない）。
+cat > "$TMP/fixtures/sync-emptyhist.json" <<'EOF'
+{"success":true,"threads":{"update":[
+ {"_id":"thr-emptyhist-1","ts":"2026-07-10T00:00:00.000Z","tlm":"2026-07-22T16:00:00.000Z","tcount":1}
+],"remove":[]}}
+EOF
+
+# thread-emptyhist-1: room-emptyhist のスレッド全返信。mori.a 発言なので
+# render_room の第1段階(own)を満たしルームが採用される。
+cat > "$TMP/fixtures/thread-emptyhist-1.json" <<'EOF'
+{"messages":[
+ {"_id":"thr-emptyhist-1","ts":"2026-07-10T00:00:00.000Z","u":{"username":"other.p"},"msg":"空履歴ルームの期間外の親メッセージ","tmid":"thr-emptyhist-1"},
+ {"_id":"emh1-reply","ts":"2026-07-22T16:00:00.000Z","u":{"username":"mori.a"},"msg":"EMPTY-HISTORY-SYNC-SENTINEL","tmid":"thr-emptyhist-1"}
 ]}
 EOF
 
@@ -706,5 +746,15 @@ assert_grep "親が期間外のスレッドの期間内返信が回収される"
   "SYNC-OUTSIDE-PARENT-SENTINEL" "$out"
 assert_absent "syncThreadsListで発見したスレッドでも期間外は落ちる" \
   "SYNC-OUTSIDE-RANGE-SENTINEL" "$out"
+
+# in-window history が0件のルーム（room-emptyhist）でも syncThreadsList 経由で
+# スレッドが発見されることを検証する。expand_threads の
+# `[ -n "$tids" ] || { printf '%s' "$hist"; return; }` という早期return が
+# syncThreadsList の呼び出しより前にあると、tmid/tcount 経由の $tids が空の
+# ままこの行で return してしまい、以降の syncThreadsList 挿入が一切実行されない
+# （real-world の e食なび障害と同型で、配置ミスを直接検出するための本命の
+# アサーション）。
+assert_grep "in-window historyが空のルームでもsyncThreadsList経由でスレッドが発見される" \
+  "EMPTY-HISTORY-SYNC-SENTINEL" "$out"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
