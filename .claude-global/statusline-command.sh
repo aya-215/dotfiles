@@ -7,7 +7,6 @@ icon_branch=$'\UF126'       #  nf-fa-code_fork
 icon_model=$'\U000F06A9'    # 󰚩 nf-md-robot
 icon_context=$'\U000F01BC'  # 󰆼 nf-md-database
 icon_todo=$'\U2611'          # ☑ ballot box with check
-icon_effort=$'\U000F0E4F'   # 󰹏 nf-md-speedometer
 
 # ANSI colors (Catppuccin Mocha)
 # Rule: location=cool, status=warm, meta=mid
@@ -118,12 +117,17 @@ else
   context_info="0%"
 fi
 
-# Get git branch and dirty status
+# Get git branch and dirty status.
+# --no-optional-locks throughout: `git status` normally writes its refreshed
+# stat cache back to .git/index, taking .git/index.lock to do so. At one run
+# per message update that briefly-held lock can collide with a real git command
+# and surface as "Unable to create index.lock". The flag skips that write; the
+# --porcelain output is unchanged.
 git_branch=""
 git_dirty=""
-if git rev-parse --git-dir > /dev/null 2>&1; then
-  git_branch=$(git branch --show-current 2>/dev/null)
-  if [ -n "$git_branch" ] && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+if git --no-optional-locks rev-parse --git-dir > /dev/null 2>&1; then
+  git_branch=$(git --no-optional-locks branch --show-current 2>/dev/null)
+  if [ -n "$git_branch" ] && [ -n "$(git --no-optional-locks status --porcelain 2>/dev/null)" ]; then
     git_dirty="*"
   fi
 fi
@@ -180,10 +184,12 @@ printf " ${S}|${R} "
 printf "${L}%s %s${R}${Y}%s${R}" "$icon_branch" "$git_branch" "$git_dirty"
 printf " ${S}|${R} "
 printf "${P}%s %s${R}" "$icon_model" "$model"
-# Live session effort level (changes via /effort); absent on non-reasoning models
+# Live session effort level (changes via /effort). Rendered as "model / effort"
+# so it reads as a property of the model rather than a separate segment; the
+# whole suffix disappears on models without reasoning effort.
 if [ -n "$effort_level" ]; then
-  printf " ${S}|${R} "
-  printf "${T}%s %s${R}" "$icon_effort" "$effort_level"
+  printf " ${S}/${R} "
+  printf "${T}%s${R}" "$effort_level"
 fi
 printf " ${S}|${R} "
 printf "${M}%s %s${R}" "$icon_context" "$context_info"
