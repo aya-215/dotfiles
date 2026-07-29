@@ -170,11 +170,24 @@ for i in sorted(ids):
   # （境界の開閉・サーバ側の更新判定）を確定できていないため、従来経路を
   # 残して片方が取りこぼしても現状より悪化しないようにしてある。
   # 重複は後段の _id ベース重複排除が吸収する。
-  sresp="$(rc_api "chat.syncThreadsList" "rid=${rid}&updatedSince=${oldest}" || true)"
+  sresp="$(rc_api "chat.syncThreadsList" "rid=${rid}&updatedSince=${oldest}&count=200" || true)"
   # room_history と同じ防御: HTMLエラーページ等が返った場合に無音で
   # スレッド発見が消えないよう、JSON妥当性を検証して警告を出す。
+  # さらに `{"success":false,"error":"..."}` のように JSON としては妥当でも
+  # API 呼び出し自体が失敗している応答（トークン失効・権限エラー等）も
+  # 同様に失敗として扱う。ここを見落とすと threads キーが単に存在しない
+  # だけになり、無警告でスレッド発見が0件に戻ってしまう
+  # （＝本ブランチが直そうとしているバグそのものが再発する）。
   # 失敗しても従来の tmid/tcount 経路は生きているため処理は継続する。
-  if ! printf '%s' "$sresp" | python3 -c 'import sys,json; json.load(sys.stdin)' 2>/dev/null; then
+  if ! printf '%s' "$sresp" | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+if not isinstance(d, dict) or d.get("success") is False or "threads" not in d:
+    sys.exit(1)
+' 2>/dev/null; then
     echo "(Rocket Chat: ルーム $rid のスレッド一覧取得に失敗しスキップ)" >&2
     sresp='{"threads":{"update":[]}}'
   fi
@@ -188,7 +201,14 @@ except Exception:
 for th in (d.get("threads", {}) or {}).get("update", []) or []:
     # tlm が期間内のスレッドだけを対象にする。updatedSince が期待通り効かない
     # 場合でも、ここで絞れば古いスレッドを引き込まない。
-    if (th.get("tlm") or "") >= oldest and th.get("_id"):
+    #
+    # tlm が欠落/null の場合は fail-open で「期間内」とみなす（フォールバック
+    # は空文字列ではなく oldest 自身にする）。サーバは既に updatedSince で
+    # 絞り込んだ結果を返してきているため、tlm を持たずに返ってきたスレッドを
+    # ここで弾くのはノイズ除去ではなくデータ損失になる。ここで誤って通しても、
+    # このスレッドの全メッセージは後段の必須 ts 期間フィルタ（expand_threads
+    # 末尾）を必ず通るため、期間外メッセージが最終出力に漏れることはない。
+    if (th.get("tlm") or oldest) >= oldest and th.get("_id"):
         print(th["_id"])
 ' 2>/dev/null || true)"
   if [ -n "$stids" ]; then

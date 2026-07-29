@@ -78,6 +78,12 @@ case "$url" in
   # だけが HTML エラーページを返すケース。従来の tmid/tcount 経路のみで
   # 継続することを検証する。
   *chat.syncThreadsList*rid=room-syncfail*) echo '<html>error</html>'; exit 0 ;;
+  # room-syncfalse: syncThreadsList が JSON としては妥当だが
+  # `{"success":false,...}` を返すケース（トークン失効・権限エラー等）。
+  # JSONパース可否だけを見るガードだとこれを素通りさせてしまい、
+  # threads キー不在のまま無警告でスレッド発見が0件に戻る
+  # （本ブランチが直す対象のバグの再発）ため専用に fixture 化する。
+  *chat.syncThreadsList*rid=room-syncfalse*) echo '{"success":false,"error":"unauthorized"}'; exit 0 ;;
   # 上記以外のルームの syncThreadsList は空を返す（既定）。
   *chat.syncThreadsList*) echo '{"success":true,"threads":{"update":[],"remove":[]}}'; exit 0 ;;
   *chat.getThreadMessages*tmid=thr-ejikunabi-4*) cat "$RC_FIXTURE_DIR/thread-ejikunabi-4.json"; exit 0 ;;
@@ -173,7 +179,8 @@ cat > "$TMP/fixtures/rooms.json" <<'EOF'
  {"_id":"room-newline","t":"c","name":"newline-safe-room","lm":"2026-07-22T14:00:00.000Z"},
  {"_id":"room-tfail","t":"c","name":"thread-fetch-fail-room","lm":"2026-07-22T15:00:00.000Z"},
  {"_id":"room-emptyhist","t":"c","name":"empty-history-room","lm":"2026-07-22T17:00:00.000Z"},
- {"_id":"room-syncfail","t":"c","name":"sync-fail-room","lm":"2026-07-22T16:00:00.000Z"}
+ {"_id":"room-syncfail","t":"c","name":"sync-fail-room","lm":"2026-07-22T16:00:00.000Z"},
+ {"_id":"room-syncfalse","t":"c","name":"sync-false-room","lm":"2026-07-22T18:00:00.000Z"}
 ]}
 EOF
 
@@ -791,5 +798,14 @@ assert_grep "syncThreadsList失敗がstderrに記録される" \
   "ルーム room-syncfail のスレッド一覧取得に失敗しスキップ" "$err"
 assert_grep "syncThreadsList失敗後も他のルームは正常処理される" \
   "mori.a-times" "$out"
+
+# syncThreadsList が JSON としては妥当だが success:false を返す場合も、
+# HTMLエラーページ等のパース不能ケースと同様に失敗として扱い stderr に
+# 警告することを検証する（Finding 1: JSONパース可否だけのガードだと
+# success:false は素通りし、無警告でスレッド発見が0件に戻っていた）。
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 2>"$TMP/syncfalse.err")"
+err="$(cat "$TMP/syncfalse.err")"
+assert_grep "syncThreadsListがsuccess:falseの場合もstderrに記録される" \
+  "ルーム room-syncfalse のスレッド一覧取得に失敗しスキップ" "$err"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi
