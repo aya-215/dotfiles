@@ -275,6 +275,17 @@ wc -c            → 42           （どちらでも同じ）
 
 ## 既知の限界（未対応）
 
+> **【2026-07-29 更新】この節のスレッド取り逃し問題は解消済み。**
+> 調査の結果、真因は「history 0件」ではなく `tshow` フィールドだった
+> （`tshow=None` の通常のスレッド返信は history に現れない）。history が
+> 6件あるルームでも取り逃していた。`chat.syncThreadsList` を使う実装に
+> 変更して解消した。下記の案A/B/C の比較は**前提が誤っていた**ため
+> 参考情報として残す（案B のコストも +16% ではなく実測 +88% だった）。
+>
+> - 調査: `docs/rocketchat-known-limits-investigation-2026-07-28.md`
+> - 設計: `docs/superpowers/specs/2026-07-29-rocketchat-thread-discovery-design.md`
+> - 計画: `docs/superpowers/plans/2026-07-29-rocketchat-thread-discovery.md`
+
 **history が0件のルームでスレッドが取り逃される。**
 
 スレッドIDは対象期間の history 内の `tmid`/`tcount` からしか集めないため、history が0件のルームでは早期 return し、**スレッド内に期間内メッセージがあっても取得されない**。ルーム自体が出力から丸ごと消える。
