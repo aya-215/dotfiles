@@ -167,7 +167,7 @@ bash ~/.dotfiles/scripts/cleanup-wsl.sh
 ```bash
 df -h /
 echo "---"
-du -sh ~/.cache/uv ~/.npm ~/.cache/pip ~/.cache/nix ~/.backup-logs /nix/store 2>/dev/null
+du -sh ~/.cache/uv ~/.npm ~/.cache/pip ~/.cache/nix /nix/store 2>/dev/null
 ```
 
 ## 削除対象一覧
@@ -181,7 +181,6 @@ du -sh ~/.cache/uv ~/.npm ~/.cache/pip ~/.cache/nix ~/.backup-logs /nix/store 2>
 | pip cache | `pip cache purge` | 低〜中頻度 |
 | Nix store | `nix-collect-garbage -d` | 古い世代を削除（ロールバック不可になる） |
 | Nix cache | `rm -rf ~/.cache/nix` | GCでは消えないキャッシュ |
-| backup-logs | `rm -rf ~/.backup-logs` | 日次バックアップのログファイル |
 
 ## 注意事項
 

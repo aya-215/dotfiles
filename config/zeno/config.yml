@@ -110,11 +110,6 @@ snippets:
     keyword: hsh
     snippet: hunk show
 
-  # バックアップ
-  - name: backup
-    keyword: bak
-    snippet: ~/.dotfiles/scripts/backup/backup-wsl-to-windows.sh
-
   # npm
   - name: npm dev
     keyword: npmd

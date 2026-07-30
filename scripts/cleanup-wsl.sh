@@ -139,19 +139,6 @@ else
 fi
 total_freed=$((total_freed + nix_cache_size))
 
-header "ログ"
-
-# backup-logs
-backup_size=$(dir_size_bytes "${HOME}/.backup-logs")
-if $DRY_RUN; then
-  result "backup-logs" "$(human_size "$backup_size")"
-else
-  rm -rf "${HOME}/.backup-logs"
-  mkdir -p "${HOME}/.backup-logs"
-  result "backup-logs" "$(human_size "$backup_size")"
-fi
-total_freed=$((total_freed + backup_size))
-
 # --- サマリー ---
 
 header "サマリー"
