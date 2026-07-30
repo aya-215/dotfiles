@@ -24,13 +24,20 @@
           set -g @resurrect-strategy-nvim 'session'
           set -g @resurrect-save 'W'
           set -g @resurrect-restore 'E'
+          # claudeペインは記録が -c 付きでも無しでも常に claude -c で復元する
+          # inline strategy = "マッチ対象->復元コマンド"
+          #   - 内側の " は resurrect が eval set するため必須 (無いと4要素に割れて無効化)
+          #   - -> の前後にスペースを入れないこと。resurrect は -> の左右を sed で
+          #     切り出すだけでtrimしないため、"claude -> ..." だと match が "claude "
+          #     (末尾スペース付き) になり ^claude<スペース2つ> となって一切マッチしない
+          set -g @resurrect-processes '"claude->claude -c"'
         '';
       }
       {
         plugin = continuum;
         extraConfig = ''
           set -g @continuum-restore 'on'
-          set -g @continuum-save-interval '15'
+          set -g @continuum-save-interval '5'
         '';
       }
       {
@@ -190,8 +197,16 @@
       bind X kill-window
 
       # ステータスライン (catppuccin modules)
+      #
+      # 先頭の #(continuum_save.sh) は continuum の自動保存フック。
+      # continuum は本来プラグイン読み込み時に status-right の先頭へこれを差し込むが、
+      # Home Manager は常にプラグインの run-shell を extraConfig より先に出力するため、
+      # ここでの set -g status-right が後から上書きしてフックを消してしまう。
+      # (結果: 復元は別経路で動くのに保存だけ止まる = 古いスナップショットしか戻らない)
+      # プラグイン順序に依存しないよう、トークンを明示的に埋め込む。
+      # パスは pkgs 経由で解決するのでプラグイン更新時も追従する (ハッシュ直書き禁止)。
       set -g status-left "#{E:@catppuccin_status_session}"
-      set -g status-right "#{E:@catppuccin_status_application}#{E:@catppuccin_status_directory}#{E:@catppuccin_status_date_time}"
+      set -g status-right "#(${pkgs.tmuxPlugins.continuum}/share/tmux-plugins/continuum/scripts/continuum_save.sh)#{E:@catppuccin_status_application}#{E:@catppuccin_status_directory}#{E:@catppuccin_status_date_time}"
       set -g status-right-length 150
       set -g status-left-length 100
 
