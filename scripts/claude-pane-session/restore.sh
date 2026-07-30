@@ -111,6 +111,19 @@ sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank
 # UUID形式でなければ壊れた記録として扱う
 [[ "$sid" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || fallback
 
-# -r が失敗した場合(会話が削除された等)も -c で起動できるようにする。
-# claude -r は存在しないIDに対して終了コード1を返す。
-claude -r "$sid" || exec claude -c
+# 会話が実在するか先に確認し、claude は必ず exec で起動する。
+#
+# exec が必須な理由: exec しないと このスクリプトがプロセスツリーに残り、
+# resurrect が次回の保存時にフルコマンドを
+#   bash .../restore.sh
+# として記録してしまう。restore.sh は ^claude にマッチしないため、
+# 2回目以降の復元で claude が一切起動しなくなる(実測で再現)。
+#
+# そのため `claude -r || claude -c` というフォールバックは使えない。
+# 代わりに会話ファイルの存在を事前に確認して分岐する。
+# 履歴の場所は ~/.claude/projects/<パスの記号を-に置換>/<session_id>.jsonl
+proj_dir="$HOME/.claude/projects/$(printf '%s' "$p_path" | sed 's/[^a-zA-Z0-9]/-/g')"
+if [[ -f "$proj_dir/$sid.jsonl" ]]; then
+  exec claude -r "$sid"
+fi
+fallback

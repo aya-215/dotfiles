@@ -174,7 +174,24 @@
       # Tmux auto-start
       # ======================
       if [[ -z "$TMUX" ]] && [[ $- == *i* ]] && [[ "$TERM_PROGRAM" != "vscode" ]]; then
-        tmux attach 2>/dev/null || tmux new-session -s main
+        # flock で直列化する理由:
+        #   WezTermが複数ペイン/タブを同時に開くと、複数のzshが同時にここへ来る。
+        #   サーバ未起動の一瞬に複数が new-session を叩くと tmux クライアントが
+        #   2プロセス並ぶ。tmux-continuum は
+        #   another_tmux_server_running_on_startup() でクライアント数を数えており、
+        #   2以上だと「別サーバがある」と誤認して自動復元を丸ごと抑止する。
+        #   結果 main セッションだけが立ち、復元されたセッションが1つも出ない。
+        #   (実測で再現。wsl --shutdown 直後に発生しやすい)
+        #
+        #   ロックで直列化し、最初の1つがサーバを作り終えてから後続が attach
+        #   するようにすれば、起動時点のクライアントは1つだけになる。
+        #   -o が必須。tmux サーバはロックfdを継承したまま常駐するため、
+        #   -o (close-on-exec) を付けないとロックが永久に解放されず後続の
+        #   シェルがハングする(実測で確認)。
+        #   サーバ生成だけを直列化し、attach はロック外で行う。
+        flock -o "''${XDG_RUNTIME_DIR:-/tmp}/.tmux-autostart-$UID.lock" \
+          sh -c 'tmux has-session 2>/dev/null || tmux new-session -ds main </dev/null >/dev/null 2>&1'
+        exec tmux attach
       fi
 
       # ======================
