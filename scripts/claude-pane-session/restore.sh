@@ -68,18 +68,22 @@ rank=$(tmux list-panes -t "$s_name:$w_index" \
 # rank 番目を取る。畳む前に並べると、追記された世代違いの記録
 # (同じ pane_index の複数行) が別ペインの枠を埋めてしまう。
 sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank" '
-  # 1パス目相当: 終了済み(tombstone)の session_id を集める。
-  # SessionEnd で追記されるため、閉じたペインの会話は候補から外れる。
+  # 終了済み(tombstone)を集める。
+  # 6列 END は座標つき: その枠の記録だけを無効化する。
+  #   同じ会話を複数ペインで開いていた場合(claude -c 直後など)、片方が
+  #   /resume で離脱しただけで両方の記録が死ぬのを防ぐ。
+  # 2列 END は座標不明(tmux外での終了。旧形式も同じ扱い): 全枠に効かせる。
+  $1 == "END" && NF >= 6 {
+    if ($2 == s && $3 == w && $5 == path) deadslot[($4 + 0) SUBSEP $6] = 1
+    next
+  }
   $1 == "END" && NF >= 2 { dead[$2] = 1; next }
   NF >= 5 && $1 == s && $2 == w && $4 == path {
     pi = $3 + 0
-    # 同じ session_id を持つ他の枠は古い記録として捨てる。
-    # session_id は同時に1ペインしか占有できない(claude --session-id が
-    # already in use で拒否する)。これを許すと同じ会話が複数の枠に残り、
-    # 片方の枠での復活が他方の古い記録まで生き返らせて、複数ペインが
-    # 同じ会話を引いてしまう(解決したかった元の問題の再発)。
-    for (q in latest) if (q + 0 != pi && latest[q] == $5) delete latest[q]
     latest[pi] = $5          # 同じ pane_index は後の行(=最新)で上書き
+    # 先行する無効化を打ち消す(復活)。END の後に同じ記録が来るのは
+    # 会話を閉じて -c / -r で再開した場合であり、後の行が最新の事実。
+    delete deadslot[pi SUBSEP $5]
     # 先行する END を打ち消す(復活)。同じ session_id が END された後に
     # 再度記録されることがあるため(終了→resume 等)、tombstone を永久扱いに
     # すると生きている会話を抑止してしまう。マップは追記のみなので
@@ -96,7 +100,8 @@ sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank
     # latest[] のキーは常に一意なので、ここから集めれば重複しない。
     cnt = 0
     for (pi in latest)
-      if (latest[pi] != "" && !(latest[pi] in dead)) order[cnt++] = pi + 0
+      if (latest[pi] != "" && !(latest[pi] in dead) &&
+          !((pi + 0) SUBSEP latest[pi] in deadslot)) order[cnt++] = pi + 0
     for (i = 0; i < cnt; i++)
       for (j = i + 1; j < cnt; j++)
         if (order[j] < order[i]) { t = order[i]; order[i] = order[j]; order[j] = t }

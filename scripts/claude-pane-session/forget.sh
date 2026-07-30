@@ -21,9 +21,13 @@
 #   ファイルを読んで書き戻す方式(awk > tmp && mv)だと、その間に来た
 #   追記を取りこぼす。追記のみなら競合しない。
 #
-# 座標ではなく session_id をキーに無効化する:
-#   /clear や compact は(実測では SessionEnd を出さないが)新しい session_id を
-#   発行しつつペインは生き続ける。座標で消すと生存中の会話を無効化しうる。
+# 座標も一緒に記録する理由:
+#   session_id だけで無効化すると、同じ会話を複数ペインで開いていた場合に
+#   片方が離脱しただけで両方の記録が死ぬ。
+#     例: claude -c で両ペインが同じ会話を開く → 片方で /resume して別会話へ
+#         → 離脱側のSessionEndが、残った側の記録まで無効化してしまう
+#   座標つきで記録し、restore.sh 側で (座標, session_id) の組で照合すれば
+#   離脱したペインの枠だけを無効化できる。
 
 set -uo pipefail
 
@@ -40,8 +44,21 @@ session_id=$(printf '%s' "$input" | jq -r '.session_id // empty')
 # UUID形式でなければ何もしない(不正な値でマップを汚さない)
 [[ "$session_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || exit 0
 
-# 形式: END <TAB> <session_id>
-# 通常のレコードは5列で1列目がsession名。1列目 END で区別する。
-printf 'END\t%s\n' "$session_id" >> "$MAP_FILE"
+# 形式: END <TAB> session名 <TAB> window_index <TAB> pane_index <TAB> パス <TAB> session_id
+# 通常の記録行は5列で1列目がsession名。1列目 END で区別する。
+#
+# 座標が取れない場合(tmux外での終了など)は END + session_id の2列で書く。
+# restore.sh は2列のENDを「座標不明=全枠に効く」として扱う(旧形式互換)。
+coords=""
+if [[ -n "${TMUX_PANE:-}" ]] && command -v tmux >/dev/null 2>&1; then
+  coords=$(tmux display-message -p -t "$TMUX_PANE" \
+    '#{session_name}	#{window_index}	#{pane_index}	#{pane_current_path}' 2>/dev/null)
+fi
+
+if [[ -n "$coords" ]]; then
+  printf 'END\t%s\t%s\n' "$coords" "$session_id" >> "$MAP_FILE"
+else
+  printf 'END\t%s\n' "$session_id" >> "$MAP_FILE"
+fi
 
 exit 0
