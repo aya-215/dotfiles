@@ -75,6 +75,11 @@ sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank
     pi = $3 + 0
     if (!(pi in latest)) order[cnt++] = pi
     latest[pi] = $5          # 同じ pane_index は後の行(=最新)で上書き
+    # 先行する END を打ち消す(復活)。同じ session_id が END された後に
+    # 再度記録されることがあるため(終了→resume 等)、tombstone を永久扱いに
+    # すると生きている会話を抑止してしまう。マップは追記のみなので
+    # ファイル順 = 時系列であり、後に来た記録行が最新の事実になる。
+    delete dead[$5]
   }
   END {
     # tombstone された session_id を持つ枠を落として詰める。
