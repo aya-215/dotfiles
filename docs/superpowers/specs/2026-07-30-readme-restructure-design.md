@@ -116,6 +116,11 @@ Windows のセットアップ経路が2つ存在し、`scripts/setup/install.ps1
 `.\scripts\install.ps1` を案内しているが、2025-12-10 の `scripts/setup/` への移動
 （`076f1f6`）で存在しないパスになっている。`bootstrap\install.ps1` に修正する。
 
+### `bootstrap/install.ps1:8-9` の clone 先修正
+
+`$env:USERPROFILE\.dotfiles` への clone を案内しているが、実機に存在しない（後述）。
+実際に使われている `D:\git\dotfiles` に修正する。
+
 ### `PowerShell/`（空ディレクトリ）の削除
 
 git は空ディレクトリを追跡しないため（`git ls-files PowerShell/` は0件）、
@@ -124,13 +129,27 @@ L419 のリンク切れは README 編集で解消される。
 
 ## clone 2つ構成の書き方（§2）
 
-`bootstrap/install.ps1:8` は `%USERPROFILE%\.dotfiles` への clone を案内し、
-CLAUDE.md は `D:\git\dotfiles` を「WezTerm/AHK が読む実体」とする。
-これは初回セットアップ先と日常運用で参照される実体の違いであり、矛盾ではない。
+実機で確認した結果、Windows 側の clone は `D:\git\dotfiles` のみ存在する。
 
-README では「WSL 側 `~/.dotfiles` がメイン作業場」「Windows 側 clone は別実体で、
-Windows アプリの設定反映には Windows 側での `git pull` が必要」という運用上の要点を書く。
-Windows 側の具体パスは環境依存のため断定せず、両方を併記する。
+| パス | 状態 |
+|---|---|
+| `D:\git\dotfiles`（`/mnt/d/git/dotfiles`） | 実在。`main`、remote は `git@github-aya215:aya-215/dotfiles.git` |
+| `%USERPROFILE%\.dotfiles` | 存在しない（`/mnt/c/Users` 配下を `find` で確認、0件） |
+
+したがって README では併記せず `D:\git\dotfiles` と断定して書く。
+
+`bootstrap/install.ps1:8-9` が案内する `$env:USERPROFILE\.dotfiles` は実際には使われていない。
+`install-dependencies.ps1:154` と同種のパス陳腐化のため、同じ `chore:` コミットで修正する。
+
+README に書く運用上の要点:
+
+- WSL 側 `~/.dotfiles` がメイン作業場（編集・コミット・push はここ）
+- Windows 側 `D:\git\dotfiles` は別実体。WezTerm/AHK 等の Windows アプリはこちらを読む
+- Windows アプリへ設定を反映するには Windows 側で `git pull` が必要
+  （chezmoi 管理の `windows/` を変更した場合は加えて `chezmoi apply --source .\windows`）
+
+なお確認時点で Windows 側の HEAD は `e625df7`（2026-06-29）であり、WSL 側より遅れていた。
+pull 忘れが実際に起きうることの裏付けであり、§2 を前方に置く理由を補強する。
 
 ## 検証
 
@@ -141,6 +160,7 @@ Windows 側の具体パスは環境依存のため断定せず、両方を併記
 3. 削除した一覧の代替参照先（`modules/packages.nix` 等）が実在すること
 4. `install-dependencies.ps1` / `install-fonts.ps1` が `common.ps1` の削除後関数を
    参照していないこと（grep で確認）
+5. リポジトリ内に `%USERPROFILE%\.dotfiles` を案内する記述が残っていないこと（grep で確認）
 
 ## コミット分割
 
@@ -150,4 +170,5 @@ Windows 側の具体パスは環境依存のため断定せず、両方を併記
 
 1. `docs:` 本設計書
 2. `docs:` README 全面書き換え
-3. `chore:` `scripts/setup/install.ps1` 削除・`common.ps1` 未使用関数削除・案内パス修正
+3. `chore:` `scripts/setup/install.ps1` 削除・`common.ps1` 未使用関数削除・
+   `install-dependencies.ps1` と `bootstrap/install.ps1` の案内パス修正
