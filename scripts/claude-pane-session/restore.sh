@@ -73,6 +73,12 @@ sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank
   $1 == "END" && NF >= 2 { dead[$2] = 1; next }
   NF >= 5 && $1 == s && $2 == w && $4 == path {
     pi = $3 + 0
+    # 同じ session_id を持つ他の枠は古い記録として捨てる。
+    # session_id は同時に1ペインしか占有できない(claude --session-id が
+    # already in use で拒否する)。これを許すと同じ会話が複数の枠に残り、
+    # 片方の枠での復活が他方の古い記録まで生き返らせて、複数ペインが
+    # 同じ会話を引いてしまう(解決したかった元の問題の再発)。
+    for (q in latest) if (q + 0 != pi && latest[q] == $5) delete latest[q]
     if (!(pi in latest)) order[cnt++] = pi
     latest[pi] = $5          # 同じ pane_index は後の行(=最新)で上書き
     # 先行する END を打ち消す(復活)。同じ session_id が END された後に
@@ -87,7 +93,9 @@ sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank
     nc = 0
     for (i = 0; i < cnt; i++) {
       pi = order[i]
-      if (!(latest[pi] in dead)) order[nc++] = pi
+      # 空文字チェックが必要: 上で delete された枠は latest[pi] が空になり、
+      # 空文字は dead[] に無いため、これが無いと rank が空のidに当たる
+      if (latest[pi] != "" && !(latest[pi] in dead)) order[nc++] = pi
     }
     cnt = nc
     for (i = 0; i < cnt; i++)
