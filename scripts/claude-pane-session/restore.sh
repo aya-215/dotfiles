@@ -68,12 +68,23 @@ rank=$(tmux list-panes -t "$s_name:$w_index" \
 # rank 番目を取る。畳む前に並べると、追記された世代違いの記録
 # (同じ pane_index の複数行) が別ペインの枠を埋めてしまう。
 sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank" '
+  # 1パス目相当: 終了済み(tombstone)の session_id を集める。
+  # SessionEnd で追記されるため、閉じたペインの会話は候補から外れる。
+  $1 == "END" && NF >= 2 { dead[$2] = 1; next }
   NF >= 5 && $1 == s && $2 == w && $4 == path {
     pi = $3 + 0
     if (!(pi in latest)) order[cnt++] = pi
     latest[pi] = $5          # 同じ pane_index は後の行(=最新)で上書き
   }
   END {
+    # tombstone された session_id を持つ枠を落として詰める。
+    # END行はファイル後方に来るため、ここで初めて全滅判定ができる。
+    nc = 0
+    for (i = 0; i < cnt; i++) {
+      pi = order[i]
+      if (!(latest[pi] in dead)) order[nc++] = pi
+    }
+    cnt = nc
     for (i = 0; i < cnt; i++)
       for (j = i + 1; j < cnt; j++)
         if (order[j] < order[i]) { t = order[i]; order[i] = order[j]; order[j] = t }
