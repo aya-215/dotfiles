@@ -103,9 +103,14 @@ lazygit     # Git操作
 
 1. WezTermを閉じる or `wsl --shutdown`
 2. WezTermを開く → 自動でtmuxに接続
-3. continuumが前回のウィンドウ/ペイン構成を自動復元
+3. 前回のウィンドウ/ペイン構成が自動復元される
 4. claudeを開いていたペインは元の会話で起動する
 
 コールドスタート時は `modules/zsh.nix` の自動接続が `main` セッションを
 作るため、復元されたセッションとは別に `main` が並び `main` に着地する。
 `C-q f` で目的のセッションへ移る。
+
+復元は `modules/zsh.nix` の自動起動が resurrect の復元スクリプトを
+明示的に呼んでいる（`@continuum-restore` は `off`）。continuumの自動復元は
+tmuxプロセス数の推測で抑止されてしまい機能しないため。詳細は
+[tmux-claude-session-restore.md](tmux-claude-session-restore.md) を参照。
