@@ -199,11 +199,17 @@
         #   flock で直列化しても attach はロック外なので解決しない。
         #   よってプロセス数による推測に頼らず、サーバを作ったシェル自身が
         #   resurrect の復元スクリプトを直接呼ぶ(@continuum-restore は off)。
+        #   復元は run-shell でtmux内から実行する必要がある。
+        #   resurrect の restore.sh は tmux_socket() が $TMUX からソケットパスを
+        #   取得する実装のため、tmuxの外から直接起動すると $TMUX が空になり
+        #   `tmux -S "" new-session ...` となって全セッションの復元が失敗する
+        #   (実測: PID に `tmux -S  new-session -d -s ...` が残っていた)。
+        #   run-shell 経由なら tmux が $TMUX を設定した状態で実行される。
         flock -o "''${XDG_RUNTIME_DIR:-/tmp}/.tmux-autostart-$UID.lock" sh -c '
           tmux has-session 2>/dev/null || {
             tmux new-session -ds main </dev/null >/dev/null 2>&1
             restore_script=$(tmux show -gv @resurrect-restore-script-path 2>/dev/null)
-            [ -x "$restore_script" ] && "$restore_script" >/dev/null 2>&1
+            [ -n "$restore_script" ] && tmux run-shell "$restore_script" >/dev/null 2>&1
           }
         '
         exec tmux attach
