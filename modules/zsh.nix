@@ -189,8 +189,23 @@
         #   -o (close-on-exec) を付けないとロックが永久に解放されず後続の
         #   シェルがハングする(実測で確認)。
         #   サーバ生成だけを直列化し、attach はロック外で行う。
-        flock -o "''${XDG_RUNTIME_DIR:-/tmp}/.tmux-autostart-$UID.lock" \
-          sh -c 'tmux has-session 2>/dev/null || tmux new-session -ds main </dev/null >/dev/null 2>&1'
+        #
+        # 復元を明示的に呼ぶ理由:
+        #   tmux-continuum の自動復元は another_tmux_server_running_on_startup()
+        #   でtmuxプロセス数を数え、2以上なら「別サーバがある」と判断して
+        #   復元を抑止する。しかし `tmux new-session` は常にクライアントと
+        #   サーバの2プロセスになり(実測)、さらに他のシェルの `tmux attach` が
+        #   同時に生きているため、この数は構造的に2以上になる。
+        #   flock で直列化しても attach はロック外なので解決しない。
+        #   よってプロセス数による推測に頼らず、サーバを作ったシェル自身が
+        #   resurrect の復元スクリプトを直接呼ぶ(@continuum-restore は off)。
+        flock -o "''${XDG_RUNTIME_DIR:-/tmp}/.tmux-autostart-$UID.lock" sh -c '
+          tmux has-session 2>/dev/null || {
+            tmux new-session -ds main </dev/null >/dev/null 2>&1
+            restore_script=$(tmux show -gv @resurrect-restore-script-path 2>/dev/null)
+            [ -x "$restore_script" ] && "$restore_script" >/dev/null 2>&1
+          }
+        '
         exec tmux attach
       fi
 

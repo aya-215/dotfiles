@@ -42,7 +42,15 @@
       {
         plugin = continuum;
         extraConfig = ''
-          set -g @continuum-restore 'on'
+          # 自動復元は使わない。continuum は
+          # another_tmux_server_running_on_startup() でtmuxプロセス数を数え、
+          # 2以上だと復元を抑止するが、`tmux new-session` は常にクライアントと
+          # サーバの2プロセスになり、他シェルの `tmux attach` も同時に生きるため
+          # この数は構造的に2以上になる(実測)。結果 main だけが立ち復元されない。
+          # 代わりに modules/zsh.nix の自動起動が、サーバを作った時点で
+          # resurrect の復元スクリプトを直接呼ぶ(決定的に発火させる)。
+          # なお自動保存は status-right に埋めたトークンで動くため影響しない。
+          set -g @continuum-restore 'off'
           set -g @continuum-save-interval '5'
         '';
       }
