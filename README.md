@@ -4,21 +4,6 @@
 
 このREADMEは入口です。詳細は各章のリンク先か、設定のソースファイルを参照してください。
 
-## ⚠️ clone が2つある構成
-
-同じ remote の clone が**2つ、別実体として**存在する。シンボリックリンクではない。
-
-| clone | 役割 |
-|---|---|
-| `~/.dotfiles`（WSL側） | **メイン作業場**。編集・コミット・push はここで行う |
-| `D:\git\dotfiles`（Windows側） | WezTerm/AutoHotkey 等の Windows アプリが読む実体。基本は `git pull` するだけ |
-
-**WSL側を編集しただけでは Windows アプリに反映されない。** 反映手順:
-
-1. `~/.dotfiles` で編集 → コミット → push
-2. Windows 側で `cd D:\git\dotfiles && git pull`
-3. chezmoi 管理の `windows/` を変更した場合のみ、加えて `chezmoi apply --source .\windows`
-
 ## 構成
 
 ```
@@ -73,10 +58,13 @@ nix run home-manager/master -- switch --flake .
 
 **前提**: Windows 11 + PowerShell 7+（pwsh）、winget、SSHキー（`github-aya215` エイリアス）設定済み。
 
+Windows 側は WSL 側とは別に clone する（WSL の `~/.dotfiles` を参照するのではなく、
+Windows のファイルシステム上に独立した clone を置く）。
+
 ```powershell
-# 1. clone
-git clone git@github-aya215:aya-215/dotfiles.git D:\git\dotfiles
-cd D:\git\dotfiles
+# 1. clone（配置先は任意）
+git clone git@github-aya215:aya-215/dotfiles.git <clone先>
+cd <clone先>
 
 # 2. 依存ツールとフォントを導入（初回のみ）
 pwsh -File .\scripts\setup\install-dependencies.ps1
@@ -85,6 +73,9 @@ pwsh -File .\scripts\setup\install-fonts.ps1      # HackGen Nerd Font
 # 3. 設定を適用（chezmoi導入・XDG_CONFIG_HOME設定・chezmoi apply までを行う）
 pwsh -ExecutionPolicy Bypass -File .\bootstrap\install.ps1
 ```
+
+WSL 側で設定を変更した場合、Windows アプリに反映するには Windows 側の clone で `git pull` が必要。
+chezmoi 管理の `windows/` を変更した場合は加えて `chezmoi apply --source .\windows` を実行する。
 
 #### 管理対象ファイル
 

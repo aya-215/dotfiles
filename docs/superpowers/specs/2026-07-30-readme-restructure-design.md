@@ -38,7 +38,7 @@ README は実態の写しを持たない。「何があるか」と「どこを�
 | 章 | 内容 | 現READMEからの変化 |
 |---|---|---|
 | 1. 概要 | Nix/HM による宣言的管理、WSL/Windows の二層構成 | 維持 |
-| 2. clone 2つ構成の注意 | `~/.dotfiles`（WSL・メイン作業場）と Windows 側 clone は別実体 | **新規**（事故防止のため前方配置） |
+| 2.（欠番） | 当初は clone 2つ構成の章を置く設計だったが取り下げた（→「clone 2つ構成の扱い」） | — |
 | 3. 構成 | ディレクトリツリー + 各1行説明 | 実態同期・縮約 |
 | 4. セットアップ | WSL（Nix）/ Windows（依存導入 → bootstrap の2段） | 実態同期 |
 | 5. 日常運用 | 編集 → `home-manager switch` → commit → push | 維持 |
@@ -119,7 +119,7 @@ Windows のセットアップ経路が2つ存在し、`scripts/setup/install.ps1
 ### `bootstrap/install.ps1:8-9` の clone 先修正
 
 `$env:USERPROFILE\.dotfiles` への clone を案内しているが、実機に存在しない（後述）。
-実際に使われている `D:\git\dotfiles` に修正する。
+具体パスは焼き込まず `<clone先>` に一般化する。
 
 ### `PowerShell/`（空ディレクトリ）の削除
 
@@ -127,29 +127,28 @@ git は空ディレクトリを追跡しないため（`git ls-files PowerShell/
 削除してもコミットに差分は出ない。ローカルの掃除としてのみ実施する。
 L419 のリンク切れは README 編集で解消される。
 
-## clone 2つ構成の書き方（§2）
+## clone 2つ構成の扱い（章として設けない）
 
-実機で確認した結果、Windows 側の clone は `D:\git\dotfiles` のみ存在する。
+当初は「clone が2つある構成」を独立章として冒頭に置く設計だったが、これは誤りと判断して取り下げた。
 
-| パス | 状態 |
-|---|---|
-| `D:\git\dotfiles`（`/mnt/d/git/dotfiles`） | 実在。`main`、remote は `git@github-aya215:aya-215/dotfiles.git` |
-| `%USERPROFILE%\.dotfiles` | 存在しない（`/mnt/c/Users` 配下を `find` で確認、0件） |
+理由:
 
-したがって README では併記せず `D:\git\dotfiles` と断定して書く。
+1. **README の役割から外れる。** clone がどこに置かれているかは特定マシンの環境状態であり、
+   リポジトリの性質ではない。具体パスを書くと別マシンでは即座に嘘になる。
+2. **読者が違う。** 「push を忘れると Windows アプリに反映されない」という運用知識は
+   このマシンで作業する Claude 向けであり、既に CLAUDE.md に記載がある。README に書くと二重管理になる。
+3. **本方針と矛盾する。** 「README は実態の写しを持たない」としてパッケージ表を削除しながら、
+   マシン固有の状態を新たに書き加えるのは一貫しない。
 
-`bootstrap/install.ps1:8-9` が案内する `$env:USERPROFILE\.dotfiles` は実際には使われていない。
-`install-dependencies.ps1:154` と同種のパス陳腐化のため、同じ `chore:` コミットで修正する。
+代わりに、Windows セットアップ手順（§4）の中で「Windows 側は WSL 側とは別に clone する」という
+リポジトリの性質としての事実のみ書き、clone 先は `<clone先>` として一般化する。
+反映には Windows 側での `git pull` が必要である点も同じ章に置く。
 
-README に書く運用上の要点:
+同じ理由から、`bootstrap/install.ps1` のコメントにも具体パスを焼き込まない。
+`$env:USERPROFILE\.dotfiles` は実機に存在しなかったため（`/mnt/c/Users` 配下を `find` で確認、0件）、
+`<clone先>` に置き換える。
 
-- WSL 側 `~/.dotfiles` がメイン作業場（編集・コミット・push はここ）
-- Windows 側 `D:\git\dotfiles` は別実体。WezTerm/AHK 等の Windows アプリはこちらを読む
-- Windows アプリへ設定を反映するには Windows 側で `git pull` が必要
-  （chezmoi 管理の `windows/` を変更した場合は加えて `chezmoi apply --source .\windows`）
-
-なお確認時点で Windows 側の HEAD は `e625df7`（2026-06-29）であり、WSL 側より遅れていた。
-pull 忘れが実際に起きうることの裏付けであり、§2 を前方に置く理由を補強する。
+`install-dependencies.ps1:154` の死んだパス修正は当初どおり実施する。
 
 ## 検証
 
