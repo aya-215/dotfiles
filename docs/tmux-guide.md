@@ -56,12 +56,21 @@ prefix: `C-q` (Ctrl+q)
 
 ## セッション復元
 
-自動で動作する（continuum + resurrect）。手動で復元したい場合:
+自動で動作する（continuum + resurrect）。5分間隔で保存され、tmux起動時に復元される。
 
 | キー | 動作 |
 |---|---|
-| `C-q Ctrl+s` | 手動保存 |
-| `C-q Ctrl+r` | 手動復元 |
+| `C-q W` | 手動保存 |
+| `C-q E` | 手動復元 |
+
+`wsl --shutdown` はVMを即停止するため保存の余地がない。最大5分ぶん取りこぼす
+可能性があるので、意図的に落とすときは `C-q W` を挟むと確実。
+
+復元されるもの: セッション名・ウィンドウ・ペイン構成・cwd・claudeの会話
+復元されないもの: プロセスのメモリ状態・スクロールバック
+
+claudeペインの会話復元の仕組みは
+[tmux-claude-session-restore.md](tmux-claude-session-restore.md) を参照。
 
 ## よくあるワークフロー
 
@@ -92,6 +101,11 @@ lazygit     # Git操作
 
 ### ターミナルを閉じて翌日再開
 
-1. WezTermを閉じる or WSLを再起動
+1. WezTermを閉じる or `wsl --shutdown`
 2. WezTermを開く → 自動でtmuxに接続
 3. continuumが前回のウィンドウ/ペイン構成を自動復元
+4. claudeを開いていたペインは元の会話で起動する
+
+コールドスタート時は `modules/zsh.nix` の自動接続が `main` セッションを
+作るため、復元されたセッションとは別に `main` が並び `main` に着地する。
+`C-q f` で目的のセッションへ移る。
