@@ -79,7 +79,6 @@ sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank
     # 片方の枠での復活が他方の古い記録まで生き返らせて、複数ペインが
     # 同じ会話を引いてしまう(解決したかった元の問題の再発)。
     for (q in latest) if (q + 0 != pi && latest[q] == $5) delete latest[q]
-    if (!(pi in latest)) order[cnt++] = pi
     latest[pi] = $5          # 同じ pane_index は後の行(=最新)で上書き
     # 先行する END を打ち消す(復活)。同じ session_id が END された後に
     # 再度記録されることがあるため(終了→resume 等)、tombstone を永久扱いに
@@ -90,14 +89,14 @@ sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank
   END {
     # tombstone された session_id を持つ枠を落として詰める。
     # END行はファイル後方に来るため、ここで初めて全滅判定ができる。
-    nc = 0
-    for (i = 0; i < cnt; i++) {
-      pi = order[i]
-      # 空文字チェックが必要: 上で delete された枠は latest[pi] が空になり、
-      # 空文字は dead[] に無いため、これが無いと rank が空のidに当たる
-      if (latest[pi] != "" && !(latest[pi] in dead)) order[nc++] = pi
-    }
-    cnt = nc
+    # 生存している枠だけを latest[] から集める。
+    # 出現順を記録する配列を持たない理由: evict で枠を delete した後に
+    # 同じ枠が再登録されると、出現順の配列に同じ枠が二重に入り、
+    # 別々の rank が同じ枠を指してしまう(複数ペインが同一会話を引く)。
+    # latest[] のキーは常に一意なので、ここから集めれば重複しない。
+    cnt = 0
+    for (pi in latest)
+      if (latest[pi] != "" && !(latest[pi] in dead)) order[cnt++] = pi + 0
     for (i = 0; i < cnt; i++)
       for (j = i + 1; j < cnt; j++)
         if (order[j] < order[i]) { t = order[i]; order[i] = order[j]; order[j] = t }
