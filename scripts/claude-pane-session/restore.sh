@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tmux-resurrect の復元コマンド (@resurrect-processes から呼ばれる)。
-# 実行中のペイン座標に対応する Claude Code の session_id を引き当て、
+# 実行中のペインに対応する Claude Code の session_id を引き当て、
 # `claude -r <session_id>` でその会話を復元する。
 #
 # これが必要な理由:
@@ -10,8 +10,21 @@
 #   (`claude --session-id <既存UUID>` は "already in use" で再開不可なので
 #    復元には使えない。再開は `-r` のみ)
 #
+# 引き当ての方針: パスを主キーにし、同一パス内の順位(rank)で区別する
+#   1. 自分のパスと、同一ウィンドウ内で同じパスを持つペインのうち
+#      pane_index 順で自分が何番目か(rank)を求める
+#   2. マップから同じ (session名, window_index, パス) の記録を集め、
+#      pane_index ごとに最新の session_id へ畳んでから pane_index 順に並べる
+#   3. 同じ rank の記録を採用する
+#
+#   pane_index を直接キーにしない理由: 下位indexのペインを閉じると
+#   pane_index が繰り上がってズレるため、別ペインの会話を引いてしまう。
+#   パス主キー + 同一パス内 rank なら、index がズレてもパス構成が
+#   変わらなければ正しい会話に復元できる。
+#
 # resurrect は send-keys でこのスクリプトをペイン内で実行するため、
 # 実行時には TMUX_PANE と cwd が復元済みの正しい値になっている。
+# 各ペインで独立に実行されるので、判定は自ペインから見える情報のみで行う。
 #
 # fail-soft: 対応が見つからない/壊れている場合は必ず `claude -c` に
 # フォールバックする。ペインが空のまま残ることはない。
@@ -28,20 +41,48 @@ fallback() {
 [[ -r "$MAP_FILE" ]] || fallback
 command -v tmux >/dev/null 2>&1 || fallback
 
-coords=$(tmux display-message -p -t "$TMUX_PANE" \
-  '#{session_name}	#{window_index}	#{pane_index}' 2>/dev/null) || fallback
-[[ -n "$coords" ]] || fallback
+# 自ペインの座標とパスを取得
+self=$(tmux display-message -p -t "$TMUX_PANE" \
+  '#{session_name}	#{window_index}	#{pane_index}	#{pane_current_path}' 2>/dev/null) || fallback
+[[ -n "$self" ]] || fallback
 
-# 同一座標の記録のうち最後の行(=最新)を採用する
-sid=$(awk -F'\t' -v c="$coords" '
-  { key = $1 "\t" $2 "\t" $3 }
-  key == c { last = $4 }
-  END { if (last != "") print last }
-' "$MAP_FILE" 2>/dev/null) || fallback
+IFS=$'\t' read -r s_name w_index p_index p_path <<< "$self"
+[[ -n "$s_name" && -n "$w_index" && -n "$p_index" && -n "$p_path" ]] || fallback
+
+# 同一ウィンドウ内で同じパスを持つペインのうち、自分が pane_index 順で何番目か
+rank=$(tmux list-panes -t "$s_name:$w_index" \
+  -F '#{pane_index}	#{pane_current_path}' 2>/dev/null |
+  awk -F'\t' -v path="$p_path" -v me="$p_index" '
+    $2 == path { idx[n++] = $1 + 0 }
+    END {
+      # pane_index の昇順に並べて自分の位置を返す
+      for (i = 0; i < n; i++)
+        for (j = i + 1; j < n; j++)
+          if (idx[j] < idx[i]) { t = idx[i]; idx[i] = idx[j]; idx[j] = t }
+      for (i = 0; i < n; i++) if (idx[i] == me + 0) { print i; exit }
+    }') || fallback
+[[ -n "$rank" ]] || fallback
+
+# マップから同じ (session名, window_index, パス) の記録を集める。
+# pane_index ごとに最新の session_id へ畳んでから pane_index 順に並べ、
+# rank 番目を取る。畳む前に並べると、追記された世代違いの記録
+# (同じ pane_index の複数行) が別ペインの枠を埋めてしまう。
+sid=$(awk -F'\t' -v s="$s_name" -v w="$w_index" -v path="$p_path" -v want="$rank" '
+  NF >= 5 && $1 == s && $2 == w && $4 == path {
+    pi = $3 + 0
+    if (!(pi in latest)) order[cnt++] = pi
+    latest[pi] = $5          # 同じ pane_index は後の行(=最新)で上書き
+  }
+  END {
+    for (i = 0; i < cnt; i++)
+      for (j = i + 1; j < cnt; j++)
+        if (order[j] < order[i]) { t = order[i]; order[i] = order[j]; order[j] = t }
+    if (want + 0 < cnt) print latest[order[want + 0]]
+  }' "$MAP_FILE" 2>/dev/null) || fallback
 
 # UUID形式でなければ壊れた記録として扱う
 [[ "$sid" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || fallback
 
 # -r が失敗した場合(会話が削除された等)も -c で起動できるようにする。
-# exec せず、失敗時にフォールバックできる形にする。
+# claude -r は存在しないIDに対して終了コード1を返す。
 claude -r "$sid" || exec claude -c
