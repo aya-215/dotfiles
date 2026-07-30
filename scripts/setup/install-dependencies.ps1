@@ -151,7 +151,8 @@ if ($DryRun) {
     Write-Info ""
     Write-Info "次のステップ:"
     Write-Info "  1. ターミナルを再起動してください（PATHを反映するため）"
-    Write-Info "  2. dotfilesをインストール: .\scripts\install.ps1"
+    Write-Info "  2. フォントをインストール: .\scripts\setup\install-fonts.ps1"
+    Write-Info "  3. dotfilesを適用: .\bootstrap\install.ps1"
 } else {
     Write-Warning "一部の依存関係でエラーが発生しました"
     Write-Info "エラーメッセージを確認して、手動でインストールしてください"

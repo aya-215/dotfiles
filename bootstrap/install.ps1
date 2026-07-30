@@ -4,10 +4,13 @@
 #   pwsh -ExecutionPolicy Bypass -File .\bootstrap\install.ps1
 #
 # 使い方（初回・リポジトリ未クローンの場合）:
-#   まずSSHキーを設定してから:
-#   git clone git@github-aya215:aya-215/dotfiles.git $env:USERPROFILE\.dotfiles
-#   cd $env:USERPROFILE\.dotfiles
+#   まずSSHキーを設定してから、Windows側の任意の場所にクローンする:
+#   git clone git@github-aya215:aya-215/dotfiles.git <clone先>
+#   cd <clone先>
 #   pwsh -ExecutionPolicy Bypass -File .\bootstrap\install.ps1
+#
+# 依存ツール・フォントの導入は scripts/setup/ の
+# install-dependencies.ps1 と install-fonts.ps1 で先に行う。
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
