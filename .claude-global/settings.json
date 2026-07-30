@@ -71,6 +71,14 @@
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude session-start"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.dotfiles/scripts/claude-pane-session/record.sh"
+          }
+        ]
       }
     ],
     "SessionEnd": [
@@ -322,7 +330,7 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "advisorModel": "opus",
   "plansDirectory": "./.claude/plans",
   "tui": "fullscreen",

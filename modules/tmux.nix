@@ -24,13 +24,19 @@
           set -g @resurrect-strategy-nvim 'session'
           set -g @resurrect-save 'W'
           set -g @resurrect-restore 'E'
-          # claudeペインは記録が -c 付きでも無しでも常に claude -c で復元する
+          # claudeペインは restore.sh 経由で「そのペインで開いていた会話」を復元する。
+          # claude -c だと「そのディレクトリの直近の会話」になるため、同一ディレクトリに
+          # 複数ペインがあると全ペインが同じ会話になってしまう。restore.sh は
+          # SessionStart hook (scripts/claude-pane-session/record.sh) が記録した
+          # ペイン座標→session_id の対応から claude -r <id> を組み立てる。
+          # 対応が無い場合は claude -c にフォールバックする。
+          #
           # inline strategy = "マッチ対象->復元コマンド"
-          #   - 内側の " は resurrect が eval set するため必須 (無いと4要素に割れて無効化)
+          #   - 内側の " は resurrect が eval set するため必須 (無いと要素が割れて無効化)
           #   - -> の前後にスペースを入れないこと。resurrect は -> の左右を sed で
           #     切り出すだけでtrimしないため、"claude -> ..." だと match が "claude "
           #     (末尾スペース付き) になり ^claude<スペース2つ> となって一切マッチしない
-          set -g @resurrect-processes '"claude->claude -c"'
+          set -g @resurrect-processes '"claude->~/.dotfiles/scripts/claude-pane-session/restore.sh"'
         '';
       }
       {
