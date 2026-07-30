@@ -187,6 +187,64 @@ tms() {
   fi
 }
 
+# _tmux_session_name - パスからセッション名を決定
+# basename が既存セッションと衝突する場合のみ親ディレクトリを足して区別する。
+# 同一パスのセッションが既にあれば衝突扱いにせずその名前を返す（切替用）。
+_tmux_session_name() {
+  # 変数名に path は使わない: zshでは $path が $PATH と連動する特殊変数のため、
+  # local を付けても関数内の PATH が壊れて外部コマンドが見つからなくなる
+  local dir=${1%/}   # 末尾スラッシュを除去（basename が空になるのを防ぐ）
+  local base parent candidate existing_path
+  # zshのmodifierで完結させる（:t=basename相当）。tmuxはセッション名の . と : を嫌う
+  base=${${dir:t}//[.: ]/_}
+
+  # 既存セッションが無いか、あっても同じパスなら basename をそのまま使う
+  if ! tmux has-session -t="$base" 2>/dev/null; then
+    echo "$base"
+    return
+  fi
+  existing_path=$(tmux display-message -p -t "$base" '#{session_path}' 2>/dev/null)
+  if [[ $existing_path == "$dir" ]]; then
+    echo "$base"
+    return
+  fi
+
+  # 衝突: 親ディレクトリを足す（:h=dirname相当）。それでも駄目なら連番で逃がす
+  parent=${${${dir:h}:t}//[.: ]/_}
+  candidate="${parent}_${base}"
+  local i=2
+  while tmux has-session -t="$candidate" 2>/dev/null; do
+    existing_path=$(tmux display-message -p -t "$candidate" '#{session_path}' 2>/dev/null)
+    [[ $existing_path == "$dir" ]] && break
+    candidate="${parent}_${base}-${i}"
+    ((i++))
+  done
+  echo "$candidate"
+}
+
+# tmz - zoxide履歴からセッション作成/切替（tmsの~/src固定より広い範囲を対象）
+tmz() {
+  local selected
+  if [[ $# -eq 1 ]]; then
+    selected=$1
+  else
+    selected=$(zoxide query -l | fzf --prompt="Zoxide> " --height=40% --reverse \
+      --preview 'eza -la --icons --group-directories-first {} 2>/dev/null || ls -la {}')
+  fi
+  [[ -z $selected ]] && return 0
+  [[ -d $selected ]] || { echo "Not a directory: $selected" >&2; return 1; }
+
+  local selected_name
+  selected_name=$(_tmux_session_name "$selected")
+  if [[ -z $TMUX ]]; then
+    tmux new-session -As "$selected_name" -c "$selected"
+  else
+    tmux has-session -t="$selected_name" 2>/dev/null || \
+      tmux new-session -ds "$selected_name" -c "$selected"
+    tmux switch-client -t "$selected_name"
+  fi
+}
+
 # tsw - 既存セッション間を切替
 tsw() {
   local session

@@ -199,8 +199,9 @@
       # ペインを別ウィンドウに分離
       bind b break-pane -d
 
-      # セッション切替のポップアップ (C-q g)
+      # セッション切替のポップアップ (C-q g: ~/srcのプロジェクト, C-q G: zoxide履歴)
       bind g display-popup -E -h 80% -w 80% "$SHELL -ic tms"
+      bind G display-popup -E -h 80% -w 80% "$SHELL -ic tmz"
       # 既存セッション切替 (C-q f: fzf, C-q F: tree)
       bind f display-popup -E -h 80% -w 80% "$SHELL -ic tsw"
       bind F choose-tree -s
