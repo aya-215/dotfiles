@@ -205,20 +205,29 @@
         #   `tmux -S "" new-session ...` となって全セッションの復元が失敗する
         #   (実測: PID に `tmux -S  new-session -d -s ...` が残っていた)。
         #   run-shell 経由なら tmux が $TMUX を設定した状態で実行される。
-        #   main セッションはサーバを起動するための足場。restore.sh は既存
-        #   サーバに対してしか動かないため、先にサーバを作る必要がある。
-        #   復元が成功して他のセッションが立ったら main は用済みなので削除する
-        #   (残すと再起動ごとに main が増えていく)。
-        #   復元対象が無かった場合は main が唯一のセッションなので残す。
+        #   足場セッションは __bootstrap__ という衝突しない名前で作る。
+        #   restore.sh は既存サーバに対してしか動かないため、先にサーバを
+        #   起動する必要があり、そのための空セッションが要る。
+        #
+        #   名前を main にしない理由:
+        #   保存内容に main が含まれている場合、足場の main と衝突する。
+        #   復元後に足場を削除する処理が、復元された main を消してしまう。
+        #   衝突しない名前にすれば、保存された main は通常のセッションとして
+        #   復元され、足場の削除は無条件に行える。
+        #
+        #   復元対象が無かった場合は足場をそのまま main にリネームして残す。
         flock -o "''${XDG_RUNTIME_DIR:-/tmp}/.tmux-autostart-$UID.lock" sh -c '
           tmux has-session 2>/dev/null || {
-            tmux new-session -ds main </dev/null >/dev/null 2>&1
+            tmux new-session -ds __bootstrap__ </dev/null >/dev/null 2>&1
             restore_script=$(tmux show -gv @resurrect-restore-script-path 2>/dev/null)
             [ -n "$restore_script" ] && tmux run-shell "$restore_script" >/dev/null 2>&1
-            # main 以外のセッションが復元されたか数える
             others=$(tmux list-sessions -F "#{session_name}" 2>/dev/null |
-                     grep -cxv main)
-            [ "''${others:-0}" -gt 0 ] && tmux kill-session -t main 2>/dev/null
+                     grep -cxv __bootstrap__)
+            if [ "''${others:-0}" -gt 0 ]; then
+              tmux kill-session -t __bootstrap__ 2>/dev/null
+            else
+              tmux rename-session -t __bootstrap__ main 2>/dev/null
+            fi
           }
         '
         exec tmux attach
