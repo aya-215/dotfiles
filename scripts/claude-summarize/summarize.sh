@@ -1,10 +1,12 @@
 #!/bin/bash
-# summarize.sh - セッション JSONL 1本を Haiku で7項目要約し、sessions/ に保存する
+# summarize.sh - セッション JSONL 1本を7項目要約し、sessions/ に保存する
 #
-# extract.py で前処理（text + ツールメタ抽出）してから claude -p --model haiku に渡す。
+# extract.py で前処理（text + ツールメタ抽出）してから claude -p に渡す。
+# モデルはサイズで段階ルーティングする（LARGE_THRESHOLD 超なら 1M コンテキスト側）。
 # frontmatter と出力ファイルの構造はスクリプトが決定的に組み立て、Haiku には本文のみ生成させる
 # （LLM に構造を任せると frontmatter 欠落・フェンス混入が起きるため）。
-# サブスク枠で動くため API 課金はなく、要約は軽いタスクなので Haiku で十分。
+# サブスク枠で動くため API 課金はない。要約は軽いタスクなので通常は Haiku で十分だが、
+# 長尺セッションだけは中略による情報欠落を避けるため 1M コンテキスト側へ回す。
 #
 # 使用方法:
 #   ./summarize.sh <transcript.jsonl> <session_id>
@@ -15,9 +17,21 @@ set -euo pipefail
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
 SESSIONS_ROOT="${SESSIONS_ROOT:-$HOME/.nb/claude/sessions}"
-# ★ Haiku 200K コンテキストへの安全弁（文字数上限）。超えたら切り詰める。
-#   日本語混在で概ね 1.5 文字/トークンと見て、約12万文字 ≒ 8万トークン程度に抑える。
-MAX_CHARS="${MAX_CHARS:-120000}"
+# ★ コンテキスト安全弁（文字数上限）。超えたら切り詰める。
+#   日本語混在で概ね 1.5 文字/トークンと見て、24万文字 ≒ 16万トークン。
+#   Haiku 200K 枠に収まる範囲まで引き上げてある（旧値 12万は保守的すぎ、実データ
+#   427セッション中15件で切り詰めが発生し編集ファイル46件が要約から欠落していた）。
+MAX_CHARS="${MAX_CHARS:-240000}"
+# ★ 段階ルーティング: この文字数を超えるセッションは 1M コンテキストのモデルへ回す。
+#   実データでは 240,000 字超は 427件中4件（月4回程度）。中央値は 243 字なので
+#   大多数は安価な Haiku のまま処理し、長尺セッションだけ Sonnet に回す。
+LARGE_THRESHOLD="${LARGE_THRESHOLD:-240000}"
+# 通常モデル / 長尺セッション用モデル。
+# ※ '[1m]' は角括弧を含むためグロブ展開されないよう必ずクォートして使う。
+SUMMARIZER_MODEL="${SUMMARIZER_MODEL:-haiku}"
+SUMMARIZER_MODEL_LARGE="${SUMMARIZER_MODEL_LARGE:-claude-sonnet-5[1m]}"
+# 1M コンテキスト側の切り詰め上限（実測: 892,135 字を全量投入して 38 秒で完走）
+MAX_CHARS_LARGE="${MAX_CHARS_LARGE:-950000}"
 
 transcript="${1:?usage: summarize.sh <transcript.jsonl> <session_id>}"
 session_id="${2:?usage: summarize.sh <transcript.jsonl> <session_id>}"
@@ -47,13 +61,26 @@ cwd_val="$(get_header cwd)"
 start_ts="$(get_header start)"
 end_ts="$(get_header end)"
 
-# ★ 上限ガード: extracted が極端に大きい場合は先頭2/3+末尾1/3を残す（セッションの結論・フィードバックは末尾に集中するため）
 # ロケールを固定し文字単位の切り詰めを保証する
 export LANG=ja_JP.UTF-8
-# 超過時は先頭2/3 + 末尾1/3 を残す（セッションの結論・フィードバックは末尾に集中するため）
-if [ "${#extracted}" -gt "$MAX_CHARS" ]; then
-  head_n=$((MAX_CHARS * 2 / 3))
-  tail_n=$((MAX_CHARS / 3))
+
+# ★ 段階ルーティング: 切り詰め前の実サイズでモデルを決める。
+#   長尺セッションを Haiku の枠に押し込めて中略すると、中間区間で編集した
+#   ファイルが要約から丸ごと落ちる（実データで46件の欠落を確認）。
+#   閾値超過時は 1M コンテキストのモデルに回して全量を渡す。
+model="$SUMMARIZER_MODEL"
+max_chars="$MAX_CHARS"
+if [ "${#extracted}" -gt "$LARGE_THRESHOLD" ]; then
+  model="$SUMMARIZER_MODEL_LARGE"
+  max_chars="$MAX_CHARS_LARGE"
+  echo "routing: 長尺セッション(${#extracted}字) → $model: $session_id"
+fi
+
+# ★ 上限ガード: 選択したモデルの枠を超える場合は先頭2/3+末尾1/3を残す
+# （セッションの結論・フィードバックは末尾に集中するため）
+if [ "${#extracted}" -gt "$max_chars" ]; then
+  head_n=$((max_chars * 2 / 3))
+  tail_n=$((max_chars / 3))
   extracted="${extracted:0:$head_n}
 （※ 会話が長いため、中略しています）
 ${extracted: -$tail_n}"
@@ -113,7 +140,7 @@ claude_err="$(mktemp)"
 trap 'rm -f "$claude_err"' EXIT
 for attempt in 1 2; do
   if [ "$attempt" -eq 1 ]; then prompt_for_attempt="$PROMPT"; else prompt_for_attempt="$PROMPT_RETRY"; fi
-  if ! raw="$(printf '%s' "$prompt_for_attempt" | "$CLAUDE_BIN" -p --model haiku --no-session-persistence --setting-sources '' --system-prompt "$SUMMARIZER_SYSTEM" --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
+  if ! raw="$(printf '%s' "$prompt_for_attempt" | "$CLAUDE_BIN" -p --model "$model" --no-session-persistence --setting-sources '' --system-prompt "$SUMMARIZER_SYSTEM" --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
     echo "discarded(attempt=$attempt): claude 実行失敗: $session_id"
     sed 's/^/  claude stderr: /' "$claude_err"
     continue
