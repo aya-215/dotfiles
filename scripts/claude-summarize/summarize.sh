@@ -18,9 +18,10 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
 SESSIONS_ROOT="${SESSIONS_ROOT:-$HOME/.nb/claude/sessions}"
 # ★ コンテキスト安全弁（文字数上限）。超えたら切り詰める。
-#   日本語混在で概ね 1.5 文字/トークンと見て、24万文字 ≒ 16万トークン。
 #   Haiku 200K 枠に収まる範囲まで引き上げてある（旧値 12万は保守的すぎ、実データ
 #   427セッション中15件で切り詰めが発生し編集ファイル46件が要約から欠落していた）。
+#   実測: 193,862 字（Haiku経路の実データ最大）を切り詰めなしで要約完走。
+#   これを超えると 200K 枠に入らない可能性があるため、閾値は 24万に留めている。
 MAX_CHARS="${MAX_CHARS:-240000}"
 # ★ 段階ルーティング: この文字数を超えるセッションは 1M コンテキストのモデルへ回す。
 #   実データでは 240,000 字超は 427件中4件（月4回程度）。中央値は 243 字なので
@@ -141,7 +142,9 @@ trap 'rm -f "$claude_err"' EXIT
 for attempt in 1 2; do
   if [ "$attempt" -eq 1 ]; then prompt_for_attempt="$PROMPT"; else prompt_for_attempt="$PROMPT_RETRY"; fi
   if ! raw="$(printf '%s' "$prompt_for_attempt" | "$CLAUDE_BIN" -p --model "$model" --no-session-persistence --setting-sources '' --system-prompt "$SUMMARIZER_SYSTEM" --settings '{"disableAllHooks":true}' 2>"$claude_err")"; then
-    echo "discarded(attempt=$attempt): claude 実行失敗: $session_id"
+    # モデルと投入文字数を併記する（コンテキスト超過と薄いセッション・不正出力を
+    # ログだけで切り分けられるようにする。無音の失敗で原因追跡不能になるのを防ぐ）
+    echo "discarded(attempt=$attempt): claude 実行失敗: $session_id (model=$model, ${#prompt_for_attempt}字)"
     sed 's/^/  claude stderr: /' "$claude_err"
     continue
   fi
@@ -152,7 +155,7 @@ for attempt in 1 2; do
     body="$cand"
     break
   fi
-  echo "discarded(attempt=$attempt): 必須見出し不足: $session_id"
+  echo "discarded(attempt=$attempt): 必須見出し不足: $session_id (model=$model)"
 done
 [ -n "$body" ] || exit 0
 
