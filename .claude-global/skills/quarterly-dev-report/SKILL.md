@@ -138,6 +138,29 @@ ls ${LIFE_DIR}/weekly/ | grep -E "^2025-(10|11|12)-[0-9]{2}-weekly\.md$"
 #    mcp__rocketchat__get_thread_messages
 ```
 
+#### メール履歴の収集
+
+`aya-215/life` の `mail/YYYYMMDD.md` を対象期間分読む。日報 cron が整理済みの履歴を
+保存しており、一度でも返信したスレッドのみが対象になっている。
+
+```bash
+# 四半期分をまとめて読む（存在する日だけ）
+# 文字列比較（\> \<）は zsh で解釈が異なるため、YYYYMMDD を数値として比較する
+start_num=$(echo "$START" | tr -d '-')
+end_num=$(echo "$END" | tr -d '-')
+for f in ~/src/github.com/aya-215/life/mail/*.md; do
+  [ -f "$f" ] || continue
+  ymd=$(basename "$f" .md)
+  if [ "$ymd" -ge "$start_num" ] && [ "$ymd" -le "$end_num" ]; then
+    echo "=== $ymd ==="
+    cat "$f"
+  fi
+done
+```
+
+顧客案件の進行（要件変更・スケジュール調整・デモ環境構築など）は git にも
+Rocket Chat にも現れないため、四半期の貢献を漏らさないためにこのソースを使う。
+
 取得した発言を以下の2区分に分類する：
 
 | 区分 | 判定キーワード例 |
@@ -209,3 +232,4 @@ Write ツールでファイルに保存し、パスを表示する。
 | 日報・週報が対象期間に存在しない | Part B を git/PR データのみで生成し、注記を付ける |
 | life リポの pull 失敗 | 警告表示してローカルファイルで続行 |
 | Rocket Chat から対象期間の発言が0件 | スキップして他のソースで生成 |
+| `mail/` に対象期間のファイルが無い | cron 導入前の期間。スキップして他のソースで生成 |

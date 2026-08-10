@@ -37,9 +37,23 @@ fi
 # 先に最新化する。ここで失敗したら追記しない——古い状態にコミットすると
 # push が非 fast-forward で弾かれ、以降の実行が毎回失敗し続けるため。
 # エディタの git 統合がロックを掴むことがあるので lock を除いてから実行する。
+#
+# pull は内部で fetch するが、それでも最新にならない事象が実際に起きている
+# （旧 daily-review スキルに fetch + merge --ff-only のフォールバックが
+# 実装されていた）。そのため fetch を明示し、pull 後に origin/main が
+# ローカルの先祖になっていることまで検証する。
+rm -f "$LIFE_REPO/.git/index.lock"
+if ! git -C "$LIFE_REPO" fetch --quiet origin 2>>"$LOG_FILE"; then
+  log "ERROR: git fetch に失敗したため中断"
+  exit 1
+fi
 rm -f "$LIFE_REPO/.git/index.lock"
 if ! git -C "$LIFE_REPO" pull --rebase --quiet 2>>"$LOG_FILE"; then
   log "ERROR: git pull に失敗したため中断（リポジトリを最新化できず）"
+  exit 1
+fi
+if ! git -C "$LIFE_REPO" merge-base --is-ancestor origin/main HEAD 2>/dev/null; then
+  log "ERROR: pull 後も origin/main に追いついていないため中断"
   exit 1
 fi
 

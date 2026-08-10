@@ -61,7 +61,8 @@ echo "対象期間: $start_date 〜 $end_date"
 | gitログ（AIカテゴリ） | `~/src/github.com/ebase-dev/*`、`/mnt/d/tomcat/webapps/eb-api-extended` | 日報の書き漏れを補完 |
 | gitログ（その他カテゴリ） | `/mnt/d/tomcat/webapps/hankyu` | 日報の書き漏れを補完 |
 | Rocket Chat（購読ルーム全体） | `scripts/lib/rocketchat.sh` | 自分の作業・レビュー作業・自分宛の依頼を対象期間で取得 |
-| メール（Thunderbird） | `scripts/lib/thunderbird.sh` | 社外・他部署とのやりとり（git・Rocket Chatに現れない案件連絡） |
+| メール履歴（整理済み） | `aya-215/life` の `mail/YYYYMMDD.md` | 社外・他部署とのやりとり（git・Rocket Chatに現れない案件連絡）。日報cronが保存済み |
+| メール（未保存日のみ） | `scripts/lib/thunderbird.sh` | `mail/` に無い日の補完 |
 | Claudeセッション要約 | `~/.nb/claude/sessions/YYYY-MM-DD/*.md` | git対象外の「その他」仕事関連作業（hankyu以外）を補完 |
 
 ## gh CLI の認証
@@ -192,21 +193,31 @@ bash ~/.dotfiles/scripts/lib/rocketchat.sh \
 
 ### メール取得
 
-MCP ツールは使わない。共通シェル層 `scripts/lib/thunderbird.sh` を呼ぶ。
-to/cc/bcc に自分または `ai-team@` が入っているスレッドと自分の送信メールだけが
-収集され、自動通知・庶務連絡は除外済みで届く。
+**まず `aya-215/life` の `mail/YYYYMMDD.md` を読む。** 日報 cron（22:10）が対象日ごとに
+整理済みのメール履歴を保存しているため、対象期間の各日についてこのファイルを読めば
+案件・相手・決定事項・期限が揃った状態で得られる。
+
+```bash
+# 対象期間の各日について読む（存在しない日はスキップ）
+mail_file=~/src/github.com/aya-215/life/mail/$(echo "$date" | tr -d '-').md
+[ -f "$mail_file" ] && cat "$mail_file"
+```
+
+`mail/` に無い日（cron が動く前の当日分など）だけ、共通シェル層から直接取得する。
+MCP ツールは使わない。
 
 ```bash
 bash ~/.dotfiles/scripts/lib/thunderbird.sh \
-  --from "$start_date" --to "$end_date" --no-body
+  --from "$start_date" --to "$end_date" --no-body --replied-only
 ```
 
 - **`--no-body` を必ず付ける**。本文込みは1ヶ月で約55,000文字に達し、
   週次でもチャット出力には多すぎる。work-report が必要なのは
   「どの案件で誰とやりとりしたか」であって本文ではない
-- 出力は `### 自分が返信したスレッド（最優先）` と
-  `### 宛先に入っていたスレッド（参考・件名のみ）` の2セクション。
-  前者を優先して報告に採用する
+- **`--replied-only` を必ず付ける**。一度でも返信したスレッドだけに絞られる。
+  他人同士のやりとりを CC で受けているだけのスレッドは自分の作業ではないため
+  報告に含めない（判定は過去60日の Sent を遡るので、前日までに返信した
+  スレッドの続きも残る）
 - 社外・他部署との案件連絡が主な収穫。gitログにもRocket Chatにも
   現れないため、これがないと顧客対応の実績が報告から漏れる
 - 除外リストの調整は `scripts/lib/thunderbird_collect.py` 冒頭の定数で行う
