@@ -275,25 +275,34 @@ def main():
             detail += f"・自分の返信{r['sent_count']}通"
         return f"{r['subject']}（{who} / {detail} / 最終 {r['date']}）"
 
+    no_body = os.environ.get("TB_NO_BODY") == "1"
+
     if replied:
-        out.append("### 自分が返信したスレッド（最優先・本文あり）")
-        for r in replied:
-            out.append("")
-            out.append(f"#### {header(r)}")
-            for m in r["msgs"]:
-                body = fetch_body(m["messageId"])
-                if not body:
-                    body = clean_body(m.get("snippet") or "") or "(本文なし)"
-                mark = "自分" if m.get("folder") == SENT_FOLDER else display_name(m.get("author", ""))
-                out.append(f"- **{m.get('date','')[:16]} {mark}**")
-                out.extend(f"  {ln}" for ln in body.splitlines())
+        label = "（最優先）" if no_body else "（最優先・本文あり）"
+        out.append(f"### 自分が返信したスレッド{label}")
+        if no_body:
+            out.extend(f"- {header(r)}" for r in replied)
+        else:
+            for r in replied:
+                out.append("")
+                out.append(f"#### {header(r)}")
+                for m in r["msgs"]:
+                    body = fetch_body(m["messageId"])
+                    if not body:
+                        body = clean_body(m.get("snippet") or "") or "(本文なし)"
+                    mark = ("自分" if m.get("folder") == SENT_FOLDER
+                            else display_name(m.get("author", "")))
+                    out.append(f"- **{m.get('date','')[:16]} {mark}**")
+                    out.extend(f"  {ln}" for ln in body.splitlines())
     if other:
         if replied:
             out.append("")
         out.append("### 宛先に入っていたスレッド（参考・件名のみ）")
         for r in other:
-            snippet = clean_body(r["msgs"][-1].get("snippet") or "").replace("\n", " ")[:120]
             out.append(f"- {header(r)}")
+            if no_body:
+                continue
+            snippet = clean_body(r["msgs"][-1].get("snippet") or "").replace("\n", " ")[:120]
             if snippet:
                 out.append(f"  └ {snippet}")
 

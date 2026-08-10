@@ -61,6 +61,7 @@ echo "対象期間: $start_date 〜 $end_date"
 | gitログ（AIカテゴリ） | `~/src/github.com/ebase-dev/*`、`/mnt/d/tomcat/webapps/eb-api-extended` | 日報の書き漏れを補完 |
 | gitログ（その他カテゴリ） | `/mnt/d/tomcat/webapps/hankyu` | 日報の書き漏れを補完 |
 | Rocket Chat（購読ルーム全体） | `scripts/lib/rocketchat.sh` | 自分の作業・レビュー作業・自分宛の依頼を対象期間で取得 |
+| メール（Thunderbird） | `scripts/lib/thunderbird.sh` | 社外・他部署とのやりとり（git・Rocket Chatに現れない案件連絡） |
 | Claudeセッション要約 | `~/.nb/claude/sessions/YYYY-MM-DD/*.md` | git対象外の「その他」仕事関連作業（hankyu以外）を補完 |
 
 ## gh CLI の認証
@@ -188,6 +189,27 @@ bash ~/.dotfiles/scripts/lib/rocketchat.sh \
   あっても取り逃す（そのルームが出力から丸ごと消える）。頻度は低い（6日調査で1日・6件）が、
   「特定のルームの記録が丸ごと無い」場合はこれを疑うこと
 - 設計の詳細と既知の限界の全文: `docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md`
+
+### メール取得
+
+MCP ツールは使わない。共通シェル層 `scripts/lib/thunderbird.sh` を呼ぶ。
+to/cc/bcc に自分または `ai-team@` が入っているスレッドと自分の送信メールだけが
+収集され、自動通知・庶務連絡は除外済みで届く。
+
+```bash
+bash ~/.dotfiles/scripts/lib/thunderbird.sh \
+  --from "$start_date" --to "$end_date" --no-body
+```
+
+- **`--no-body` を必ず付ける**。本文込みは1ヶ月で約55,000文字に達し、
+  週次でもチャット出力には多すぎる。work-report が必要なのは
+  「どの案件で誰とやりとりしたか」であって本文ではない
+- 出力は `### 自分が返信したスレッド（最優先）` と
+  `### 宛先に入っていたスレッド（参考・件名のみ）` の2セクション。
+  前者を優先して報告に採用する
+- 社外・他部署との案件連絡が主な収穫。gitログにもRocket Chatにも
+  現れないため、これがないと顧客対応の実績が報告から漏れる
+- 除外リストの調整は `scripts/lib/thunderbird_collect.py` 冒頭の定数で行う
 
 ---
 
