@@ -22,6 +22,8 @@ readonly REDACT="$SCRIPT_DIR/../lib/redact.sh"
 readonly MAX_PAYLOAD_CHARS=60000
 readonly MAX_RC_CHARS=15000
 readonly MAX_GIT_CHARS=8000
+# メールは日次実測で最大 3,925 文字（2026-08-07）。余裕を見て 6,000 に抑える。
+readonly MAX_MAIL_CHARS=6000
 # 自分のコミットを特定する author 正規表現（work / personal の両メール）
 readonly GIT_AUTHOR_RE='mori\.a@ebase\.co\.jp\|aya\.chr928@gmail\.com'
 # POST のリトライ設定。指数バックオフで 60→120→240→480 秒（待機総量 約15分）。
@@ -132,6 +134,13 @@ ${lines}
   fi
 }
 
+# Thunderbird 当日メール（失敗してもプレースホルダで続行）
+# gitログにも Rocket Chat にも現れない社外・他部署とのやりとりを補う。
+# 文字数制御は thunderbird.sh 側の --budget（参考セクションのドロップ）に委ねる。
+mail_log="$(bash "$SCRIPT_DIR/../lib/thunderbird.sh" \
+  --from "$target_date" --to "$target_date" \
+  --budget "$MAX_MAIL_CHARS" 2>/dev/null || echo "(メール: 取得失敗)")"
+
 git_log="$(collect_git_log)"
 if [ "${#git_log}" -gt "$MAX_GIT_CHARS" ]; then
   git_log="${git_log:0:$MAX_GIT_CHARS}
@@ -190,6 +199,9 @@ ${git_log}
 
 【Rocket Chat 当日履歴（購読ルーム横断・DM除く）】
 ${rocketchat_log}
+
+【メール（当日・自分が関与したスレッドのみ）】
+${mail_log}
 
 【セッション要約（${target_date}・時刻順）】
 ${session_summaries}"

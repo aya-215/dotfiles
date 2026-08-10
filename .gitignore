@@ -21,6 +21,10 @@ scripts/daily-review/.env.local
 # MCP server settings (Rocket Chat auth token入り)
 .mcp.json
 
+# thunderbird.sh の生出力（社内案件名・実名・メールアドレスを含むためcommitしない）
+tb-*.txt
+tb-*.json
+
 # Python cache
 __pycache__/
 
