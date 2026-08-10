@@ -19,6 +19,18 @@ assert_redacted() {
   fi
 }
 
+# assert_kept <説明> <入力>  … 変換されず残ることを確認する
+assert_kept() {
+  local desc="$1" input="$2" got
+  got="$(printf '%s' "$input" | bash "$SCRIPT_DIR/redact.sh")"
+  if [[ "$got" == "$input" ]]; then
+    echo "ok: $desc"
+  else
+    echo "NG: $desc → got: $got"
+    fails=$((fails + 1))
+  fi
+}
+
 # ダミーキーは実在キーと衝突しないよう機械生成する（リポジトリに実キー形式を残さない）
 ghp_dummy="ghp_$(printf 'a%.0s' {1..36})"
 pat_dummy="github_pat_$(printf 'b%.0s' {1..30})"
@@ -38,6 +50,20 @@ assert_redacted "slack" "$slack_dummy" "[REDACTED:slack]" "$slack_dummy"
 assert_redacted "bearer" "$bearer_dummy" "Bearer [REDACTED]" "$bearer_dummy"
 assert_redacted "x-auth-token" "$xauth_dummy" "X-Auth-Token: [REDACTED]" "$xauth_dummy"
 assert_redacted "通常テキストは無変化" "hello ghp_short sk-abc world" "hello ghp_short sk-abc world" "[REDACTED"
+
+# メール本文の平文認証情報（thunderbird 経路で混入する。値だけを落とし、
+# 資料の所在情報である URL・ファイルパスは残す）
+assert_redacted "ログイン情報(user:pass)" \
+  "ログイン情報：yh_test:test_pass" "[REDACTED:credential]" "test_pass"
+assert_redacted "ログイン情報(user/pass)" \
+  "ログイン情報: admin/secret123" "[REDACTED:credential]" "secret123"
+assert_redacted "password:" \
+  "password: p@ssw0rd" "[REDACTED:password]" "p@ssw0rd"
+assert_redacted "認証情報" \
+  "認証情報：foo:bar" "[REDACTED:credential]" "foo:bar"
+assert_kept "URLは残す" "参照URL：http://192.168.160.106/yh/DispCate.do?volumeName=00002"
+assert_kept "共有フォルダのパスは残す" '格納先：\\gw3\PROJECT\シフトオン\01.設計関連'
+assert_kept "日付・数値は残す" "IDCFクラウドの課金開始は10/1、デザインは8/18目途"
 
 if [ "$fails" -eq 0 ]; then
   echo "ALL OK"

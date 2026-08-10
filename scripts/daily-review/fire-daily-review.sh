@@ -1,9 +1,13 @@
 #!/bin/bash
 # fire-daily-review.sh - daily-review ルーティンを text ペイロード付きで起動する
 #
-# cron から毎晩 22:10 に呼び出す。claude バイナリは使わない（Agent SDK クレジット消費ゼロ）。
-# 当日のセッション要約と Rocket Chat 履歴を収集し、redaction をかけて
-# ルーティンの /fire エンドポイントに POST する。日報生成本体はクラウド側で実行される。
+# cron から毎晩 22:10 に呼び出す。当日のセッション要約と Rocket Chat 履歴を収集し、
+# redaction をかけてルーティンの /fire エンドポイントに POST する。
+# 日報生成本体はクラウド側で実行される。
+#
+# 注: メール整理のみ claude バイナリを使う（thunderbird-archive.sh 経由）。
+# スレッド全体を読ませてから圧縮する必要があり、ペイロード予算内では生データを
+# 載せきれないため。それ以外の収集はシェルで完結する。
 #
 # 必要な環境変数（.env.local に追記）: ROUTINE_FIRE_URL, ROUTINE_FIRE_TOKEN
 #
@@ -22,7 +26,7 @@ readonly REDACT="$SCRIPT_DIR/../lib/redact.sh"
 readonly MAX_PAYLOAD_CHARS=60000
 readonly MAX_RC_CHARS=15000
 readonly MAX_GIT_CHARS=8000
-# メールは日次実測で最大 3,925 文字（2026-08-07）。余裕を見て 6,000 に抑える。
+# メールは整理済み（要約層通過後）で日次実測 0〜3,600 文字。余裕を見て 6,000 に抑える。
 readonly MAX_MAIL_CHARS=6000
 # 自分のコミットを特定する author 正規表現（work / personal の両メール）
 readonly GIT_AUTHOR_RE='mori\.a@ebase\.co\.jp\|aya\.chr928@gmail\.com'
@@ -136,10 +140,21 @@ ${lines}
 
 # Thunderbird 当日メール（失敗してもプレースホルダで続行）
 # gitログにも Rocket Chat にも現れない社外・他部署とのやりとりを補う。
-# 文字数制御は thunderbird.sh 側の --budget（参考セクションのドロップ）に委ねる。
-mail_log="$(bash "$SCRIPT_DIR/../lib/thunderbird.sh" \
-  --from "$target_date" --to "$target_date" \
-  --budget "$MAX_MAIL_CHARS" 2>/dev/null || echo "(メール: 取得失敗)")"
+#
+# 整理済みメールは life リポジトリにも保存し、業務履歴そのものを資産として残す。
+# archive 側が要約を生成するので、その出力をそのままペイロードにも使う
+# （同じ内容を二度生成しない）。archive が失敗しても日報は続行する。
+mail_file="$(bash "$SCRIPT_DIR/../lib/thunderbird-archive.sh" "$target_date" 2>/dev/null || true)"
+if [ -n "$mail_file" ] && [ -f "$mail_file" ]; then
+  # 見出し行（"# YYYY-MM-DD のメール"）を除いた本文を使う
+  mail_log="$(tail -n +2 "$mail_file" | sed '/^[[:space:]]*$/d')"
+else
+  mail_log="(業務メールなし)"
+fi
+if [ "${#mail_log}" -gt "$MAX_MAIL_CHARS" ]; then
+  mail_log="${mail_log:0:$MAX_MAIL_CHARS}
+（※ メールが長いため切り詰め。全文は life リポジトリの mail/ を参照）"
+fi
 
 git_log="$(collect_git_log)"
 if [ "${#git_log}" -gt "$MAX_GIT_CHARS" ]; then

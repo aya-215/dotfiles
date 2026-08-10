@@ -11,7 +11,9 @@
 #
 # 使用方法:
 #   thunderbird.sh --from 2026-07-10 --to 2026-08-10 [--budget N]
-#   thunderbird.sh --from ... --to ... --no-body # 本文を出さず件名のみ（週次以上で使う）
+#   thunderbird.sh --from ... --to ... --no-body     # 本文を出さず件名のみ（週次以上で使う）
+#   thunderbird.sh --from ... --to ... --full-thread # スレッド全体を出す（要約層への入力用）
+#   thunderbird.sh --from ... --to ... --replied-only # 一度でも返信したスレッドだけに絞る
 #   thunderbird.sh --from ... --to ... --raw     # 除外前の生データを JSON で出す（判別用）
 #   thunderbird.sh --from ... --to ... --stats   # 段階ごとの件数だけ出す（デバッグ用）
 #
@@ -30,15 +32,17 @@ readonly DEFAULT_PROFILE="/mnt/c/Users/368/AppData/Roaming/Thunderbird/Profiles/
 mcp_entry="${TB_MCP_ENTRY:-$DEFAULT_MCP_ENTRY}"
 profile="${THUNDERBIRD_PROFILE_PATH:-$DEFAULT_PROFILE}"
 
-from="" to="" budget=0 raw=0 stats=0 no_body=0
+from="" to="" budget=0 raw=0 stats=0 no_body=0 full_thread=0 replied_only=0
 while [ $# -gt 0 ]; do
   case "$1" in
-    --from)    from="$2"; shift 2 ;;
-    --to)      to="$2"; shift 2 ;;
-    --budget)  budget="$2"; shift 2 ;;
-    --raw)     raw=1; shift ;;
-    --stats)   stats=1; shift ;;
-    --no-body) no_body=1; shift ;;
+    --from)         from="$2"; shift 2 ;;
+    --to)           to="$2"; shift 2 ;;
+    --budget)       budget="$2"; shift 2 ;;
+    --raw)          raw=1; shift ;;
+    --stats)        stats=1; shift ;;
+    --no-body)      no_body=1; shift ;;
+    --full-thread)  full_thread=1; shift ;;
+    --replied-only) replied_only=1; shift ;;
     *) echo "不明な引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -55,6 +59,7 @@ fi
 
 THUNDERBIRD_PROFILE_PATH="$profile" \
 TB_FROM="$from" TB_TO="$to" TB_BUDGET="$budget" TB_RAW="$raw" TB_STATS="$stats" \
-TB_NO_BODY="$no_body" \
+TB_NO_BODY="$no_body" TB_FULL_THREAD="$full_thread" \
+TB_REPLIED_ONLY="$replied_only" \
 TB_MCP_ENTRY="$mcp_entry" \
 exec python3 "$SCRIPT_DIR/thunderbird_collect.py"

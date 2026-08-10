@@ -73,6 +73,9 @@ WINDOW_DAYS = 2
 BODY_CHARS = 700
 # 「一度でも返信したスレッド」判定のために遡る日数。
 SENT_LOOKBACK_DAYS = 60
+# --full-thread 時の1通あたり本文長。要約層に渡す用途では切り詰めを緩める
+# （日報ペイロードに直接載せる BODY_CHARS とは別枠）。
+BODY_CHARS_FULL = 3000
 # 日本語メールの定型末尾。ここ以降は署名なので落とす。
 SIGNATURE_RE = re.compile(
     r"\n\s*(--\s*\n|::::+|-----Original Message-----|"
@@ -142,10 +145,11 @@ def addressed_to_me(msg):
     return any(p.lower() in low for p in TEAM_PATTERNS)
 
 
-def clean_body(text):
+def clean_body(text, limit=None):
     """署名・引用行・空行の連続を落として本文の要点だけ残す。"""
     if not text:
         return ""
+    limit = BODY_CHARS if limit is None else limit
     body = SIGNATURE_RE.split(text)[0]
     lines = [ln.rstrip() for ln in body.splitlines() if not QUOTE_RE.match(ln)]
     out, blank = [], False
@@ -158,21 +162,29 @@ def clean_body(text):
             blank = False
         out.append(ln.strip())
     joined = "\n".join(out).strip()
-    if len(joined) > BODY_CHARS:
-        joined = joined[:BODY_CHARS].rstrip() + "…"
+    if len(joined) > limit:
+        joined = joined[:limit].rstrip() + "…"
     return joined
 
 
-def fetch_body(message_id):
+def fetch_body(message_id, limit=None):
     """get_message で本文を取る。取得できなければ空文字を返す。"""
     r = call_mcp("get_message", {"messageId": message_id})
     if isinstance(r, dict):
-        return clean_body(r.get("body") or r.get("text") or "")
+        return clean_body(r.get("body") or r.get("text") or "", limit)
     if isinstance(r, list) and r:
         first = r[0]
         if isinstance(first, dict):
-            return clean_body(first.get("body") or first.get("text") or "")
+            return clean_body(first.get("body") or first.get("text") or "", limit)
     return ""
+
+
+def fetch_thread(conversation_id):
+    """get_thread でスレッド全体を取る。対象日より前の経緯も含める用途。"""
+    r = call_mcp("get_thread", {"conversationId": conversation_id})
+    if isinstance(r, dict):
+        r = r.get("messages") or []
+    return r if isinstance(r, list) else []
 
 
 def normalize_subject(subject):
@@ -268,6 +280,12 @@ def main():
     replied = [r for r in rows if r["replied"]]
     other = [r for r in rows if not r["replied"]]
 
+    # --replied-only: 一度でも返信したスレッドだけを残す。他人同士のやりとりを
+    # CC で受けているだけのスレッドは自分の作業ではないため落とす。
+    # 「一度でも」の判定は SENT_LOOKBACK_DAYS 分遡った Sent を含む（当日の返信は不要）。
+    if os.environ.get("TB_REPLIED_ONLY") == "1":
+        other = []
+
     def header(r):
         who = "、".join(r["others"]) if r["others"] else "(送信のみ)"
         detail = f"{r['count']}通"
@@ -276,6 +294,30 @@ def main():
         return f"{r['subject']}（{who} / {detail} / 最終 {r['date']}）"
 
     no_body = os.environ.get("TB_NO_BODY") == "1"
+
+    # --full-thread: 要約層に渡すため、対象日より前の経緯も含めてスレッド全体を出す。
+    # get_thread は1回の呼び出しでスレッド全通を body 付きで返すので、
+    # 当日分の messageId ごとに get_message するより呼び出し回数が少ない。
+    if os.environ.get("TB_FULL_THREAD") == "1":
+        for r in replied + other:
+            cid = r["msgs"][0].get("conversationId")
+            msgs = fetch_thread(cid) or r["msgs"]
+            out.append("")
+            out.append(f"#### {header(r)}")
+            out.append(f"（スレッド全体 {len(msgs)}通。対象期間の活動: "
+                       f"{r['count']}通・自分の返信{r['sent_count']}通）")
+            for m in sorted(msgs, key=lambda x: x.get("date", "")):
+                body = clean_body(m.get("body") or m.get("snippet") or "",
+                                  BODY_CHARS_FULL) or "(本文なし)"
+                mark = ("自分" if m.get("folder") == SENT_FOLDER
+                        else display_name(m.get("author", "")))
+                in_range = m.get("date", "")[:10] >= os.environ["TB_FROM"]
+                flag = " ★対象期間" if in_range else ""
+                out.append(f"- **{m.get('date','')[:16]} {mark}**{flag}")
+                out.extend(f"  {ln}" for ln in body.splitlines())
+        text = "\n".join(out).strip()
+        print(text if text else "(メールなし)")
+        return
 
     if replied:
         label = "（最優先）" if no_body else "（最優先・本文あり）"

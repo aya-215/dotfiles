@@ -15,4 +15,10 @@ sed -E \
   -e 's/AKIA[0-9A-Z]{16}/[REDACTED:akia]/g' \
   -e 's/xox[bporas]-[A-Za-z0-9-]{10,}/[REDACTED:slack]/g' \
   -e 's/Bearer [A-Za-z0-9._=-]{25,}/Bearer [REDACTED]/g' \
-  -e 's/X-Auth-Token: [^[:space:]]{20,}/X-Auth-Token: [REDACTED]/g'
+  -e 's/X-Auth-Token: [^[:space:]]{20,}/X-Auth-Token: [REDACTED]/g' \
+  `# メール本文に平文で書かれる検証環境の認証情報。上のトークン系パターンでは` \
+  `# 捕まらない user:pass 形式を落とす（実データ: シフトオン案件のメールに` \
+  `# "ログイン情報：yh_test:test_pass" が含まれていた）。URL・ファイルパスは` \
+  `# 資料の所在情報として残す。` \
+  -e 's/(ログイン情報|ログイン|認証情報|ID\/PW|ユーザー\/パスワード)([:：][[:space:]]*)[^[:space:]、。]+/\1\2[REDACTED:credential]/g' \
+  -e 's/(パスワード|password|passwd|PW)([:：][[:space:]]*)[^[:space:]、。]+/\1\2[REDACTED:password]/gI'
