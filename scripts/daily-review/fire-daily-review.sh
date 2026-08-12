@@ -138,6 +138,18 @@ ${lines}
   fi
 }
 
+# セッション要約が1件も無い日は送信しない（PCを使わない日＝作業していない日）。
+#
+# ここで明示的に判定するのは、この先の find がディレクトリ不在で終了コード1を返し、
+# pipefail + set -e でスクリプトが黙って即死していたため（2026-08-11 に発生。
+# ログに成功も失敗も残らず、休日なのかバグなのか区別できなかった）。
+# 「実行しない」ことは正常だが、それを記録せずエラー終了するのは正常ではない。
+if [ ! -d "$SESSIONS_ROOT/$target_date" ] \
+   || [ -z "$(find "$SESSIONS_ROOT/$target_date" -maxdepth 1 -name '*.md' -print -quit 2>/dev/null)" ]; then
+  log "skip: セッション要約なし（$target_date は作業記録がないため送信しない）"
+  exit 0
+fi
+
 # Thunderbird 当日メール（失敗してもプレースホルダで続行）
 # gitログにも Rocket Chat にも現れない社外・他部署とのやりとりを補う。
 #
@@ -202,7 +214,10 @@ ${body}
 }
 
 # 予算に収まるまで古いセッションから落とす
-session_count="$(find "$SESSIONS_ROOT/$target_date" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l)"
+# find はディレクトリ不在時に終了コード1を返し、pipefail 下ではパイプ全体が
+# 失敗する（2>/dev/null はメッセージを消すだけで終了コードは消せない）。
+# 上のガードで到達しないはずだが、二重に守る。
+session_count="$(find "$SESSIONS_ROOT/$target_date" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l || true)"
 keep="$session_count"
 [ "$keep" -eq 0 ] && keep=1
 while :; do
