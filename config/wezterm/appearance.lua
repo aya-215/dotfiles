@@ -167,45 +167,13 @@ function M.setup_tab_title()
     -- 最後のディレクトリ名を抽出（Windows/Unix両対応）
     local dir_name = cwd:gsub('[/\\]$', ''):match("([^/\\]+)$") or cwd
 
-    -- タブ番号（1から始まる）
-    local index = tab.tab_index + 1
-
-    -- プロセス名からアイコンに変換
-    local process_icons = {
-      ['pwsh'] = '\u{e70f}',      -- nf-dev-terminal_badge (PowerShell)
-      ['powershell'] = '\u{e70f}',
-      ['cmd'] = '\u{e629}',       -- nf-fae-windows
-      ['zsh'] = '\u{e795}',       -- nf-dev-terminal
-      ['bash'] = '\u{e795}',
-      ['fish'] = '\u{e795}',
-      ['nvim'] = '\u{e62b}',      -- nf-seti-vim
-      ['vim'] = '\u{e62b}',
-      ['node'] = '\u{e718}',      -- nf-dev-nodejs_small
-      ['python'] = '\u{e73c}',    -- nf-dev-python
-      ['git'] = '\u{e702}',       -- nf-dev-git
-      ['lazygit'] = '\u{e702}',
-      ['claude'] = '\u{e66f}',    -- nf-dev-code
-      ['ssh'] = '\u{f489}',       -- nf-oct-terminal
-      ['docker'] = '\u{e7b0}',    -- nf-dev-docker
-      ['make'] = '\u{e673}',      -- nf-dev-gnu
-      ['cargo'] = '\u{e7a8}',     -- nf-dev-rust
-      ['go'] = '\u{e627}',        -- nf-fae-go
-    }
-
-    -- pane_titleからプロセス名を取得、tmuxの場合はforeground_process_nameにフォールバック
-    local pane_title = tab.active_pane.title or ''
-    local raw_name = pane_title:match('([^/\\]+)$') or pane_title
-    raw_name = raw_name:gsub('%.exe$', '')
-
-    if raw_name == 'tmux' or raw_name == '' then
-      local fg = tab.active_pane.foreground_process_name or ''
-      raw_name = fg:match('([^/\\]+)$') or raw_name
-      raw_name = raw_name:gsub('%.exe$', '')
+    -- localドメイン（PowerShell）のときだけアイコンを添えて見分ける
+    local title
+    if tab.active_pane.domain_name == 'local' then
+      title = string.format(' \u{e70f} %s ', dir_name)
+    else
+      title = string.format(' %s ', dir_name)
     end
-
-    local icon = process_icons[raw_name] or raw_name
-
-    local title = string.format(' %s %s ', dir_name, icon)
 
     -- 丸角セパレーター (tmux catppuccin rounded風)
     local LEFT_CIRCLE = wezterm.nerdfonts.ple_left_half_circle_thick
