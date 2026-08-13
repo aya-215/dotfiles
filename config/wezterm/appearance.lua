@@ -145,35 +145,21 @@ end
 -- ========================================
 function M.setup_tab_title()
   wezterm.on('format-tab-title', function(tab, tabs, panes, config, hover, max_width)
-    -- カレントディレクトリのパスを取得
-    local cwd_uri = tab.active_pane.current_working_dir
-    local cwd = ''
+    -- tmux配下ではOSC 7が中継されずcurrent_working_dirがtmux起動時点で凍結するため、
+    -- cwdは表示せずドメイン名を出す。カレントディレクトリはtmuxのstatus-right側が持つ。
+    local domain = tab.active_pane.domain_name or ''
 
-    if cwd_uri then
-      if type(cwd_uri) == "userdata" then
-        -- Windowsの場合、file_pathプロパティを使用
-        cwd = cwd_uri.file_path
-      else
-        -- 文字列の場合はそのまま使用
-        cwd = cwd_uri
-      end
-    end
-
-    -- cwdが取得できない場合はタイトルを使用
-    if not cwd or cwd == '' then
-      cwd = tab.active_pane.title
-    end
-
-    -- 最後のディレクトリ名を抽出（Windows/Unix両対応）
-    local dir_name = cwd:gsub('[/\\]$', ''):match("([^/\\]+)$") or cwd
-
-    -- localドメイン（PowerShell）のときだけアイコンを添えて見分ける
-    local title
-    if tab.active_pane.domain_name == 'local' then
-      title = string.format(' \u{e70f} %s ', dir_name)
+    local label, icon
+    if domain == 'local' then
+      label, icon = 'PowerShell', '\u{e70f}'  -- nf-dev-terminal_badge
     else
-      title = string.format(' %s ', dir_name)
+      -- 'WSL:Ubuntu-22.04' → 'Ubuntu-22.04'。想定外の値でもそのまま出して壊さない
+      label = domain:match('^WSL:(.+)$') or domain
+      if label == '' then label = 'shell' end
+      icon = '\u{f17c}'  -- nf-fa-linux
     end
+
+    local title = string.format(' %s %s ', icon, label)
 
     -- 丸角セパレーター (tmux catppuccin rounded風)
     local LEFT_CIRCLE = wezterm.nerdfonts.ple_left_half_circle_thick
