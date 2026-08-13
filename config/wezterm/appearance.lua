@@ -145,17 +145,24 @@ end
 -- ========================================
 function M.setup_tab_title()
   wezterm.on('format-tab-title', function(tab, tabs, panes, config, hover, max_width)
-    -- tmux配下ではOSC 7が中継されずcurrent_working_dirがtmux起動時点で凍結するため、
-    -- cwdは表示せずドメイン名を出す。カレントディレクトリはtmuxのstatus-right側が持つ。
-    local domain = tab.active_pane.domain_name or ''
-
     local label, icon
-    if domain == 'local' then
-      label, icon = 'PowerShell', '\u{e70f}'  -- nf-dev-terminal_badge
+    if tab.active_pane.domain_name == 'local' then
+      -- PowerShellはtmuxを挟まないためOSC 7が届き、cwdが正しく追従する
+      local cwd_uri = tab.active_pane.current_working_dir
+      local cwd = ''
+      if cwd_uri then
+        cwd = type(cwd_uri) == 'userdata' and cwd_uri.file_path or cwd_uri
+      end
+      if not cwd or cwd == '' then
+        cwd = tab.active_pane.title or ''
+      end
+      label = cwd:gsub('[/\\]$', ''):match('([^/\\]+)$') or cwd
+      if label == '' then label = 'PowerShell' end
+      icon = '\u{e70f}'  -- nf-dev-terminal_badge
     else
-      -- 'WSL:Ubuntu-22.04' → 'Ubuntu-22.04'。想定外の値でもそのまま出して壊さない
-      label = domain:match('^WSL:(.+)$') or domain
-      if label == '' then label = 'shell' end
+      -- tmux配下ではOSC 7が中継されずcwdがtmux起動時点で凍結するため出さない。
+      -- カレントディレクトリはtmuxのstatus-right側が持つ。
+      label = 'WSL'
       icon = '\u{f17c}'  -- nf-fa-linux
     end
 
