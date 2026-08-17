@@ -87,8 +87,20 @@ rocketchat_log="$(bash "$SCRIPT_DIR/../lib/rocketchat.sh" \
 # GitHub に無い社内 GitBucket リポジトリ（/mnt/d/tomcat/webapps/*）もカバーできる。
 # HEAD のみを見る（--all は worktree 間の重複と entire-cli のチェックポイント
 # コミットを拾ってしまうため使わない）。
+# worktree は ../<略称>-<ブランチ名> という兄弟ディレクトリに作られる（worktree スキルの規約）ため、
+# glob では本体と別リポジトリに見えてしまう。--git-common-dir は worktree でも本体の .git を指すので、
+# その親ディレクトリ名を正規リポジトリ名として集約キーに使う。
+canonical_repo_name() {
+  local repo="$1" common
+  common="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+    || { basename "$repo"; return; }
+  basename "$(dirname "$common")"
+}
+
 collect_git_log() {
-  local out="" label repo name lines branch
+  local out="" label repo key lines
+  # 集約順を保つための正規リポジトリ名リストと、名前→本文の対応
+  local order=() bodies=() seen_shas=""
   for label in Personal Work; do
     local repos=()
     if [ "$label" = "Personal" ]; then
@@ -96,10 +108,16 @@ collect_git_log() {
     else
       repos=("$HOME"/src/github.com/ebase-dev/*/ /mnt/d/tomcat/webapps/*/)
     fi
+    order=() bodies=()
     for repo in "${repos[@]}"; do
       [ -e "$repo/.git" ] || continue
-      # 時刻+件名+変更量を1コミット1行に整形する。--shortstat の統計行は
+      local branch
+      branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
+      [ -z "$branch" ] && branch="detached"
+      # 時刻+ブランチ+件名+変更量を1コミット1行に整形する。--shortstat の統計行は
       # awk で直前の件名行へ「（N files +A -D）」として畳み込む。
+      # 先頭に %H を出して SHA 重複を落としてから削る（同一コミットが本体と worktree の
+      # 両方から到達可能な場合に二重計上されるのを防ぐ）。
       # 注意: TZ=Asia/Tokyo を付けると git が zoneinfo を解決できず UTC に
       # 落ちる環境のため、システムローカル時刻（JST）に任せる
       lines="$(git -C "$repo" log \
@@ -107,10 +125,10 @@ collect_git_log() {
         --since="${target_date}T00:00:00+09:00" \
         --until="${target_date}T23:59:59+09:00" \
         --date=format-local:'%H:%M' \
-        --pretty=format:'- %ad %s' --shortstat 2>/dev/null \
+        --pretty=format:"%H - %ad [${branch}] %s" --shortstat 2>/dev/null \
         | sed -E 's/ Entire-Checkpoint: [0-9a-f]+//' \
         | awk '
-            /^- / { if (prev != "") print prev; prev = $0; next }
+            /^[0-9a-f]{40} - / { if (prev != "") print prev; prev = $0; next }
             /files? changed/ {
               ins = 0; del = 0
               for (i = 1; i <= NF; i++) {
@@ -122,11 +140,37 @@ collect_git_log() {
             END { if (prev != "") print prev }
           ')" || continue
       [ -n "$lines" ] || continue
-      name="$(basename "$repo")"
-      branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
-      [ -z "$branch" ] && branch="detached"
-      out="${out}### [${label}] ${name} (branch: ${branch})
-${lines}
+
+      key="$(canonical_repo_name "$repo")"
+      # SHA 重複を除去しつつ SHA 列を落とす
+      local kept="" line sha
+      while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        sha="${line%% *}"
+        case "$seen_shas" in *"$sha"*) continue ;; esac
+        seen_shas="${seen_shas} ${sha}"
+        kept="${kept}${line#* }
+"
+      done <<< "$lines"
+      [ -n "$kept" ] || continue
+
+      # 既出の正規リポジトリなら同じ見出しへ追記する
+      local i found=-1
+      for i in "${!order[@]}"; do
+        [ "${order[$i]}" = "$key" ] && { found="$i"; break; }
+      done
+      if [ "$found" -ge 0 ]; then
+        bodies[$found]="${bodies[$found]}${kept}"
+      else
+        order+=("$key")
+        bodies+=("$kept")
+      fi
+    done
+    local j
+    for j in "${!order[@]}"; do
+      # 集約後は複数ブランチが混ざるため、ブランチは各コミット行側に持たせる
+      out="${out}### [${label}] ${order[$j]}
+$(printf '%s' "${bodies[$j]}" | sort)
 
 "
     done
