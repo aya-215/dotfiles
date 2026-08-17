@@ -1,5 +1,11 @@
 # daily-review クラウドルーティン移行 Implementation Plan
 
+> ⚠️ **これは2026-06時点の実行記録であり、現行仕様ではない。**
+> 現行のパイプライン仕様は [docs/daily-report-pipeline.md](../../daily-report-pipeline.md) を参照。
+> 特に **Task 4 Step 3 のプロンプト全文は初版**で、現行とは異なる（git活動の収集方法・
+> 削除済み SKILL.md への参照・書式の埋め込み有無）。現行プロンプトは
+> `RemoteTrigger action:"get" trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"` で読むこと。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 毎晩22時の日報生成（claude -p / Opus）を、APIトリガー専用クラウドルーティン＋ローカル軽量POSTスクリプトに置き換え、6/15以降のAgent SDKクレジット消費を回避する。

@@ -1,0 +1,249 @@
+# 日報自動生成パイプライン
+
+毎晩22:10に、その日の作業内容を自動で日報にまとめて `aya-215/life` の日報Issueへ書き込む仕組み。
+本ドキュメントが**現行仕様の正本**。
+
+> 日報Issueの自動作成（毎朝9時）・nb連携・blogファイル化といったGitHub Actions側の仕組みは
+> [life-management.md](life-management.md) を参照。本ドキュメントは**サマリー生成**の部分を扱う。
+
+---
+
+## 全体像
+
+```
+[随時] SessionEnd hook ──→ summarize.sh（要約生成）
+                              ↓
+                        ~/.nb/claude/sessions/YYYY-MM-DD/*.md
+                              ↑
+[21:00 cron] backfill.sh ──────┘（hook取りこぼしの回収）
+
+[22:10 cron] fire-daily-review.sh
+               ├─ セッション要約を読む
+               ├─ git活動をローカル収集
+               ├─ Rocket Chat 履歴を取得
+               ├─ Thunderbird メールを整理
+               ├─ redaction（redact.sh）
+               └─ /fire へ POST（60,000字以内）
+                              ↓
+              クラウドルーティン daily-review（Opus 5）
+                              ↓
+              life の日報Issue body を更新（close済みなら blog/YYYYMMDD.md）
+```
+
+**3層に分かれている**のがポイント。セッション要約は随時、収集と送信は22:10、生成はクラウド側。
+
+---
+
+## cron（3本）
+
+```cron
+*/30 * * * *  ~/.dotfiles/scripts/nb-sync.sh                       # 日報とは無関係（nb同期）
+0 21 * * *    ~/.dotfiles/scripts/claude-summarize/backfill.sh      # 要約の取りこぼし回収
+10 22 * * *   ~/.dotfiles/scripts/daily-review/fire-daily-review.sh # 日報生成の発火
+```
+
+`systemd --user` はWSLで動いていないため、実体はこのcrontabのみ。
+
+---
+
+## 情報源と予算
+
+`/fire` の `text` 上限は65,536字。余裕を見て**全体60,000字**に抑えている。
+
+| ソース | 収集元 | 予算 |
+|---|---|---|
+| セッション要約 | `~/.nb/claude/sessions/<日付>/*.md` | 残り全部 |
+| git活動 | **ローカル**の git log | 8,000字 |
+| Rocket Chat | 購読ルーム横断・**DM除く** | 15,000字 |
+| メール | Thunderbird（life リポジトリにも保存） | 6,000字 |
+| GitHubのIssue | クラウド側で `gh` 経由（当日closeのtask Issue等） | — |
+
+**予算超過時は古いセッション要約から1本ずつ落とす**ループで収める（`build_sessions` の `keep` を減らす）。
+
+### git活動をローカル収集する理由
+
+push前のコミットも拾えるうえ、GitHubに無い社内GitBucketリポジトリ（`/mnt/d/tomcat/webapps/*`）もカバーできる。
+HEADのみを見る（`--all` はチェックポイントコミットを拾うため使わない）。
+
+**worktreeは本体リポジトリへ集約される。** worktreeは `../<略称>-<ブランチ名>` という兄弟ディレクトリに
+作られるため、globでは別リポジトリに見えてしまう。`--git-common-dir` の親ディレクトリ名を正規リポジトリ名
+として集約キーに使い、SHA重複を除去している。集約後は1リポジトリに複数ブランチが混ざるので、
+ブランチ名は見出しではなく各コミット行（`- 13:45 [feat/xxx] ...`）に付く。
+
+### Rocket Chat の採用ルール
+
+購読ルームのうち期間内に活動があったものを列挙し、自分に関係するメッセージを拾う。
+
+- **DMは含めない**（外部送信のため）。`--include-dm` で明示的に有効化は可能
+- 自分の times チャンネル（`RC_CHANNEL`）は**全メッセージ採用**
+- それ以外のルームは**起点の前後30分**（`WINDOW_SEC=1800`）の時間窓で採用
+- 文字数制御は `--budget` によるルーム単位ドロップに委ねる
+
+`RC_CHANNEL` が未設定・不一致だと自分のtimesが全採用されず時間窓の対象になり、黙って劣化する。
+その場合は stderr に警告が出る。
+
+### メールの扱い
+
+gitログにもRocket Chatにも現れない社外・他部署とのやりとりを補う。
+整理済みメールは `life` リポジトリの `mail/YYYYMMDD.md` にも保存され、業務履歴そのものが資産として残る。
+
+要約層を挟むのは予算のため。生データを直接載せると1通700字・当日分のみに切り詰めるしかないが、
+スレッド全体を読ませてから圧縮すれば「少し返信しただけ」の作業でも経緯を踏まえた記述になる。
+
+---
+
+## redaction（二重ガード）
+
+`scripts/lib/redact.sh` を**2箇所**で通す。
+
+1. `summarize.sh` — 要約ファイル書き出し時（ローカルに残るファイルを守る）
+2. `fire-daily-review.sh` — 送信直前（外部に出る内容を守る）
+
+トークン類（`ghp_`, `sk-ant-`, `AKIA`, Slack, Bearer 等）に加えて、
+**メール本文に平文で書かれる検証環境の認証情報**（`ログイン情報：user:pass` 形式）も落とす。
+
+---
+
+## プロンプトは2層
+
+### ① 要約層（セッション毎・ローカル）
+
+`scripts/claude-summarize/summarize.sh` が7項目固定で生成する。
+
+意図 / 作業内容 / 結論 / 編集・作成ファイル / 実行コマンド / ナレッジ候補 / フィードバック・承認
+
+**「## 意図」の冒頭に【レビュー作業】か【実装作業】を必ず明記させる**のが肝。
+これが日報側の分類の一次情報になる。
+
+**clean config で回す**（`--setting-sources '' --system-prompt <要約専用>`）。
+ユーザーの CLAUDE.md（会話ペルソナ・口調・「不明点は質問」指示）を継承させると、
+要約サブプロセスがプロンプトを会話の続きと誤解して質問を返し、必須見出し不足で discard される
+（実データ6件で確認済み）。**決定的な処理と非決定的な処理の分離**の一例。
+
+モデルはサイズで段階ルーティングする（既定 haiku、240,000字超なら1Mコンテキスト側）。
+
+### ② 生成層（クラウドルーティン）
+
+**現行のプロンプトはこのドキュメントではなくルーティン本体が正本。** 全文を読むには:
+
+```
+RemoteTrigger action:"get" trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"
+```
+
+> プロンプト本文をここに転記しないこと。二重管理になり、`RemoteTrigger update` のたびにズレる。
+> かつて `.claude-global/skills/daily-review/SKILL.md` に書式を置いていたが、スキル削除後も
+> プロンプトが参照し続け、毎晩リカバリで凌ぐ状態になっていた（2026-08-17に解消）。
+
+構成:
+
+| ブロック | 内容 |
+|---|---|
+| 無人モードの制約 | 質問禁止・エラーで止まらない |
+| 手順1-8 | 対象日特定 → Issue特定 → git活動 → task Issue → 入力の使い方 → 生成 → 更新 → 報告 |
+| 【サマリー形式】 | `### Work (N commits across M repos)` / `#### 自分の作業` / `#### レビュー作業` / `### Personal` |
+| 【生成ルール】 | 件数表記・分類・粒度・冪等性など |
+
+分類の要点:
+
+- **Work内を「自分の作業」と「レビュー作業」に分ける。** セッション要約の【レビュー作業】【実装作業】
+  表記に従い、**レビューで読んだだけのコードを自分の実装成果として書かせない**
+- 見出しに件数を必ず付ける（`### Work (12 commits across 3 repos)`）
+- PR番号・issue番号・判明した原因・数値などの固有情報は省略しない（1項目が数行になってよい）
+- 既存サマリーがあれば入力として考慮し内容を失わない（冪等性）
+
+---
+
+## 使用クォータ
+
+| 層 | 実行場所 | 消費 |
+|---|---|---|
+| セッション要約（`summarize.sh`） | ローカル `claude -p` | **サブスク枠** |
+| メール整理（`thunderbird-summarize.sh`） | ローカル `claude -p`（`claude-sonnet-5`） | **サブスク枠** |
+| 日報生成（ルーティン） | クラウド | **ルーティン実行枠** |
+
+日報生成をクラウドルーティンに移したのは、Agent SDKクレジット消費を避けるため。
+ただし**メール整理だけはローカルの claude バイナリを使う**（スレッド全体を読ませてから圧縮する必要があり、
+ペイロード予算内に生データを載せきれないため）。
+
+---
+
+## トラブルシュート
+
+### ログの場所
+
+| ファイル | 内容 |
+|---|---|
+| `~/.local/log/fire-daily-review.log` | 発火の成否・ペイロード字数・リトライ |
+| `~/.local/log/claude-summarize.log` | セッション要約の生成状況 |
+| `~/.local/log/thunderbird-archive.log` | メール保存の状況 |
+
+### `skip: セッション要約なし` は正常
+
+その日にPCを使っていない（＝作業していない）日は送信しない。
+以前はディレクトリ不在で `find` が終了コード1を返し、`pipefail` で**黙って即死**していた
+（2026-08-11に発生。ログに成功も失敗も残らず、休日なのかバグなのか区別できなかった）。
+現在は明示的に判定して `skip:` をログに残す。**実行しないことは正常だが、記録せず終了するのは正常ではない。**
+
+### 400番台は即中断・リトライなし
+
+`is_permanent_error()` が再認可・権限系（`github_repo_access_denied` / `re-authorize` / `permission` /
+`not_found`）を恒久エラーと判定し、**待たずに中断**する。リトライしても永久に成功しないため
+（実データ: 2026-06-11に6回無駄打ち）。
+
+**401は一時扱いでリトライ対象。** 同一トークンで直後に成功した実績があり、トークン失効ではないと確認済み
+（2026-07-13 attempt=1が401 → attempt=2で成功）。指数バックオフ 60→120→240→480秒、待機総量 約15分。
+
+> ⚠️ この挙動のため、**ルーティン設定に未検証の値を入れると危険**。400で落ちるとその日の日報が
+> 丸ごと落ち、無人実行なので翌朝まで気づけない。モデルIDは検証済みの値を明示指定すること。
+
+### ルーティンの実行履歴を読む
+
+```
+RemoteTrigger action:"list_runs"    trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"
+RemoteTrigger action:"get_run_log"  session_id:"<list_runsで得たID>"
+```
+
+`get_run_log` は実際のツール呼び出し・エラー・最終結果まで追える。
+Web UI（<https://claude.ai/code/routines>）よりこちらのほうが速い。
+
+### 主要な識別子
+
+| 項目 | 値 |
+|---|---|
+| ルーティンID | `trig_01Xeb7Pw4dHu7jtitzMbK1iv` |
+| モデル | `claude-opus-5` |
+| 対象リポジトリ | `aya-215/dotfiles`, `aya-215/life` |
+
+---
+
+## 関連ファイル
+
+| パス | 役割 |
+|---|---|
+| `scripts/daily-review/fire-daily-review.sh` | 収集・整形・POST（cron 22:10） |
+| `scripts/daily-review/.env.local` | `ROUTINE_FIRE_URL` / `ROUTINE_FIRE_TOKEN` / RC認証 |
+| `scripts/claude-summarize/summarize-session.sh` | SessionEnd hook の入口 |
+| `scripts/claude-summarize/summarize.sh` | セッション要約の本体 |
+| `scripts/claude-summarize/backfill.sh` | 取りこぼし回収（cron 21:00） |
+| `scripts/claude-summarize/extract.py` | JSONL前処理 |
+| `scripts/lib/rocketchat.sh` | RC収集（work-report スキルと共通） |
+| `scripts/lib/thunderbird-archive.sh` | メール保存（life リポジトリへ push） |
+| `scripts/lib/thunderbird-summarize.sh` | メール整理（`claude-sonnet-5`） |
+| `scripts/lib/redact.sh` | シークレット除去（二重ガードの実体） |
+
+設計ドキュメント（当時の記録・現行仕様とはズレる場合がある）:
+
+- [claude -p 移行設計](superpowers/specs/2026-06-10-claude-p-migration-design.md)
+- [ルーティン移行計画](superpowers/plans/2026-06-10-daily-review-routine-migration.md)
+- [セッション要約設計](superpowers/specs/2026-06-09-claude-session-summary-design.md)
+- [Rocket Chat 複数ルーム対応](superpowers/specs/2026-07-28-rocketchat-multiroom-design.md)
+
+---
+
+## 変更履歴
+
+- **2026-08-17**: worktreeのコミットを本体リポジトリへ集約（`eee206c`）。ルーティンのプロンプトに
+  書式テンプレートを埋め込み、削除済み SKILL.md への参照2箇所を除去。モデルを
+  `claude-opus-4-8` → `claude-opus-5` に更新。
+- **2026-08-10**: Thunderbirdメールを情報源に追加。対話用の daily-review スキルを削除。
+- **2026-06-10**: 日報生成を `claude -p` からクラウドルーティンへ移行。

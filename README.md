@@ -120,7 +120,7 @@ git add -p && git commit && git push
 |---|---|---|
 | `claude-summarize/` | Claude Code の SessionEnd hook でセッションを Haiku で6項目要約し `~/.nb/claude/sessions/` に保存。`backfill.sh` で取りこぼしを回収。テストあり | [設計](docs/superpowers/specs/2026-06-09-claude-session-summary-design.md) / [frontmatter決定化](docs/superpowers/plans/2026-07-13-summarize-deterministic-frontmatter.md) / [backfill](docs/superpowers/specs/2026-07-24-session-summary-backfill-design.md) |
 | `claude-pane-session/` | tmux 復元時に claude ペインを元の会話へ復元する。SessionStart hook でペイン座標と session_id を記録 | [設計](docs/tmux-claude-session-restore.md) |
-| `daily-review/` | cron（22:10）で日報を無人生成。claude バイナリを使わずルーティンの `/fire` に POST する（SDKクレジット消費なし） | [設計](docs/superpowers/specs/2026-06-10-claude-p-migration-design.md) |
+| `daily-review/` | cron（22:10）で日報を無人生成。セッション要約・git活動・RC履歴・メールを集めてルーティンの `/fire` に POST し、生成はクラウド側（Opus 5）で行う。メール整理のみローカルの claude バイナリを使う | [パイプライン全体](docs/daily-report-pipeline.md) |
 | `lib/` | 共通ライブラリ。`rocketchat.sh`（Rocket Chat の購読ルームから関連メッセージを収集）、`thunderbird.sh`（メールから自分が関与したスレッドを収集。週次以上は `--no-body`）、`redact.sh`（シークレット redaction、要約書き出しと送信前の二重ガード）。すべてテストあり | [複数ルーム対応](docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md) / [スレッド探索](docs/superpowers/specs/2026-07-29-rocketchat-thread-discovery-design.md) |
 | `pr-diffview/` | PR の差分を Neovim DiffView で開く。Tampermonkey スクリプトがローカルサーバ（`server.py`）を叩き、`open-diffview.sh` が tmux の新ウィンドウで Neovim を起動する。GitHub と社内 GitBucket の両方に対応 | — |
 | `gitbucket-mcp/` | 社内 GitBucket を Claude から操作する MCP サーバー（Python / uv 管理）。PR・Issue の取得、コメント投稿、ブランチ一覧などを提供する | — |
