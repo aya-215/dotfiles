@@ -106,3 +106,53 @@ html body blockquote[type="cite"] a[href^="mailto:"] {
 html, body {
   -webkit-text-stroke: 0.2px currentColor;
 }
+
+/* --- Conversations の Quick Reply（返信 / 全員に返信 ボタン） ---
+ *
+ * これらは本文 iframe の外側、chrome://conversations/content/stub.html にある
+ * 別文書。quickreply.css が以下を当てている:
+ *
+ *   :root { --border-color: light-dark(#d4d4d8, #3f3f46); }
+ *   .replyBox {
+ *     background-color: Canvas;              // システム色 = TB既定の #1c1b22
+ *     color: -moz-nativehyperlinktext;
+ *     border: 1px solid var(--border-color);
+ *   }
+ *
+ * Canvas はシステム色キーワードのためテーマの変数書き換えでは変わらない。
+ * chrome:// 文書なので通常 userContent.css は届かないが、messagepane は
+ * type="content" のため @-moz-document で URL を指定すれば適用できる。 */
+
+@-moz-document url-prefix("chrome://conversations/content/stub.html") {
+  :root {
+    --border-color: #45475a;              /* surface1 */
+  }
+
+  /* 背景は上下の領域と同じ base のままにする。mantle にすると
+   * 「暗い帯の中に明るいボタンが浮く」形になり、上下（base）との間に
+   * 段差ができて浮く。Catppuccin の mantle は二次的なペイン用で、
+   * 同一階層内の帯には使わない。 */
+  .quickReply {
+    background-color: #1e1e2e !important;  /* base - 上下の領域と同値 */
+    border-top: 1px solid #313244 !important;  /* surface0 - 控えめな区切り */
+  }
+
+  /* ボタンだけを surface0 で一段持ち上げる */
+  .replyBox {
+    background-color: #313244 !important;  /* surface0 */
+    color: #89b4fa !important;             /* blue - テーマのアクセント */
+    border: 1px solid #45475a !important;  /* surface1 */
+  }
+
+  .replyBox:hover {
+    background-color: #45475a !important;  /* surface1 */
+    color: #b4befe !important;             /* lavender */
+  }
+
+  /* TB内蔵の gray70 (#3f3f46) が区切り線に残るため Mocha に寄せる */
+  #conversationWrapper hr,
+  conversation-footer,
+  .conversationFooter {
+    border-color: #313244 !important;      /* surface0 */
+  }
+}

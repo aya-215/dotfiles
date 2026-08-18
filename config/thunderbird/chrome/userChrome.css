@@ -1,0 +1,44 @@
+/* Thunderbird UI (chrome) - Catppuccin Mocha の補正
+ *
+ * UI 全体の配色は Catppuccin テーマ（mocha-blue）が担当する。
+ * このファイルはテーマだけでは補えない箇所だけを補正する。
+ *
+ * userContent.css はコンテンツ文書専用のため、chrome:// で読み込まれる
+ * ウィンドウ（メッセージ作成ウィンドウ等）はこちらの管轄になる。 */
+
+@namespace url("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul");
+@namespace html url("http://www.w3.org/1999/xhtml");
+
+/* --- メッセージ作成ウィンドウのヘッダーラベル ---
+ *
+ * 「差出人」「宛先」「件名」等のラベルが overlay1 (#7f849c) で描かれ、
+ * 背景 base に対して 4.44:1 と AA 基準 (4.5:1) を割って読みにくい。
+ *
+ * 出どころは Catppuccin テーマの `tab_background_text: #7f849c`。
+ * これは本来「非アクティブなタブの文字色」だが、Thunderbird はこの値を
+ * 作成ウィンドウのラベルにも流用している。テーマ側の意図（非アクティブ＝
+ * 控えめ）とラベルに求められる可読性がずれているため、ここで補正する。
+ *
+ * 公式スタイルガイドではラベル・小見出しは subtext0/1 が割り当て。 */
+
+#msgIdentity,
+.address-label-container label,
+.aw-firstColBox label,
+#msgSubject ~ label,
+label[control="msgSubject"],
+label[control="toAddrInput"],
+label[control="ccAddrInput"],
+label[control="bccAddrInput"],
+label[control="replyAddrInput"],
+label[control="newsgroupsAddrInput"],
+label[control="followupAddrInput"] {
+  color: #a6adc8 !important;   /* subtext0  7.37:1 */
+}
+
+/* 入力欄内のプレースホルダ（薄いアドレス表示など）も同様に AA を割るため
+ * 一段持ち上げる。値そのものではなく補助表示のため subtext0 より控えめに。 */
+#msgIdentity::part(label),
+.address-container input::placeholder,
+html|input::placeholder {
+  color: #9399b2 !important;   /* overlay2  5.81:1 */
+}

@@ -18,7 +18,11 @@
 | ファイル | 配置先 | 役割 |
 |---|---|---|
 | `user.js` | プロファイル直下 | 起動時に読まれる pref |
-| `chrome/userContent.css` | プロファイル `chrome/` | メール本文のスタイル |
+| `chrome/userContent.css` | プロファイル `chrome/` | メール本文のスタイル（コンテンツ文書） |
+| `chrome/userChrome.css` | プロファイル `chrome/` | UI の補正（chrome:// 文書） |
+
+`userContent.css` はコンテンツ文書（`type="content"`）専用。作成ウィンドウのように
+`chrome://` で読み込まれるウィンドウは `userChrome.css` の管轄。
 
 ## 配置方法（暫定: シンボリックリンク）
 
@@ -272,6 +276,73 @@ TB再起動でメールの選択が外れると、ウェルカム画面（背景
 
 `mail.citation_color` は正しい pref 名だが（`mailnews.` ではない）、
 この値はインライン style で焼き込まれるため dark-reader に削除される。使用しない。
+
+## テーマだけでは補えない箇所（userChrome.css）
+
+Catppuccin テーマは chrome の変数を書き換えるが、**システム色キーワード
+（`Canvas` / `-moz-Dialog` 等）や、TB が別用途の変数を流用している箇所**は
+テーマだけでは変わらない。それらを `chrome/userChrome.css` で補正する。
+
+### メッセージ作成ウィンドウのヘッダーラベル
+
+「差出人」「宛先」「件名」のラベルが `overlay1 #7f849c`（背景比 **4.44:1**、
+AA 基準 4.5:1 を割る）で描かれ読みにくかった。
+
+出どころは Catppuccin テーマの
+
+```json
+"tab_text":            "#cdd6f4",   // アクティブなタブの文字
+"tab_background_text": "#7f849c",   // 非アクティブなタブの文字 ← これ
+```
+
+`tab_background_text` は本来「非アクティブなタブの文字色」で、
+Catppuccin が控えめな `overlay1` を割り当てるのは設計として妥当。
+問題は **Thunderbird がこの値を作成ウィンドウのラベルにも流用している**こと。
+テーマ側の意図とラベルに必要な可読性がずれている。
+
+対処: ラベルを `subtext0 #a6adc8`（7.37:1）に、プレースホルダを
+`overlay2 #9399b2`（5.81:1）に上げる。**タブの文字色は触らない**ため、
+非アクティブタブの見た目は保たれる。
+
+公式スタイルガイドでもラベル・小見出しは subtext0/1 の担当。
+
+## Conversations の Quick Reply（返信 / 全員に返信 ボタン）
+
+`userContent.css` 側で対処している。本文 iframe の**外側**にあり、
+`chrome://conversations/content/stub.html` という別文書。
+`messagepane` が `type="content"` のため `@-moz-document url-prefix(...)` で
+URL を指定すれば `userContent.css` が届く。
+
+`quickreply.css` が当てているのは:
+
+```css
+:root { --border-color: light-dark(#d4d4d8, #3f3f46); }
+.replyBox {
+  background-color: Canvas;              /* システム色 = TB既定の #1c1b22 */
+  color: -moz-nativehyperlinktext;
+  border: 1px solid var(--border-color);
+}
+```
+
+`Canvas` はシステム色キーワードのため、テーマの変数書き換えでは変わらない。
+
+### 背景を mantle にすると浮く
+
+当初 Quick Reply の背景を `mantle #181825` にして「一段暗くして区切る」
+意図だったが、上下の領域が `base #1e1e2e` のため以下の順序になり違和感が出た:
+
+| 位置 | 明度 |
+|---|---|
+| 上部の帯 | L=31.2 (base) |
+| Quick Reply 背景 | **L=24.9 (mantle)** |
+| ボタン | L=51.1 (surface0) |
+| 最下部 | L=31.2 (base) |
+
+**暗い帯の中に明るいボタンが浮く**形になり、上下との段差が目立つ。
+Catppuccin の `mantle` は二次的なペイン用で、同一階層内の帯には使わない。
+背景は `base` のままにし、**ボタンだけを `surface0` で持ち上げる**のが正しい。
+
+あわせて TB 内蔵の `#3f3f46`（gray70）が区切り線に残るため `surface0` に寄せる。
 
 ## 残っている改善余地（未着手）
 
