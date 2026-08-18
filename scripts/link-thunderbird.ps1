@@ -44,8 +44,18 @@ function Link-One($src, $dst, $label) {
         }
         Remove-Item $dst -Force
     }
-    # Run mklink from a local directory: cmd.exe cannot start in a UNC cwd.
-    $out = cmd /c "cd /d %SystemRoot% && mklink `"$dst`" `"$src`"" 2>&1
+    # Launch cmd with an explicit local WorkingDirectory: inheriting a UNC cwd
+    # (when run from the WSL clone) makes cmd.exe refuse to start.
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "$env:SystemRoot\System32\cmd.exe"
+    $psi.Arguments = "/c mklink `"$dst`" `"$src`""
+    $psi.WorkingDirectory = "$env:SystemRoot"
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $proc = [System.Diagnostics.Process]::Start($psi)
+    $proc.WaitForExit()
+    $out = $proc.StandardOutput.ReadToEnd() + $proc.StandardError.ReadToEnd()
     if (Test-Path $dst) {
         Write-Host "Linked: $label"
     } else {
