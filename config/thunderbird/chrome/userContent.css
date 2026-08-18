@@ -1,4 +1,106 @@
-/* 文字の太さのみ。
+/* Thunderbird メール本文 - Catppuccin Mocha
+ *
+ * UI 側は Catppuccin テーマ（mocha-blue）が担当する。テーマは chrome のみを
+ * 対象とし type="content" のメール本文には届かないため、配色をここで揃える。
+ *
+ * 前提: user.js の layout.css.prefers-color-scheme.content-override = 1
+ *
+ * 背景は body のみに当てる。html に当てると内蔵 messageBody.css の
+ * ダークモード指定と競合し、送信元の白背景が露出する。
+ *
+ * ■ Thunderbird Conversations アドオンへの対処
+ *
+ * Conversations は本文を iframe に描画し、injectCss() で以下を注入する
+ * （tweak_bodies 設定とは独立に常に実行される。stub.bundle.js:6120）:
+ *
+ *   blockquote[type="cite"] { color: #666 !important; }
+ *   html.darkReaderEnabled > body {
+ *     filter: invert(100%) hue-rotate(180deg) !important;
+ *     background: rgb(28, 27, 34) !important;
+ *   }
+ *
+ * invert により指定色が反転するため、明るい色を指定するほど暗く表示される
+ * （実測: #bac2de → L=60.3 は invert 後の計算値 L=56.3 と一致）。
+ * まず filter を打ち消し、その上で色を指定する。 */
+
+/* --- Conversations の invert を打ち消す --- */
+html.darkReaderEnabled > body {
+  filter: none !important;
+  background: #1e1e2e !important;
+}
+
+html.darkReaderEnabled > body :is(img, [style*="background-image:"], [background*="."], g-emoji) {
+  filter: none !important;
+}
+
+body {
+  background-color: #1e1e2e !important;   /* base - テーマのメール一覧と同値 */
+}
+
+/* 地の文の色。
+ * Conversations の tweak_bodies をオフにすると本文への色指定
+ * （tweakFonts の `body:has(> .moz-text-html) { color: fg }`）が出なくなり、
+ * 送信元またはブラウザ既定の黒が出るため自前で指定する。
+ * 引用側は詳細度が上なのでこの指定に負けない。 */
+body,
+body div,
+body p,
+body span,
+body td,
+body pre {
+  color: #cdd6f4 !important;              /* text */
+}
+
+/* --- リンク --- */
+body a:link              { color: #89b4fa !important; }  /* blue     */
+body a:visited           { color: #b4befe !important; }  /* lavender */
+body a:hover             { color: #74c7ec !important; }  /* sapphire */
+body a[href^="mailto:"]  { color: #89dceb !important; }  /* sky      */
+
+body .moz-txt-link-freetext,
+body .moz-txt-link-abbreviated,
+body .moz-txt-link-rfc2396E {
+  color: #89b4fa !important;
+}
+
+/* --- 引用 --- */
+/* Conversations の `blockquote[type="cite"] { color: #666 !important }` と
+ * 内蔵 messageQuotes.css の `body blockquote[type="cite"] { ... !important }`
+ * の両方を越える必要があるため html body から書く。
+ *
+ * 引用は lavender 帯で色味を持たせつつ、段が深くなるほど彩度を落として
+ * グレーへ寄せる（97%→67%→45%→24%）。テーマのアクセントが blue のため
+ * 同じ色相帯の lavender を使い UI と調和させる。1段目の彩度は本文
+ * (#cdd6f4, 64%) と同程度に抑え、引用が本文より鮮やかにならないようにする。
+ *
+ * 枠線は surface2 単色。Catppuccin 公式は境界に彩度を使わず surface 帯を
+ * 当てる（公式テーマの sidebar_border 等が surface0）。複数のアクセント色を
+ * 並べると線が文字より目立つため使わない。 */
+
+html body blockquote[type="cite"] {
+  color: #aab4ee !important;                            /* lavender寄り 8.18:1 */
+  border-inline-start: 2px solid #585b70 !important;    /* surface2 */
+  border-left-width: 2px !important;                    /* Conversations の 1px を戻す */
+}
+html body blockquote[type="cite"] blockquote[type="cite"] {
+  color: #9aa3d9 !important;                            /* 中間     6.73:1 */
+}
+html body blockquote[type="cite"] blockquote[type="cite"] blockquote[type="cite"] {
+  color: #7f88b0 !important;                            /* グレー寄り 4.73:1 */
+}
+
+/* プレーンテキストの > 引用 */
+html body span[_moz_quote="true"] {
+  color: #aab4ee !important;              /* 1段目と同じ */
+}
+
+/* 引用内のリンクは沈めず読めるまま維持 */
+html body blockquote[type="cite"] a:link,
+html body blockquote[type="cite"] a[href^="mailto:"] {
+  color: #89dceb !important;
+}
+
+/* --- 文字の太さ ---
  * HackGen は Regular(400)/Bold(700) の2ウェイトしか持たず font-weight の
  * 中間値は丸められるため、無段階に太らせるには text-stroke を使う。 */
 html, body {
