@@ -2,6 +2,22 @@
 
 メール本文とUIの配色を Catppuccin Mocha に揃える。
 
+## 変更を始める前に
+
+1. **「構成」** で、その箇所がテーマ / `userContent.css` / `userChrome.css` の
+   どの担当か確認する
+2. **「検証ツール」** のスクリプトで再起動・撮影・色測定ができる状態にする。
+   目視の往復をやめて数値で判断するのが最も速い
+3. 症状に近い節を読む。過去にハマった箇所と原因が記録されている
+   - 背景が白い / 文字が黒い → **「user.js の各 pref」**
+   - 引用の色が変わらない → **「CSS 実装のポイント」**（詳細度勝負）
+   - 引用が暗い / 明るくすると逆に暗くなる → **「Conversations アドオンへの対処」**
+   - ボタン・ラベルが沈む → **「テーマだけでは補えない箇所」**
+4. **「残っている改善余地」** に既知の弱点と再発時の切り分け手順がある
+
+色を触る際は Catppuccin 公式の役割定義（**「配色の設計」**）に沿わせる。
+明度を機械的に上下させるとテーマの階層設計とずれる。
+
 ## 構成
 
 配色は **UI と本文で担当が分かれる**。テーマは chrome（UI）のみを対象とし、
@@ -343,6 +359,85 @@ Catppuccin の `mantle` は二次的なペイン用で、同一階層内の帯�
 背景は `base` のままにし、**ボタンだけを `surface0` で持ち上げる**のが正しい。
 
 あわせて TB 内蔵の `#3f3f46`（gray70）が区切り線に残るため `surface0` に寄せる。
+
+## 検証ツール
+
+`scripts/thunderbird-dev/` に置いてある。**目視とスクショの往復をせず、
+色を数値で確認する**ためのもの。配色を触るときは最初にこれを使えるようにすると速い。
+
+| ファイル | 用途 |
+|---|---|
+| `tb-restart.ps1` | Thunderbird を完全終了して再起動（CSS/pref は起動時のみ読まれる） |
+| `tb-list.ps1` | 全ウィンドウを `PID handle|WxH|title` 形式で列挙 |
+| `tb-shot3.ps1` | `<handle> <out.png>` でウィンドウを撮影 |
+| `png.py` | 標準ライブラリのみで PNG をデコードし色頻度を集計 |
+
+### 使い方
+
+```bash
+# 再起動
+powershell.exe -NoProfile -ExecutionPolicy Bypass \
+  -File 'D:\git\dotfiles\scripts\thunderbird-dev\tb-restart.ps1'
+
+# メインウィンドウのハンドルを取得して撮影
+H=$(powershell.exe -NoProfile -ExecutionPolicy Bypass \
+  -File 'D:\git\dotfiles\scripts\thunderbird-dev\tb-list.ps1' \
+  | tr -d '\r' | grep '1936x1048' | awk '{print $2}' | cut -d'|' -f1)
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass \
+  -File 'D:\git\dotfiles\scripts\thunderbird-dev\tb-shot3.ps1' "$H" 'D:\temp_wsl\shot.png'
+
+# 色を測る
+python3 -c "
+import sys; sys.path.insert(0,'/mnt/d/git/dotfiles/scripts/thunderbird-dev')
+from png import top
+w,h,r=top('/mnt/d/temp_wsl/shot.png',6)
+for hexv,pct,L in r: print(f'{hexv} {pct:5.1f}% L={L:5.1f}')
+"
+```
+
+領域を絞って測る場合は `png.load()` で行データを取り、`Counter` で集計する。
+背景を除外して文字色だけ見るには、最頻色を背景とみなして差が一定以上の
+ピクセルのみ拾う。
+
+### できないこと
+
+**メールの選択**はキー送信（SendKeys）が権限で止められるため自動化できない。
+再起動で選択が外れた場合は手動で選び直す必要がある。
+
+## PowerShell スクリプトの注意点（実際にハマった箇所）
+
+### 日本語を書くとパースエラーになる
+
+PowerShell 5.1 は BOM なし UTF-8 を Shift-JIS として読むため、日本語の
+文字列リテラルやコメントで構文解析が壊れる。
+
+```
++ if (Get-Process thunderbird -ErrorAction SilentlyContinue) {
++                                                            ~
+ステートメント ブロックまたは型定義に終わり '}' がありません。
+```
+
+対処: **スクリプトは ASCII のみで書く**（メッセージも英語にする）。
+WSL 側で `sed 's/$/\r/'` を通して CRLF にしてから配置する。
+
+### WSL から実行すると cmd.exe が起動を拒否する
+
+WSL 側のパスをカレントディレクトリとして PowerShell を起動すると cwd が
+UNC パス（`\\wsl.localhost\...`）になり、そこから `cmd` を呼ぶと
+
+```
+UNC パスはサポートされません。Windows ディレクトリを既定で使用します。
+```
+
+となって処理が失敗する。対処: `ProcessStartInfo` で `WorkingDirectory` を
+ローカルパスに明示する（`scripts/link-thunderbird.ps1` がこの形）。
+
+### シンボリックリンク作成は mklink 経由にする
+
+Windows の開発者モードが有効なら非管理者でもシンボリックリンクを作れるが、
+PowerShell 5.1 の `New-Item -ItemType SymbolicLink` はこれを活かさず昇格を
+要求する。`cmd /c mklink` 経由なら昇格なしで作成できる。
 
 ## 残っている改善余地（未着手）
 

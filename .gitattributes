@@ -4,3 +4,6 @@ config/thunderbird/** text eol=lf
 
 # PowerShell スクリプトは Windows で実行されるため CRLF
 *.ps1 text eol=crlf
+
+# Python は LF
+*.py text eol=lf
