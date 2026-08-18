@@ -1,6 +1,9 @@
 # Link dotfiles Thunderbird config into the TB profile.
 # The profile directory name is a random ID, so it is resolved from installs.ini.
-# Requires administrator privileges (for symlink creation).
+#
+# Uses cmd's mklink instead of New-Item -ItemType SymbolicLink: with Windows
+# Developer Mode enabled, mklink creates symlinks without elevation while
+# New-Item in PowerShell 5.1 still demands it.
 #
 # Messages are in English: PowerShell 5.1 misreads BOM-less UTF-8 as Shift-JIS
 # and non-ASCII text breaks parsing.
@@ -9,6 +12,9 @@ $ErrorActionPreference = "Stop"
 $source = (Resolve-Path (Join-Path $PSScriptRoot "..\config\thunderbird")).Path
 $tbRoot = "$env:APPDATA\Thunderbird"
 
+if ($source -like '\\*') {
+    throw "Source must be a local Windows path, not a UNC path: $source`nRun this from D:\git\dotfiles, not from the WSL clone."
+}
 if (-not (Test-Path $tbRoot)) { throw "Thunderbird not found: $tbRoot" }
 
 $profileRel = $null
@@ -38,8 +44,13 @@ function Link-One($src, $dst, $label) {
         }
         Remove-Item $dst -Force
     }
-    New-Item -ItemType SymbolicLink -Path $dst -Target $src | Out-Null
-    Write-Host "Linked: $label"
+    # Run mklink from a local directory: cmd.exe cannot start in a UNC cwd.
+    $out = cmd /c "cd /d %SystemRoot% && mklink `"$dst`" `"$src`"" 2>&1
+    if (Test-Path $dst) {
+        Write-Host "Linked: $label"
+    } else {
+        throw "Failed to link $label`n$out"
+    }
 }
 
 Link-One (Join-Path $source "user.js") (Join-Path $profileDir "user.js") "user.js"
