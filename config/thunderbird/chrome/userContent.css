@@ -1,0 +1,6 @@
+/* 文字の太さのみ。
+ * HackGen は Regular(400)/Bold(700) の2ウェイトしか持たず font-weight の
+ * 中間値は丸められるため、無段階に太らせるには text-stroke を使う。 */
+html, body {
+  -webkit-text-stroke: 0.15px currentColor;
+}
