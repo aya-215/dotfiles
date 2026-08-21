@@ -1,77 +1,26 @@
 #!/bin/bash
-# 配布用 statusline。自分用の statusline-command.sh とは別実体。
+# 配布用 statusline。環境設定なしでそのまま動くことを優先している。
 #
-# 環境差の大きい2点を設定可能にしてある:
-#   CC_STATUSLINE_ICONS=1  Nerd Font のアイコンを使う (既定 0 = ASCII)
-#   CC_STATUSLINE_COLOR    truecolor / basic / none (既定 auto)
-#
-# アイコンは自動検出できない。フォントが持つグリフを問い合わせる手段は
-# 端末に存在せず、TERM 等からの推測は必ず外れる環境が出る。既定を off に
-# しているのは、豆腐が並ぶと「壊れている」と見えるのに対し ASCII は単に
-# 素朴なだけで済むから。
+# 自分用の statusline-command.sh との違い:
+#   - アイコンを使わない。Nerd Font が入っているかを端末に問い合わせる手段は
+#     存在せず、TERM 等からの推測は必ず外れる環境が出る。豆腐が並ぶと
+#     「壊れている」と見えるため ASCII で固定する。
+#   - コンテキスト率は Claude Code 本体の used_percentage をそのまま出す。
+#     autocompact 基準の独自計算は値の意味を説明できず本体表示と食い違う。
 input=$(cat)
 
-# --- アイコン ---
-if [ "${CC_STATUSLINE_ICONS:-0}" = "1" ]; then
-  icon_folder=$'\U000F024B'   # 󰉋 nf-md-folder
-  icon_branch=$'\UF126'       #  nf-fa-code_fork
-  icon_model=$'\U000F06A9'    # 󰚩 nf-md-robot
-  icon_context=$'\U000F01BC'  # 󰆼 nf-md-database
-  icon_todo=$'\U2611'         # ☑
-  bar_full='█'; bar_empty='░'; sep_sub='│'
-else
-  icon_folder='DIR'; icon_branch='git:'; icon_model='AI'
-  icon_context='ctx'; icon_todo='TODO'
-  bar_full='#'; bar_empty='-'; sep_sub='|'
-fi
+# ANSI colors (Catppuccin Mocha)
+# Windows Terminal / conhost (Win10 1703+) / VS Code はいずれも 24bit 対応。
+B='\033[38;2;137;180;250m'  # Blue #89B4FA - folder
+L='\033[38;2;180;190;254m'  # Lavender #B4BEFE - branch
+Y='\033[38;2;249;226;175m'  # Yellow #F9E2AF - dirty
+P='\033[38;2;250;179;135m'  # Peach #FAB387 - model
+S='\033[38;2;108;112;134m'  # Overlay0 #6C7086 - separator
+M='\033[38;2;203;166;247m'  # Mauve #CBA6F7 - context
+G='\033[38;2;166;227;161m'  # Green #A6E3A1 - todo
+R='\033[0m'
 
-# --- 配色 ---
-# Git Bash は TERM=xterm-256color を出すが COLORTERM は空 (実測済み)。
-# COLORTERM だけで判定すると Windows の同僚が全員 basic に落ちるため
-# WT_SESSION / TERM_PROGRAM も見る。判定不能なら basic 側に倒す:
-# 24bit 非対応端末に truecolor を送ると生のエスケープが出て読めなくなるが、
-# 逆に 16 色を送るのは色が地味になるだけで済む。
-color_mode="${CC_STATUSLINE_COLOR:-auto}"
-if [ "$color_mode" = "auto" ]; then
-  case "$COLORTERM" in
-    truecolor|24bit) color_mode=truecolor ;;
-    *)
-      if [ -n "$WT_SESSION" ] || [ -n "$TERM_PROGRAM" ]; then
-        color_mode=truecolor
-      else
-        color_mode=basic
-      fi
-      ;;
-  esac
-fi
-
-case "$color_mode" in
-  truecolor)
-    B='\033[38;2;137;180;250m'  # Blue
-    L='\033[38;2;180;190;254m'  # Lavender
-    Y='\033[38;2;249;226;175m'  # Yellow
-    P='\033[38;2;250;179;135m'  # Peach
-    S='\033[38;2;108;112;134m'  # Overlay0
-    M='\033[38;2;203;166;247m'  # Mauve
-    G='\033[38;2;166;227;161m'  # Green
-    C_RED='\033[38;2;243;139;168m'
-    C_YEL='\033[38;2;249;226;175m'
-    C_GRN='\033[38;2;166;227;161m'
-    R='\033[0m'
-    ;;
-  none)
-    B=''; L=''; Y=''; P=''; S=''; M=''; G=''
-    C_RED=''; C_YEL=''; C_GRN=''; R=''
-    ;;
-  *)
-    B='\033[34m'; L='\033[35m'; Y='\033[33m'; P='\033[36m'
-    S='\033[90m'; M='\033[35m'; G='\033[32m'
-    C_RED='\033[31m'; C_YEL='\033[33m'; C_GRN='\033[32m'
-    R='\033[0m'
-    ;;
-esac
-
-# jq が無い/失敗したとき用。line 1 の必須項目のみ拾う。
+# jq が無い/失敗したとき用。1行目の必須項目のみ拾う。
 parse_without_jq() {
   current_dir=$(echo "$input" | grep -o '"current_dir":"[^"]*"' | head -1 | sed 's/"current_dir":"//;s/"//')
   model=$(echo "$input" | grep -o '"display_name":"[^"]*"' | head -1 | sed 's/"display_name":"//;s/"//')
@@ -101,6 +50,8 @@ if command -v jq &>/dev/null; then
   )
 fi
 
+# 全フィールドが揃ったときだけ jq の結果を信じる。jq が壊れていたり
+# 想定外の入力だと、そのまま使うと行が丸ごと空になる。
 if [ "${#fields[@]}" -eq 9 ]; then
   current_dir=${fields[0]}
   model=${fields[1]}
@@ -117,7 +68,7 @@ fi
 
 current_dir=$(basename "$current_dir")
 
-# "Opus 5 (1M context)" -> "Opus 5"
+# "Opus 5 (1M context)" -> "Opus 5"。空いた場所に effort を出す。
 model_short=$model
 case $model in
   *' ('*')')
@@ -126,9 +77,6 @@ case $model in
     ;;
 esac
 
-# Claude Code 本体が出す used_percentage をそのまま使う。autocompact 基準の
-# 独自計算 + 分数表示は、値の意味を説明できないと「本体の表示と数字が違う」
-# という問い合わせになるため配布版では採らない。
 context_pct=${context_pct%%.*}
 context_info="${context_pct:-0}%"
 
@@ -155,9 +103,9 @@ fi
 
 color_for_pct() {
   local pct=$1
-  if   [ "$pct" -ge 80 ] 2>/dev/null; then printf '%b' "$C_RED"
-  elif [ "$pct" -ge 50 ] 2>/dev/null; then printf '%b' "$C_YEL"
-  else                                      printf '%b' "$C_GRN"
+  if   [ "$pct" -ge 80 ] 2>/dev/null; then printf '\033[38;2;243;139;168m'  # Red #F38BA8
+  elif [ "$pct" -ge 50 ] 2>/dev/null; then printf '\033[38;2;249;226;175m'  # Yellow #F9E2AF
+  else                                      printf '\033[38;2;166;227;161m'  # Green #A6E3A1
   fi
 }
 
@@ -168,8 +116,8 @@ progress_bar() {
   [ "$filled" -lt 0 ] && filled=0
   local empty=$(( 10 - filled ))
   local bar="" i
-  for ((i=0; i<filled; i++)); do bar="${bar}${bar_full}"; done
-  for ((i=0; i<empty;  i++)); do bar="${bar}${bar_empty}"; done
+  for ((i=0; i<filled; i++)); do bar="${bar}#"; done
+  for ((i=0; i<empty;  i++)); do bar="${bar}-"; done
   printf '%s' "$bar"
 }
 
@@ -187,32 +135,32 @@ format_reset_time() {
   fi
 }
 
-# --- line 1 ---
-printf "${B}%s %s${R}" "$icon_folder" "$current_dir"
+# --- 1行目 ---
+printf "${B}DIR %s${R}" "$current_dir"
 printf " ${S}|${R} "
-printf "${L}%s %s${R}${Y}%s${R}" "$icon_branch" "$git_branch" "$git_dirty"
+printf "${L}git: %s${R}${Y}%s${R}" "$git_branch" "$git_dirty"
 printf " ${S}|${R} "
 effort_suffix=""
 [ -n "$effort_level" ] && effort_suffix=" ($effort_level)"
-printf "${P}%s %s%s${R}" "$icon_model" "$model_short" "$effort_suffix"
+printf "${P}AI %s%s${R}" "$model_short" "$effort_suffix"
 printf " ${S}|${R} "
-printf "${M}%s %s${R}" "$icon_context" "$context_info"
+printf "${M}ctx %s${R}" "$context_info"
 if [ "$todo_count" -gt 0 ] 2>/dev/null; then
   printf " ${S}|${R} "
-  printf "${G}%s %s${R}" "$icon_todo" "$todo_count"
+  printf "${G}TODO %s${R}" "$todo_count"
 fi
 echo
 
-# --- lines 2-3: Claude.ai 購読者のみ、初回 API 応答後に出る ---
+# --- 2〜3行目: Claude.ai 購読者のみ、初回 API 応答後に出る ---
 if [ -n "$pct_5h" ]; then
   pct_5h=${pct_5h%%.*}
-  printf "%b[%s] %3d%%${R} ${S}%s${R} 5h reset: %s\n" \
+  printf "%b[%s] %3d%%${R} ${S}|${R} 5h reset: %s\n" \
     "$(color_for_pct "$pct_5h")" "$(progress_bar "$pct_5h")" \
-    "$pct_5h" "$sep_sub" "$(format_reset_time "${reset_5h%%.*}" 5h)"
+    "$pct_5h" "$(format_reset_time "${reset_5h%%.*}" 5h)"
 fi
 if [ -n "$pct_7d" ]; then
   pct_7d=${pct_7d%%.*}
-  printf "%b[%s] %3d%%${R} ${S}%s${R} 7d reset: %s\n" \
+  printf "%b[%s] %3d%%${R} ${S}|${R} 7d reset: %s\n" \
     "$(color_for_pct "$pct_7d")" "$(progress_bar "$pct_7d")" \
-    "$pct_7d" "$sep_sub" "$(format_reset_time "${reset_7d%%.*}" 7d)"
+    "$pct_7d" "$(format_reset_time "${reset_7d%%.*}" 7d)"
 fi
