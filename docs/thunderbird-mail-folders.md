@@ -96,19 +96,44 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 `folderTree.json` の `colors` セクション（プロファイル直下）。**フォルダURI → HEX の
 単純なマップ**で、GUI の色設定はここに保存される。`userChrome.css` は不要。
 
-配色は Catppuccin Mocha。軸は「対応が必要か」の3階調。
+配色は Catppuccin Mocha。軸は「対応が必要か」の4階調。比は背景 `base #1e1e2e` に対する
+コントラスト比。
 
-| 階調 | 色 | 対象 |
-|---|---|---|
-| 要対応 | `#f38ba8` red | GitHub/自分宛、GitBucket/自分宛 |
-| 要対応 | `#fab387` peach | 課題DB |
-| 見る | `#89b4fa` blue | 開発、GitHub、GitBucket |
-| 見る | `#a6e3a1` green | 連絡、スケジュール |
-| 沈める | `#6c7086` overlay0 | GitHub/bot |
-| 沈める | `#585b70` surface2 | 勤怠、週報、掃除 |
+| 階調 | 色 | 比 | 対象 |
+|---|---|---|---|
+| 要対応 | `#f38ba8` red | 7.08:1 | GitHub/自分宛、GitBucket/自分宛 |
+| 要対応 | `#fab387` peach | 9.27:1 | 課題DB |
+| 見る | `#89b4fa` blue | 7.79:1 | 開発、GitHub、GitBucket |
+| 見る | `#a6e3a1` green | 11.03:1 | 連絡、スケジュール |
+| 沈める | `#9399b2` overlay2 | 5.81:1 | 勤怠、週報、掃除 |
+| 最も沈める | `#7f849c` overlay1 | 4.44:1 | GitHub/bot |
 
 `自分宛` を両方とも同じ赤にして、「GitHub でも GitBucket でも自分宛は赤」で
 覚えられるようにしている。
+
+### グレーに surface 帯を使わない
+
+当初 `surface2 #585b70`（勤怠・週報・掃除）と `overlay0 #6c7086`（bot）を当てたが、
+**それぞれ 2.46:1 / 3.36:1 で AA 基準 4.5:1 を大きく割り、読めなかった。**
+
+Catppuccin の `surface` 帯は面・境界用で、文字色に使う色ではない。「沈める」意図でも
+文字として置くなら `overlay1` 以上を使う。同じ問題は
+`config/thunderbird/README.md`「テーマだけでは補えない箇所」にも記録がある
+（作成ウィンドウのラベルが `overlay1` で 4.44:1 だったため `subtext0` に上げた）。
+
+色を決めるときは実測する:
+
+```bash
+python3 -c "
+def lum(h):
+    h=h.lstrip('#'); c=[int(h[i:i+2],16)/255 for i in (0,2,4)]
+    c=[x/12.92 if x<=0.03928 else ((x+0.055)/1.055)**2.4 for x in c]
+    return 0.2126*c[0]+0.7152*c[1]+0.0722*c[2]
+def r(a,b):
+    la,lb=lum(a),lum(b); return (max(la,lb)+0.05)/(min(la,lb)+0.05)
+print(f'{r(\"#9399b2\", \"#1e1e2e\"):.2f}:1')
+"
+```
 
 書式:
 
