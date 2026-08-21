@@ -31,6 +31,7 @@ Windows から見ると `C:\Users\368\AppData\Roaming\Thunderbird\Profiles\afhbv
 | pref（起動時に読む設定） | `config/thunderbird/user.js` | ○ |
 | **メッセージフィルタ** | プロファイル内 `msgFilterRules.dat` | **×（管理外）** |
 | **フォルダ構成** | プロファイル内 `Mail/` 配下の実ファイル | **×（管理外）** |
+| **フォルダの色** | プロファイル直下 `folderTree.json` の `colors` | **×（管理外）** |
 | アカウント設定 | プロファイル内 `prefs.js` | ×（管理外） |
 
 配色系を触るなら **`config/thunderbird/README.md` を読む**。ハマりどころ（白背景の再発、
@@ -84,6 +85,29 @@ condition="AND (from,contains,notifications@github.com)"
 フォルダURIのタイプミスが黙って無効化されるので、GUI で1本作って書式を確認してから
 真似るのが安全。
 
+## フォルダの色
+
+`folderTree.json`（プロファイル直下）の `colors` セクション。GUI の色設定はここに
+保存される。**`userChrome.css` で書く必要はない。**
+
+```json
+{
+  "open": { "all": [ "..." ] },
+  "colors": {
+    "mailbox://mori.a%40ebase.co.jp@mss787.kagoya.net/Inbox/%E9%96%8B%E7%99%BA": "#89b4fa"
+  }
+}
+```
+
+フォルダURI → HEX の単純なマップ。日本語名はパーセントエンコードされる
+（`開発` = `%E9%96%8B%E7%99%BA`）。**URI は推測せず `list_folders` で実値を取る。**
+
+このファイルも終了時に書き戻されるため、**編集は完全終了後**に行う。
+
+> GUI で設定できる項目は、たいていプロファイル内のどこかのファイルに落ちている。
+> CSS で無理に再現する前に、`/usr/bin/ls -lat <プロファイル>` で更新日時順に並べて
+> 「その操作で何が書き換わったか」を探すのが速い。
+
 ## 反映と再起動
 
 `user.js` と CSS は**起動時のみ**読まれる。完全終了してから再起動する。
@@ -125,3 +149,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass \
   されており、知らずに触ると対症療法を重ねることになる
 - **メインアカウントはローカル保存（`mailbox://`）。** フィルタはクライアント側で
   動くので、既存メールには遡って適用されない（手動実行が必要）
+- **`ls -lat` は eza エイリアスで失敗する。** 更新日時順に見るときは `/usr/bin/ls -lat`
+- **スクショはウィンドウハンドルを指定しても前面のウィンドウが写ることがある。**
+  設定ファイル側で検証できるならそちらで確認するほうが速い
