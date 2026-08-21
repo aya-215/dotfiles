@@ -26,6 +26,10 @@ parse_without_jq() {
   model=$(echo "$input" | grep -o '"display_name":"[^"]*"' | head -1 | sed 's/"display_name":"//;s/"//')
   transcript=$(echo "$input" | grep -o '"transcript_path":"[^"]*"' | head -1 | sed 's/"transcript_path":"//;s/"//')
   context_pct=$(echo "$input" | grep -o '"used_percentage":[0-9.]*' | head -1 | sed 's/"used_percentage"://')
+  context_size=$(echo "$input" | grep -o '"context_window_size":[0-9]*' | sed 's/"context_window_size"://')
+  cu_input=$(echo "$input" | grep -o '"input_tokens":[0-9]*' | head -1 | sed 's/"input_tokens"://')
+  cu_cache_creation=$(echo "$input" | grep -o '"cache_creation_input_tokens":[0-9]*' | sed 's/"cache_creation_input_tokens"://')
+  cu_cache_read=$(echo "$input" | grep -o '"cache_read_input_tokens":[0-9]*' | sed 's/"cache_read_input_tokens"://')
   effort_level=""
   pct_5h=""; reset_5h=""; pct_7d=""; reset_7d=""
 }
@@ -41,6 +45,10 @@ if command -v jq &>/dev/null; then
       .model.display_name // "",
       .transcript_path // "",
       .context_window.used_percentage // 0,
+      .context_window.context_window_size // 0,
+      .context_window.current_usage.input_tokens // 0,
+      .context_window.current_usage.cache_creation_input_tokens // 0,
+      .context_window.current_usage.cache_read_input_tokens // 0,
       .effort.level // "",
       .rate_limits.five_hour.used_percentage // "",
       .rate_limits.five_hour.resets_at // "",
@@ -52,16 +60,20 @@ fi
 
 # 全フィールドが揃ったときだけ jq の結果を信じる。jq が壊れていたり
 # 想定外の入力だと、そのまま使うと行が丸ごと空になる。
-if [ "${#fields[@]}" -eq 9 ]; then
+if [ "${#fields[@]}" -eq 13 ]; then
   current_dir=${fields[0]}
   model=${fields[1]}
   transcript=${fields[2]}
   context_pct=${fields[3]}
-  effort_level=${fields[4]}
-  pct_5h=${fields[5]}
-  reset_5h=${fields[6]}
-  pct_7d=${fields[7]}
-  reset_7d=${fields[8]}
+  context_size=${fields[4]}
+  cu_input=${fields[5]}
+  cu_cache_creation=${fields[6]}
+  cu_cache_read=${fields[7]}
+  effort_level=${fields[8]}
+  pct_5h=${fields[9]}
+  reset_5h=${fields[10]}
+  pct_7d=${fields[11]}
+  reset_7d=${fields[12]}
 else
   parse_without_jq
 fi
@@ -78,7 +90,35 @@ case $model in
 esac
 
 context_pct=${context_pct%%.*}
+
+# 使用量は K、上限は M で出す ("85K/1M")。上限側だけ M にするのは、
+# 使用量を M にすると 85K が 0.08M になって桁が読み取りにくくなるため。
+# 割合は隣に % で出ているので単位を揃える必要はない。
+format_k() {
+  local n=${1:-0}
+  if [ "$n" -ge 1000 ] 2>/dev/null; then
+    echo "$((n / 1000))K"
+  else
+    echo "$n"
+  fi
+}
+
+format_m() {
+  local n=${1:-0}
+  # 1M context は 1048576 でなく 1000000 前後で来ることがあるため、
+  # 端数を丸めて "1M" に寄せる。1M 未満は K のまま出す。
+  if [ "$n" -ge 1000000 ] 2>/dev/null; then
+    echo "$(( (n + 500000) / 1000000 ))M"
+  else
+    format_k "$n"
+  fi
+}
+
 context_info="${context_pct:-0}%"
+if [ -n "$context_size" ] && [ "$context_size" -gt 0 ] 2>/dev/null; then
+  used=$((${cu_input:-0} + ${cu_cache_creation:-0} + ${cu_cache_read:-0}))
+  context_info="${context_pct:-0}% ($(format_k "$used")/$(format_m "$context_size"))"
+fi
 
 # --no-optional-locks: status が .git/index.lock を取るのを防ぐ。
 # メッセージ更新ごとに走るため、実 git コマンドと衝突すると
@@ -136,15 +176,15 @@ format_reset_time() {
 }
 
 # --- 1行目 ---
-printf "${B}DIR %s${R}" "$current_dir"
+printf "${B}%s${R}" "$current_dir"
 printf " ${S}|${R} "
-printf "${L}git: %s${R}${Y}%s${R}" "$git_branch" "$git_dirty"
+printf "${L}%s${R}${Y}%s${R}" "$git_branch" "$git_dirty"
 printf " ${S}|${R} "
 effort_suffix=""
 [ -n "$effort_level" ] && effort_suffix=" ($effort_level)"
-printf "${P}AI %s%s${R}" "$model_short" "$effort_suffix"
+printf "${P}%s%s${R}" "$model_short" "$effort_suffix"
 printf " ${S}|${R} "
-printf "${M}ctx %s${R}" "$context_info"
+printf "${M}%s${R}" "$context_info"
 if [ "$todo_count" -gt 0 ] 2>/dev/null; then
   printf " ${S}|${R} "
   printf "${G}TODO %s${R}" "$todo_count"
