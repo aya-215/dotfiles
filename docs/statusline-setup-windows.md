@@ -12,38 +12,45 @@ myproject | main* | Opus 5 (high) | 8% (85K/1M)
 
 ## 前提
 
-| 必要なもの | 確認方法 | 備考 |
-|---|---|---|
-| Git for Windows | `where bash` | **必須**。Claude Code に bash は同梱されないので別途インストールが必要 |
-| jq | `jq --version` | 任意。無い場合もディレクトリ・ブランチ・モデル・コンテキスト率までは表示される（モデル名の後の `(high)` とレートリミット行が出なくなる） |
+Git for Windows が必要（`.sh` を動かす bash のため）。
+コマンドプロンプトで `where bash` を実行してパスが表示されればインストール済み。
 
-どちらも winget で入る。
+未インストールなら `winget install Git.Git` で入る。
 
-```powershell
-winget install Git.Git
-winget install jqlang.jq
+jq は任意。無くても動くが、モデル名の後の `(high)` とレートリミット行が出なくなる
+（`winget install jqlang.jq`）。
+
+## 手順
+
+### 1. スクリプトを置く
+
+`statusline-simple.sh` を、以下のフォルダにそのままコピーする（リネーム不要）。
+
+```
+C:\Users\<ユーザー名>\.claude\
 ```
 
-## 導入
+エクスプローラのアドレスバーに `%USERPROFILE%\.claude` を貼り付ければ開ける。
 
-1. `.claude-global/statusline-simple.sh` を
-   `%USERPROFILE%\.claude\statusline-command.sh` にコピーする
+### 2. settings.json を編集する
 
-2. `%USERPROFILE%\.claude\settings.json` に以下を追加する。
-   Git Bash 経由で呼ぶ必要があるのでフルパスで指定する。
+同じフォルダにある `settings.json` をテキストエディタで開き、`statusLine` を追加する。
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "\"C:\\Program Files\\Git\\bin\\bash.exe\" \"%USERPROFILE%\\.claude\\statusline-command.sh\""
+    "command": "bash ~/.claude/statusline-simple.sh",
+    "padding": 0
   }
 }
 ```
 
-3. Claude Code を再起動する
+- `settings.json` が既にある場合は `statusLine` の項目だけを足す（ファイル全体を置き換えない）
+- ファイルが無い場合は上記をそのまま保存する
+- `~` はホームフォルダとして解釈されるため、ユーザー名を書く必要はない
 
-環境変数の設定は不要。そのまま動く。
+### 3. Claude Code を再起動する
 
 ## 表示内容
 
@@ -62,22 +69,21 @@ winget install jqlang.jq
 
 | 症状 | 原因と対処 |
 |---|---|
-| statusline が何も表示されない | bash のパスが違う。`where bash` で確認して settings.json を修正する |
-| `[38;2;...m` のような文字列が見える | 端末が24bitカラー非対応。Windows Terminal を使う |
-| モデル名の後の `(high)` が出ない | jq が未インストール。`winget install jqlang.jq` |
+| statusline が表示されない | `where bash` でパスを確認する。表示されない場合は Git for Windows を入れる |
+| gitブランチが空になる | gitリポジトリ外では空になる（正常） |
+| モデル名の後の `(high)` が出ない | jq が未インストール |
 | レートリミットの2〜3行目が出ない | APIキー利用時は表示されない（仕様）。サブスクリプション利用時は最初の応答後から表示される |
 
 ## 見た目を変えたい場合
 
-このスクリプトは環境設定なしで動くことを優先し、アイコンを使っていない。
+このスクリプトはフォントの追加インストールなしで動くよう、アイコンを使っていない。
 
-Nerd Font をインストールしていて、かつ端末のフォントに設定している場合は、
-アイコン表示版に差し替えられる。リポジトリの
-`.claude-global/statusline-command.sh`（作者が使っているもの）が該当する。
+Nerd Font を入れて端末のフォントに設定している場合は、アイコン表示版
+（`.claude-global/statusline-command.sh`）に差し替えられる。手順2の
+ファイル名をそちらに変えるだけでよい。
 
 ```
-󰉋 myproject | ⑂ main* | 󰚩 Opus 5 (high) | 󰆼 10% (35K/775K)
+󰉋 myproject | ⑂ main* | 󰚩 Opus 5 (high) | 󰆼 10% (85K/775K)
 ```
 
-**フォントが入っていない状態でこちらを使うと、アイコンが全て豆腐（□）になる。**
-フォントの有無はスクリプト側から判定できないため、既定では ASCII 版を配布している。
+フォントが入っていない状態でこちらを使うと、アイコンが全て豆腐（□）になる。
