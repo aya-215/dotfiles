@@ -80,6 +80,47 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 
 **自分宛（4・6）は親（5・7）より上。** 先に親へ移動されると自分宛の判定に到達しない。
 
+### condition の構文（2026-08-24 に踏んだ罠）
+
+**演算子は先頭の条件にだけ付ける。2項目目以降に付けてはいけない。**
+
+```
+OK: condition="OR (to,contains,a@x) (to,contains,b@x)"
+NG: condition="OR (to,contains,a@x) AND (to,contains,b@x)"
+```
+
+NG 形は **OR と AND の混在**になり、Thunderbird は解釈できずエラーも出さずに黙って
+不成立になる。`週報` がこれで 3 日間死んでいた。
+
+なお `AND (a) AND (b)` は動く（GitHub 系 3 本が実際に着弾している）。壊れるのは
+**異なる演算子が混ざったとき**なので、OR を書くときだけ特に注意する。
+
+**条件値に `(` を含むときは閉じ括弧を明示的に足す。**
+
+```
+OK: (body,contains,森彪人(@mori.a))
+NG: (body,contains,森彪人(@mori.a)     ← 値の ( が閉じ括弧を食う
+```
+
+`GitBucket 自分宛` がこれで死んでいた。書き換えたら括弧の数を数えて検証する:
+
+```bash
+grep 'condition=' msgFilterRules.dat | python3 -c "
+import sys
+for l in sys.stdin:
+    c=l.strip()
+    print(('OK  ' if c.count('(')==c.count(')') else 'NG  ')+c[:70])
+"
+```
+
+移動先URIの検証（後述）は `condition` の妥当性を見ないため、**この2つは URI 検証を
+すり抜ける。** 着弾しているかはフォルダの実ファイルサイズで確認するのが確実:
+
+```bash
+# 0 バイト = 1通も入っていない = フィルタが動いていない疑い
+find Inbox.sbd -type f ! -name '*.msf' -printf '%s\t%p\n'
+```
+
 ### 判定キーの選択理由
 
 **勤怠は From ではなく To。** 送信者が社員数十人にばらけるため、From では必ず取りこぼす。
@@ -192,6 +233,7 @@ for line in sys.stdin:
 | `msgFilterRules.dat.bak-20260821` | **適用前**（ブロックリスト1本のみ） |
 | `msgFilterRules.dat.bak-20260821-12rules` | 中間（フォルダ名が英語 `mine` の時点） |
 | `folderTree.json.bak-20260821` | 色設定の適用前 |
+| `msgFilterRules.dat.bak-20260824-preorfix` | **condition 修正前**（週報・GitBucket自分宛が不成立の状態） |
 
 ## ロールバック
 
