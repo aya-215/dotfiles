@@ -89,9 +89,13 @@ done
 **Rocket Chat（自分の発言と自分宛メンションだけに絞る）**
 
 ```bash
+start=$(date -d '14 days ago' +%Y-%m-%d); end=$(date +%Y-%m-%d)
 bash ~/.dotfiles/scripts/lib/rocketchat.sh --from "$start" --to "$end" --include-dm > /tmp/rc.txt
 grep -nE "=====|mori\.a:|@mori\.a" /tmp/rc.txt | grep -vE "mori\.a-times \["
 ```
+
+> **`start` / `end` は各コマンドの先頭で定義すること。** Bash 呼び出し間でシェル変数は persist しない。
+> 未定義のまま渡すと `rocketchat.sh` が「--from と --to は必須」で `exit 2` する（静かには壊れないが1ステップ無駄になる）。
 
 生出力は数十KBあり雑談が大半を占める。**絞らずに読むとタスクが埋もれる。** 依頼の受領・約束・催促はほぼこの3種類（自分の発言／自分宛メンション／DM）に出る。
 
@@ -99,7 +103,8 @@ grep -nE "=====|mori\.a:|@mori\.a" /tmp/rc.txt | grep -vE "mori\.a-times \["
 
 ```bash
 GH_WORK=$(gh auth token --user eBASE-Mori)
-for r in ebase-dev/ebase-portal-chat ebase-dev/ebase-middleware-mcp ebase-dev/eb-api-extended; do
+for r in ebase-dev/ebase-portal-chat ebase-dev/ebase-middleware-mcp \
+         ebase-dev/eb-api-extended ebase-dev/ebase-agent-specs; do
   GH_TOKEN="$GH_WORK" gh issue list --repo "$r" --state open --assignee @me \
     --json number,title,updatedAt --jq '.[] | "\(.number)\t\(.updatedAt[:10])\t\(.title)"'
   GH_TOKEN="$GH_WORK" gh pr list --repo "$r" --state open --author @me \
@@ -108,9 +113,45 @@ for r in ebase-dev/ebase-portal-chat ebase-dev/ebase-middleware-mcp ebase-dev/eb
 done
 ```
 
-GitBucket（社内）は `mcp__gitbucket__gitbucket_list_prs` / `gitbucket_list_issues` を使う。`gh` は通らない。
+**この4リポジトリはリモート基準の固定リストであり、ローカル列挙で置き換えてはいけない。**
+`ls -d ~/src/github.com/ebase-dev/*/` で置き換えると2方向に壊れる（実測済み）:
 
-このリポジトリ群は Issue に assignee をほぼ付けない運用のため `--assignee @me` は0件になりやすい。**0件でも異常ではない**が、その場合は起票者・チャット文脈・git実データから再構成すること。なお `--author @me` も0件なら、そちらはアカウント取り違えを疑う（Step 0-2）。
+- `eb-api-extended` は**ローカルに clone が無く** `/mnt/d/tomcat/webapps/` にしかない → **脱落する**
+- `emm-*` / `epc-*` は親リポジトリの **worktree** で、同じ Issue/PR を指す → **重複して引く**
+
+つまり **Issue/PR sweep の対象集合と、後述の git status sweep の対象集合は別物**。
+前者はリモート基準の固定リスト、後者はローカル glob（worktree を拾う必要がある）。統一しないこと。
+リポジトリが増えたときは `gh repo list ebase-dev --limit 50 --json name --jq '.[].name'` で確認して
+このリストに手で足す。
+
+**`--assignee @me` / `--author @me` がともに0件のリポジトリは、絞り込みを外して全 open を見る。**
+このリポジトリ群は assignee をほぼ付けない運用のため `--assignee @me` は0件になりやすく、
+さらに**自分が起票していない Issue が自分の宿題になっている**ケースがある。実測値:
+
+```
+                       assignee@me  author@me  全open
+ebase-portal-chat            1          4        30
+ebase-middleware-mcp         0          5        16
+eb-api-extended              1          4         6
+ebase-agent-specs            0          0         6   ← 両方0。全openを見ないと6件すべて落ちる
+```
+
+両方0のときは `--assignee` / `--author` を外して全 open を引き、チャット文脈・git実データと突き合わせて
+自分に関係するものを拾う。なお**全リポジトリで `--author @me` が0**なら、それはアカウント取り違えを疑う（Step 0-2）。
+
+**GitBucket（社内）** は `mcp__gitbucket__gitbucket_list_prs` / `gitbucket_list_issues` を使う。`gh` は通らない。
+対象は **`owner=hankyu_kitchenyell` / `repo=ebase-web`**（`/mnt/d/tomcat/webapps/hankyu` の remote から特定・疎通確認済み）。
+他にも増えている可能性があるため、次のコマンドで remote を洗い出してから叩くこと:
+
+```bash
+for d in ~/src/github.com/*/*/ /mnt/d/tomcat/webapps/*/; do
+  u=$(git -C "$d" remote get-url origin 2>/dev/null)
+  case "$u" in *gitbucket*) echo "$(basename "$d") -> $u";; esac
+done 2>/dev/null
+```
+
+GitBucket には `--author @me` 相当の絞り込みが無い。**自分の表記は `eBASE-Mori` と `森彪人` の2種類が混在している**
+（コミット履歴で実測）ため、単純一致で絞ると取りこぼす。件数が少ないので**全 open を取得して目視で判別する**こと。
 
 **チェックリストの展開は open な PR/Issue のみ**を対象にする。マージ済み・クローズ済みは対象外（理由は Step 2 を参照）。
 
@@ -120,27 +161,39 @@ GitBucket（社内）は `mcp__gitbucket__gitbucket_list_prs` / `gitbucket_list_
 for r in ~/src/github.com/ebase-dev/*/ /mnt/d/tomcat/webapps/hankyu /mnt/d/tomcat/webapps/eb-api-extended; do
   [ -d "$r/.git" ] || [ -f "$r/.git" ] || continue
   s=$(git -C "$r" status --short 2>/dev/null \
-    | grep -vE '(^\?\? |/)docs/|\.md$|^\?\? .*\.(zip|sql|txt)$' | head -20)
+    | grep -vE '(^\?\? |/)docs/|\.md$|^\?\? .*\.(zip|sql|txt|log|csv)$|^\?\? .*/?_[^/]*$' | head -20)
   [ -n "$s" ] && { echo "=== $(basename "$r") ==="; echo "$s"; \
     echo "  branch: $(git -C "$r" branch --show-current)"; }
 done
 ```
 
+**こちらはローカル glob で正しい。** Issue/PR sweep と違い、`emm-*` / `epc-*` の **worktree にこそ未コミット差分が残る**
+（実測で `package-lock.json` の差分を検出）。`*/` を固定リストに置き換えないこと。
+
 **`docs/` 配下・`.md`・調査用の一時ファイルは除外する。** このユーザーは docs をコミットしない運用のため、除外しないと計画書が数十件ノイズとして出てタスクが埋もれる。
+`^\?\? .*/?_[^/]*$` は `_oom_probe.mjs` のような**アンダースコア始まりの使い捨て調査スクリプト**を落とす（実測で5件除去、コード実体の差分は保持）。
 
 残るのは**コード実体の未コミット差分**のみ。これは「作業したが着地していない」の強いシグナルで、特に**マージ済みブランチの上に乗った差分**は紛失・混線リスクがあるため必ず出す。
 
 **Claudeセッション要約（gitに残らない調査・調整作業の補完）**
 
 ```bash
+start=$(date -d '14 days ago' +%Y-%m-%d)
 for dir in ~/.nb/claude/sessions/*/; do
   d=$(basename "$dir")
-  [ "$d" \< "$start" ] && continue
+  [[ "$d" < "$start" ]] && continue
   for sf in "$dir"*.md; do
     awk 'seen && /^---$/ { b=1; next } /^project:/ { seen=1 } b { print }' "$sf" | head -25
   done 2>/dev/null
 done
 ```
+
+> **`[ "$d" \< "$start" ]` と書かないこと。** ユーザーのシェルは zsh で、`[` は `\<` を解釈せず
+> `condition expected: <` を stderr に吐いて **`continue` を実行しない**。エラーで止まらないため
+> 気づけないまま**全期間を読む**。実測では対象10ディレクトリに対し55ディレクトリ・464ファイルを読み、
+> 2ヶ月前に完了した作業が「今のタスク」として並んだ。必ず `[[ ]]` を使う。
+> 同じ罠は `quarterly-dev-report` でも踏まれており、姉妹スキル（`retrospective`・`verify-daily-report`）は
+> すでに `[[ ]]` へ移行済み。
 
 ### Step 2: タスク候補を抽出する
 
