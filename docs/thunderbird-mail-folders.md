@@ -20,6 +20,7 @@ Inbox に全部流れ込んでいた状態を、通知系をフォルダへ自�
     ├── 勤怠            member-repo@ 宛
     ├── スケジュール    schedule@
     ├── 週報            weekly_report@ / ml-dev@
+    ├── Anthropic       mail.anthropic.com
     └── 掃除            osaka-dev-2f@
 ```
 
@@ -53,13 +54,13 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 **送信元アドレスでは人間と bot を区別できない。** GitHub 通知は全て
 `notifications@github.com` から来るため、表示名か本文で判定する。
 
-## フィルタ（12本）
+## フィルタ（13本）
 
 `Mail/mss787.kagoya.net/msgFilterRules.dat`。**上から順に適用される。**
 
 | # | 名前 | 条件 | 移動先 |
 |---|---|---|---|
-| 1 | ブロックリスト | `from,is,support@codezine.jp` | 削除（既存） |
+| 1 | ブロックリスト | `OR` from:`support@codezine.jp` + from:`noreply@atcoder.jp` | 削除 |
 | 2 | GitHub bot (claude) | `AND` from:`notifications@github.com` + from:`claude[bot]` | 開発/GitHub/bot |
 | 3 | GitHub bot (actions) | `AND` from:`notifications@github.com` + from:`github-actions[bot]` | 開発/GitHub/bot |
 | 4 | GitHub 自分宛 | `AND` from:`notifications@github.com` + body:`@eBASE-Mori` | 開発/GitHub/自分宛 |
@@ -71,6 +72,7 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 | 10 | 勤怠 | to:`member-repo@ebase.co.jp` | 連絡/勤怠 |
 | 11 | 週報 | `OR` to:`weekly_report@` + to:`ml-dev@` | 連絡/週報 |
 | 12 | 掃除 | from:`osaka-dev-2f@ebase.co.jp` | 連絡/掃除 |
+| 13 | Anthropic | from:`mail.anthropic.com` | 連絡/Anthropic |
 
 ### 順序が重要な箇所
 
@@ -89,8 +91,8 @@ OK: condition="OR (to,contains,a@x) (to,contains,b@x)"
 NG: condition="OR (to,contains,a@x) AND (to,contains,b@x)"
 ```
 
-NG 形は **OR と AND の混在**になり、Thunderbird は解釈できずエラーも出さずに黙って
-不成立になる。`週報` がこれで 3 日間死んでいた。
+NG 形は **OR と AND の混在**で、エラーも出さずに黙って不成立になる（実測）。
+`週報` がこれで 3 日間死んでいた（宛先は合致しているのに着弾 0 件）。
 
 なお `AND (a) AND (b)` は動く（GitHub 系 3 本が実際に着弾している）。壊れるのは
 **異なる演算子が混ざったとき**なので、OR を書くときだけ特に注意する。
@@ -102,7 +104,9 @@ OK: (body,contains,森彪人(@mori.a))
 NG: (body,contains,森彪人(@mori.a)     ← 値の ( が閉じ括弧を食う
 ```
 
-`GitBucket 自分宛` がこれで死んでいた。書き換えたら括弧の数を数えて検証する:
+`GitBucket 自分宛` にこの不整合があったため併せて修正した。ただし 2026-08-21 以降
+アサイン通知自体が届いておらず、**着弾 0 件がこの括弧に因るものかは未確定**。
+書き換えたら括弧の数を数えて検証する:
 
 ```bash
 grep 'condition=' msgFilterRules.dat | python3 -c "
@@ -126,6 +130,17 @@ find Inbox.sbd -type f ! -name '*.msf' -printf '%s\t%p\n'
 **勤怠は From ではなく To。** 送信者が社員数十人にばらけるため、From では必ず取りこぼす。
 宛先 ML が唯一の安定した判定キー。自分が送った早退連絡も ML 経由で戻り `勤怠` に入るが、
 これは意図通り。
+
+**AtCoder は削除、Anthropic はフォルダ退避。** どちらも `noreply` 系の機械送信だが
+扱いが逆。AtCoder はコンテスト告知で後から読む必要がないため即削除（2026-08-24 に
+ブロックリストへ合流）。Anthropic はログインリンク・セキュリティ警告・請求で、
+消すと困るため残す。
+
+**Anthropic メールの主戦場は mori.a ではない。** ログインリンクの大半は
+`claude-code@` / `claude-code2@`（IMAP・別アカウント）宛で、mori.a に届くのは
+ごく一部（調査時点で約60件中2件）。**このフィルタは mori.a に流れてくる分だけを拾う。**
+IMAP 側アカウントはフィルタ0本・サブフォルダ0個のままなので、そちらを整理したい場合は
+別途対応が必要。
 
 **スケジュールは From で判定し、件名では判定しない。** 件名
 `[eB-schedule：予定調整確定]eB-DBPちらし新機能企画レビュー...` のスレッドは、中身が
@@ -234,6 +249,7 @@ for line in sys.stdin:
 | `msgFilterRules.dat.bak-20260821-12rules` | 中間（フォルダ名が英語 `mine` の時点） |
 | `folderTree.json.bak-20260821` | 色設定の適用前 |
 | `msgFilterRules.dat.bak-20260824-preorfix` | **condition 修正前**（週報・GitBucket自分宛が不成立の状態） |
+| `msgFilterRules.dat.bak-20260824-preatcoder` | AtCoder ブロック／Anthropic 追加の前 |
 
 ## ロールバック
 
