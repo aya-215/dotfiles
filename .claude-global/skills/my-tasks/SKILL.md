@@ -26,7 +26,11 @@ description: Use when the user wants to see everything currently on their plate 
 
 ## 実行コスト
 
-Step 0〜3 をすべて実行して**8分前後・120k tokens 程度**かかる。短縮モードは設けない。
+Step 0〜3 をすべて実行して**8分前後**かかる。短縮モードは設けない。
+
+トークン量の目安は、最大の入力であるセッション要約が**約48k tokens**（14日ぶん・実測）。
+これに日報・Rocket Chat・Issue/PR・git status が加わる。
+なお修正前は期間フィルタが効かず、セッション要約だけで**約272k tokens**を読んでいた。
 
 工程を省いた簡易版を実測したところ、時間は33%減ったが、省いた工程ぶん以上に精度が落ちた（相手待ちタスクの「自分で動ける分」が見えなくなる、薄い項目で件数を埋める、注記付きの項目を「完了っぽい」に置いたまま放置する）。**取りこぼしゼロが目的である以上、この交換は成立しない。**
 
@@ -105,11 +109,20 @@ grep -nE "=====|mori\.a:|@mori\.a" /tmp/rc.txt | grep -vE "mori\.a-times \["
 GH_WORK=$(gh auth token --user eBASE-Mori)
 for r in ebase-dev/ebase-portal-chat ebase-dev/ebase-middleware-mcp \
          ebase-dev/eb-api-extended ebase-dev/ebase-agent-specs; do
-  GH_TOKEN="$GH_WORK" gh issue list --repo "$r" --state open --assignee @me \
-    --json number,title,updatedAt --jq '.[] | "\(.number)\t\(.updatedAt[:10])\t\(.title)"'
-  GH_TOKEN="$GH_WORK" gh pr list --repo "$r" --state open --author @me \
+  echo "=== $(basename "$r") ==="
+  i=$(GH_TOKEN="$GH_WORK" gh issue list --repo "$r" --state open --assignee @me \
+    --json number,title,updatedAt --jq '.[] | "\(.number)\t\(.updatedAt[:10])\t\(.title)"')
+  p=$(GH_TOKEN="$GH_WORK" gh pr list --repo "$r" --state open --author @me \
     --json number,title,updatedAt,reviewDecision \
-    --jq '.[] | "PR#\(.number)\t\(.updatedAt[:10])\t\(.reviewDecision // "-")\t\(.title)"'
+    --jq '.[] | "PR#\(.number)\t\(.updatedAt[:10])\t\(.reviewDecision // "-")\t\(.title)"')
+  [ -n "$i" ] && echo "$i"
+  [ -n "$p" ] && echo "$p"
+  # 両方0件なら絞り込みを外して全openを見る（自分が起票していない宿題を拾うため）
+  if [ -z "$i" ] && [ -z "$p" ]; then
+    echo "  -- assignee/author ともに0件。全openを表示 --"
+    GH_TOKEN="$GH_WORK" gh issue list --repo "$r" --state open \
+      --json number,title,updatedAt --jq '.[] | "\(.number)\t\(.updatedAt[:10])\t\(.title)"'
+  fi
 done
 ```
 
@@ -136,8 +149,9 @@ eb-api-extended              1          4         6
 ebase-agent-specs            0          0         6   ← 両方0。全openを見ないと6件すべて落ちる
 ```
 
-両方0のときは `--assignee` / `--author` を外して全 open を引き、チャット文脈・git実データと突き合わせて
-自分に関係するものを拾う。なお**全リポジトリで `--author @me` が0**なら、それはアカウント取り違えを疑う（Step 0-2）。
+**この分岐は上のスニペットに実装済み**（両方0件なら自動で全 open を出す）。出てきた項目は
+チャット文脈・git実データと突き合わせて自分に関係するものを拾う。
+なお**全リポジトリで `--author @me` が0**なら、それはアカウント取り違えを疑う（Step 0-2）。
 
 **GitBucket（社内）** は `mcp__gitbucket__gitbucket_list_prs` / `gitbucket_list_issues` を使う。`gh` は通らない。
 対象は **`owner=hankyu_kitchenyell` / `repo=ebase-web`**（`/mnt/d/tomcat/webapps/hankyu` の remote から特定・疎通確認済み）。
@@ -183,10 +197,15 @@ for dir in ~/.nb/claude/sessions/*/; do
   d=$(basename "$dir")
   [[ "$d" < "$start" ]] && continue
   for sf in "$dir"*.md; do
+    [ -f "$sf" ] || continue
     awk 'seen && /^---$/ { b=1; next } /^project:/ { seen=1 } b { print }' "$sf" | head -25
   done 2>/dev/null
 done
 ```
+
+> **`[ -f "$sf" ] || continue` を省かないこと。** `.md` が1つも無い日があり、zsh は該当なしの glob に対して
+> `no matches found` エラーを出して**ループごと中断する**（bash のように未展開のまま渡らない）。
+> 途中の日で止まると以降が読まれないが、エラーが紛れて気づきにくい。
 
 > **`[ "$d" \< "$start" ]` と書かないこと。** ユーザーのシェルは zsh で、`[` は `\<` を解釈せず
 > `condition expected: <` を stderr に吐いて **`continue` を実行しない**。エラーで止まらないため
@@ -226,8 +245,14 @@ done
 **`Closes #N` / `Fixes #N` を持つ open PR は展開して確認する。** マージ時に別Issueが自動クローズされる。そのIssueの中身が実際には解決していない場合、**未解決のまま静かに閉じる**。これは通常の経路では絶対に検出できないので明示的に見ること。
 
 ```bash
+GH_WORK=$(gh auth token --user eBASE-Mori)
 GH_TOKEN="$GH_WORK" gh pr view <N> --repo <repo> --json body --jq '.body' | grep -iE "closes|fixes|resolves"
 ```
+
+> **`GH_WORK` の定義を省略しないこと。** Bash 呼び出し間で変数は persist しないため、
+> 未定義だと `GH_TOKEN=""` になる。このとき `gh` は**エラーにならず現在のアクティブアカウントへ
+> 静かにフォールバックする**（実測確認済み）。eBASE-Mori がアクティブなら偶然動くが、
+> aya-215 に切り替わっていると 0件が静かに返る — Step 0-2 の失敗モードそのもの。
 
 ### Step 3: 出力する
 
