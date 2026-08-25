@@ -60,7 +60,7 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 
 | # | 名前 | 条件 | 移動先 |
 |---|---|---|---|
-| 1 | ブロックリスト | `OR` from:`support@codezine.jp` + from:`noreply@atcoder.jp` | 削除 |
+| 1 | ブロックリスト | `OR` from:`support@codezine.jp` + from:`noreply@atcoder.jp`（いずれも `contains`） | 削除 |
 | 2 | GitHub bot (claude) | `AND` from:`notifications@github.com` + from:`claude[bot]` | 開発/GitHub/bot |
 | 3 | GitHub bot (actions) | `AND` from:`notifications@github.com` + from:`github-actions[bot]` | 開発/GitHub/bot |
 | 4 | GitHub 自分宛 | `AND` from:`notifications@github.com` + body:`@eBASE-Mori` | 開発/GitHub/自分宛 |
@@ -130,6 +130,14 @@ find Inbox.sbd -type f ! -name '*.msf' -printf '%s\t%p\n'
 **勤怠は From ではなく To。** 送信者が社員数十人にばらけるため、From では必ず取りこぼす。
 宛先 ML が唯一の安定した判定キー。自分が送った早退連絡も ML 経由で戻り `勤怠` に入るが、
 これは意図通り。
+
+**From の判定には `is` ではなく `contains` を使う。** `is` は完全一致のため、
+表示名付きの From ヘッダには当たらない。実際に CodeZine が
+`(from,is,support@codezine.jp)` で書かれていてブロックをすり抜けた
+（実ヘッダは `CodeZine編集部 <support@codezine.jp> CodeZine編集部` で、
+アドレスの前後に表示名が付く）。同じブロックリスト内の atcoder は `contains` で
+正常に動いていたため、**1本のフィルタ内で演算子が混在していても気づけない**。
+2026-08-25 に `contains` へ統一。
 
 **AtCoder は削除、Anthropic はフォルダ退避。** どちらも `noreply` 系の機械送信だが
 扱いが逆。AtCoder はコンテスト告知で後から読む必要がないため即削除（2026-08-24 に
@@ -250,6 +258,7 @@ for line in sys.stdin:
 | `folderTree.json.bak-20260821` | 色設定の適用前 |
 | `msgFilterRules.dat.bak-20260824-preorfix` | **condition 修正前**（週報・GitBucket自分宛が不成立の状態） |
 | `msgFilterRules.dat.bak-20260824-preatcoder` | AtCoder ブロック／Anthropic 追加の前 |
+| `msgFilterRules.dat.bak-20260825-precodezine-is` | CodeZine が `from,is` ですり抜けていた状態 |
 
 ## ロールバック
 
