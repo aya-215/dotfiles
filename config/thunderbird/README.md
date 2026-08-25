@@ -156,10 +156,39 @@ body blockquote[type="cite"] {
 GitHub の先例（`dllud/Dorian-3.14` 等）は2段目以降を `blockquote`（type 指定なし）で
 書いているが、TB153 では**ネストにも `type="cite"` が付く**。先例は古いバージョン向け。
 
+### 段階色が効くメールと効かないメールがある（未対処）
+
+同じプレーンテキストの `>` 引用でも、**引用の直前に引用符なしの帰属行があるか**で
+`<blockquote>` 化されるかが変わる。段階色（1段目→3段目）が出るのは前者だけ。
+
+| 形式 | 引用の頭 | blockquote 化 | 見た目 |
+|---|---|---|---|
+| TB / mbox | `On 2026/08/24 17:36, 氏名 wrote:` の**次行**から `>` | される | 枠線・段階色あり |
+| Outlook | `> -----Original Message-----` から**いきなり** `>` | されない | 枠線なし・単色 |
+
+Outlook 形式は帰属行（`From:` / `Sent:` 等）が `>` の内側に埋まっており、
+`-----Original Message-----` も引用の内側にあるため、TB 本体のヒューリスティックが
+引用の開始を捉えられない。当たるのは `span[_moz_quote="true"]` のみで、
+**この span はネストしないので深さの情報を持たず、CSS では段階色を復元できない**。
+
+**枠線が出ているかどうかが判定の目印**になる。枠線が無ければ blockquote 化されて
+おらず、色を変えても段階は付かない（`blockquote` 側のセレクタが当たっていない）。
+
+Conversations は無関係。アドオンのコードに `wrote:` も `Original Message` も
+存在せず（grep で0件）、この変換は **TB 本体**が行っている。
+`fusionBlockquotes()`（隣接 blockquote の融合）も原因ではない。
+
 ## Thunderbird Conversations アドオンへの対処
 
 **これが最大の落とし穴。** アドオンが本文の描画に介入するため、
 `userContent.css` だけでは制御できない。
+
+> **2026-08-25 追記: 以下の invert の記述は現状に当てはまらない。**
+> `injectCss()` の invert は `html.darkReaderEnabled` が付いたときだけ効くが、
+> このクラスは Conversations 側の dark reader 設定（`this.props.darkReaderEnabled`）で
+> 付与され、**現在は付いていない**。そのため `userContent.css` の
+> `filter: none` による打ち消しも発動条件を満たしていない（無害だが不要）。
+> 症状から invert を疑う前に、まず本当にクラスが付いているかを確認すること。
 
 Conversations（v4.3.10）は本文を **iframe に描画**し、`injectCss()` で以下を
 iframe 内に注入する（`content/stub.bundle.js:6120`）:
@@ -442,6 +471,41 @@ PowerShell 5.1 の `New-Item -ItemType SymbolicLink` はこれを活かさず昇
 ## 残っている改善余地（未着手）
 
 現状は動作しているため保留。問題が再発した際の検討材料として記録する。
+
+### 0. 一部のHTMLメールで本文が白くなる（未解決）
+
+CodeZine・Anthropic 等のマーケティング系 HTML メールで本文が白背景になる。
+**Conversations を無効化すると直る**（切り分け済み）。
+
+原因は**送信元HTMLが子孫要素へインラインで焼き込む背景**:
+
+```html
+<body style="...background-color:#FFFFFF;">
+<div style="background-color:#FFFFFF;" lang="und" dir="auto">   <!-- これ -->
+```
+
+`userContent.css` は `body` にしか背景を指定していないため、この `div` は
+**無競合で白のまま**通る。`mail.dark-reader.enabled` は助けにならない
+（DarkReader.mjs は `color` を削除するだけで `background-color` に触れない）。
+
+実測（メッセージペイン、Anthropic のサインインメール）:
+
+| 領域 | 最頻色 | 占有率 |
+|---|---|---|
+| 本文ペイン | `#ffffff` | 97.3% |
+| メール一覧（参考） | `#1e1e2e` | 87.1% |
+
+**試して効果がなかった対処:**
+
+- `browser.display.background_color` / `foreground_color` を Mocha 色に設定。
+  Conversations の `tweakFonts()` がこの値を `body:has(> .moz-text-html)` へ
+  焼き込むが、**その宣言に `!important` が無い**ため送信元のインライン style に
+  詳細度と無関係に負ける。フォントサイズだけが変わる（`tweak_bodies` オンが前提）
+- hex 値を列挙して `background-color: transparent` を当てる案は、
+  送信元が別の色を使うたびに破綻するため**採用しない**
+
+未検証の方向: iframe 内で `userContent.css` がユーザーオリジンとして
+扱われているかの確認（`!important` が効いていない疑い）。
 
 ### 1. `filter: none` による invert 打ち消しは対症療法
 
