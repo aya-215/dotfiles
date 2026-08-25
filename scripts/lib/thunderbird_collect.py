@@ -53,9 +53,12 @@ EXCLUDE_AUTHOR_DOMAINS = (
 )
 
 # 庶務・社内行事。件名で落とす（送信元は人間なのでアドレスでは切れない）。
+# eB-schedule の予定調整は参加者本人のアドレスから返信が飛ぶため
+# EXCLUDE_AUTHORS の schedule@ をすり抜ける。1件の調整で14通に膨らむ。
 EXCLUDE_SUBJECT_RE = re.compile(
     r"掃除当番|懇親会|忘年会|新年会|歓迎会|備品等発注|健康診断|"
-    r"早退連絡|早退報告|遅刻連絡|欠勤連絡"
+    r"早退連絡|早退報告|遅刻連絡|欠勤連絡|"
+    r"\[eB-schedule[:：]"
 )
 
 # claude-code@ / claude-code2@ の受信箱。Anthropic のマジックリンクが大半。
