@@ -60,7 +60,7 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 
 | # | 名前 | 条件 | 移動先 |
 |---|---|---|---|
-| 1 | ブロックリスト | `OR` from:`support@codezine.jp` + from:`noreply@atcoder.jp`（いずれも `contains`） | 削除 |
+| 1 | ブロックリスト | `OR` from:`support@codezine.jp` `OR` from:`noreply@atcoder.jp`（いずれも `contains`） | 削除 |
 | 2 | GitHub bot (claude) | `AND` from:`notifications@github.com` + from:`claude[bot]` | 開発/GitHub/bot |
 | 3 | GitHub bot (actions) | `AND` from:`notifications@github.com` + from:`github-actions[bot]` | 開発/GitHub/bot |
 | 4 | GitHub 自分宛 | `AND` from:`notifications@github.com` + body:`@eBASE-Mori` | 開発/GitHub/自分宛 |
@@ -70,7 +70,7 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 | 8 | 課題DB | from:`notice-pdmebase@ebase.co.jp` | 開発/課題DB |
 | 9 | スケジュール | from:`schedule@ebase.co.jp` | 連絡/スケジュール |
 | 10 | 勤怠 | to:`member-repo@ebase.co.jp` | 連絡/勤怠 |
-| 11 | 週報 | `OR` to:`weekly_report@` + to:`ml-dev@` | 連絡/週報 |
+| 11 | 週報 | `OR` to:`weekly_report@` `OR` to:`ml-dev@` | 連絡/週報 |
 | 12 | 掃除 | from:`osaka-dev-2f@ebase.co.jp` | 連絡/掃除 |
 | 13 | Anthropic | from:`mail.anthropic.com` | 連絡/Anthropic |
 
@@ -82,20 +82,29 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 
 **自分宛（4・6）は親（5・7）より上。** 先に親へ移動されると自分宛の判定に到達しない。
 
-### condition の構文（2026-08-24 に踏んだ罠）
+### condition の構文（2026-08-25 に GUI 実測で確定）
 
-**演算子は先頭の条件にだけ付ける。2項目目以降に付けてはいけない。**
+**演算子はすべての条件に反復して付ける。** GUI で「いずれかの条件に一致」を選んで
+Thunderbird 自身に書かせた形がこれ:
 
 ```
-OK: condition="OR (to,contains,a@x) (to,contains,b@x)"
-NG: condition="OR (to,contains,a@x) AND (to,contains,b@x)"
+OK: condition="OR (to,contains,a@x) OR (to,contains,b@x)"
+NG: condition="OR (to,contains,a@x) (to,contains,b@x)"
 ```
 
-NG 形は **OR と AND の混在**で、エラーも出さずに黙って不成立になる（実測）。
-`週報` がこれで 3 日間死んでいた（宛先は合致しているのに着弾 0 件）。
+**NG 形（2項目目に演算子が無い）は、エラーを出さず AND として解釈される。**
+GUI で開くと「すべての条件に一致」が選択された状態で表示されるので、そこで確認できる。
 
-なお `AND (a) AND (b)` は動く（GitHub 系 3 本が実際に着弾している）。壊れるのは
-**異なる演算子が混ざったとき**なので、OR を書くときだけ特に注意する。
+From 2 本を OR でつなぐブロックリストがこの形だったため、
+「差出人が codezine を含む **かつ** atcoder を含む」となり永久に不成立だった。
+`週報` も同じ形で、`ml-dev@` 宛の新着（8/24 23:30Z）が受信トレイに残って発覚した。
+
+`AND (a) AND (b)` が動くのは、たまたま意図も AND だから。非反復形が「動いている」
+ように見えるケースは、**AND として解釈されて正解だっただけ**で反例にならない。
+
+> **この構文は推測で書かない。** 2026-08-24 に非反復形を「正しい」と記録して 2 度誤診した。
+> GUI で 1 本作らせて `msgFilterRules.dat` を読むのが唯一の確実な確認方法
+> （ドキュメント冒頭にもある手順だが、これを飛ばしたのが誤りの原因）。
 
 **条件値に `(` を含むときは閉じ括弧を明示的に足す。**
 
@@ -104,8 +113,10 @@ OK: (body,contains,森彪人(@mori.a))
 NG: (body,contains,森彪人(@mori.a)     ← 値の ( が閉じ括弧を食う
 ```
 
-`GitBucket 自分宛` にこの不整合があったため併せて修正した。ただし 2026-08-21 以降
-アサイン通知自体が届いておらず、**着弾 0 件がこの括弧に因るものかは未確定**。
+`GitBucket 自分宛` にこの不整合がある。**2026-08-25 時点で未修正**（実ファイルは
+開き括弧 3・閉じ括弧 2 のまま）。8/24 の GitBucket 通知が `自分宛` ではなく
+`GitBucket`（ルール7）に落ちており関連が疑われるが、**未検証**。
+直すなら値から `(@mori.a)` を外して `森彪人` だけで判定するのが簡単。
 書き換えたら括弧の数を数えて検証する:
 
 ```bash
@@ -135,9 +146,13 @@ find Inbox.sbd -type f ! -name '*.msf' -printf '%s\t%p\n'
 表示名付きの From ヘッダには当たらない。実際に CodeZine が
 `(from,is,support@codezine.jp)` で書かれていてブロックをすり抜けた
 （実ヘッダは `CodeZine編集部 <support@codezine.jp> CodeZine編集部` で、
-アドレスの前後に表示名が付く）。同じブロックリスト内の atcoder は `contains` で
-正常に動いていたため、**1本のフィルタ内で演算子が混在していても気づけない**。
-2026-08-25 に `contains` へ統一。
+アドレスの前後に表示名が付く）。2026-08-25 に `contains` へ統一。
+
+ただし**このブロックリストが不成立だった主因は `is` ではなく condition の構文**
+（上記「condition の構文」）。`contains` 化は必要だったが十分ではなく、
+修正後に届いた CodeZine（8/25 02:32Z）も素通りしている。
+**症状が消えないとき、最初の修正が「効かなかった」のではなく
+「別の原因も同時にある」可能性を先に疑う。**
 
 **AtCoder は削除、Anthropic はフォルダ退避。** どちらも `noreply` 系の機械送信だが
 扱いが逆。AtCoder はコンテスト告知で後から読む必要がないため即削除（2026-08-24 に
@@ -258,7 +273,7 @@ for line in sys.stdin:
 | `folderTree.json.bak-20260821` | 色設定の適用前 |
 | `msgFilterRules.dat.bak-20260824-preorfix` | **condition 修正前**（週報・GitBucket自分宛が不成立の状態） |
 | `msgFilterRules.dat.bak-20260824-preatcoder` | AtCoder ブロック／Anthropic 追加の前 |
-| `msgFilterRules.dat.bak-20260825-precodezine-is` | CodeZine が `from,is` ですり抜けていた状態 |
+| `msgFilterRules.dat.bak-20260825-precodezine-is` | CodeZine が `from,is` かつ condition 非反復形ですり抜けていた状態 |
 
 ## ロールバック
 
