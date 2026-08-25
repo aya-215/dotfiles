@@ -23,6 +23,7 @@ MCP_ENTRY = os.environ["TB_MCP_ENTRY"]
 # 自分を指す識別子。gloda の recipients は表示名だけでアドレスが落ちるケースが
 # あるため（実データで確認済み）、アドレスと表示名の両方を見る。
 ME_PATTERNS = ("mori.a@ebase.co.jp", "森 彪人", "森彪人")
+MY_ADDRESSES = frozenset(p.lower() for p in ME_PATTERNS if "@" in p)
 # AIチームML。自分が to/cc から漏れてもチーム宛なら拾う保険。
 TEAM_PATTERNS = ("ai-team@ebase.co.jp",)
 
@@ -145,6 +146,15 @@ def addressed_to_me(msg):
     return any(p.lower() in low for p in TEAM_PATTERNS)
 
 
+def sent_by_me(msg):
+    """Sent フォルダの1通が自分の送信か。
+
+    フォルダ名は末端名しか返らず（MCP の fl.name）、claude-code アカウントの
+    Sent が同名で衝突する。フォルダ名だけでは区別できないため送信者で判別する。
+    """
+    return addr(msg.get("author", "")) in MY_ADDRESSES
+
+
 def clean_body(text, limit=None):
     """署名・引用行・空行の連続を落として本文の要点だけ残す。"""
     if not text:
@@ -216,10 +226,14 @@ def main():
                 "query": q, "folder": SENT_FOLDER,
                 "after": (from_d - timedelta(days=SENT_LOOKBACK_DAYS)).isoformat(),
                 "before": from_d.isoformat(), "limit": 100}):
-            replied_conv.add(m.get("conversationId"))
+            # folder 指定は MCP 側が部分一致（fl.name LIKE %Sent%）のため
+            # 別アカウントの Sent や Unsent Messages も返る。ここで絞る。
+            if m.get("folder") == SENT_FOLDER and sent_by_me(m):
+                replied_conv.add(m.get("conversationId"))
 
-    # 1. 母集団を絞る（Sent は無条件、それ以外は宛先判定）
-    sent = [m for m in allm if m.get("folder") == SENT_FOLDER]
+    # 1. 母集団を絞る（Sent は送信者判定、それ以外は宛先判定）
+    sent = [m for m in allm
+            if m.get("folder") == SENT_FOLDER and sent_by_me(m)]
     inbox = [m for m in allm
              if m.get("folder") != SENT_FOLDER
              and m.get("folder") not in EXCLUDE_FOLDERS
