@@ -93,6 +93,7 @@ if [[ -n "$SYMBOL" ]]; then
 				-- "${SEARCH_GLOBS[@]}" 2>/dev/null |
 				grep -v node_modules |
 				grep -v '\.test\.' | grep -v '\.spec\.' |
+				grep -vE '(^|/)(__tests__|tests?)/' |
 				grep -v "^${esc_file}:" || true
 		)
 		if [[ -z "$hits" ]]; then
