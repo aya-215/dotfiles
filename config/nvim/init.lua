@@ -16,6 +16,7 @@ vim.opt.secure = true
 -- 設定ファイルの読み込み
 require("config.options")
 require("config.keymaps")
+require("todo").setup()
 
 -- bootstrap lazy.nvim, LazyVim and your plugins
 require("config.lazy")
