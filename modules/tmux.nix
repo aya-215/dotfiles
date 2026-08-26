@@ -207,9 +207,8 @@
       bind F choose-tree -s
       bind D display-popup -E -h 80% -w 80% "$SHELL -ic tsd"
 
-      # TODO (C-q t: ポップアップ, C-q T: 右サイドバーをトグル)。編集は nvim 側 (lua/todo)
+      # TODO リスト (C-q t)。編集は nvim 側 (lua/todo)
       bind t display-popup -E -h 70% -w 60% "nvim ~/.nb/notes/todo.md"
-      bind T run-shell "$SHELL -ic ttodo"
 
       # 確認なしでペイン/ウィンドウを閉じる
       bind x kill-pane

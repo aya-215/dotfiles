@@ -1,5 +1,5 @@
 -- ~/.nb/notes/todo.md を開いたときだけ効くチェックボックス操作。
--- 窓の開閉は tmux 側（C-q t / C-q T）に任せ、nvim からは開く導線を持たない。
+-- 窓の開閉は tmux 側（C-q t のポップアップ）に任せ、nvim からは開く導線を持たない。
 local M = {}
 
 M.path = vim.fn.expand("~/.nb/notes/todo.md")

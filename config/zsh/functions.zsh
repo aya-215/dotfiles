@@ -325,17 +325,3 @@ dbusclean() {
   max=$(cat /proc/sys/fs/inotify/max_user_instances 2>/dev/null)
   echo "dbus-daemon: ${before} → ${after} 個 / inotify instances: ${inst} / ${max}"
 }
-
-# ttodo - todo.md を nvim で開く右サイドバーをトグル（tmux C-q T から呼ぶ）
-# 同じウィンドウ内に todo ペインがあれば閉じ、無ければ開く
-ttodo() {
-  local cmd="nvim ~/.nb/notes/todo.md"
-  local id
-  # pane_start_command は tmux のバージョンによりダブルクォートで囲まれて返るため剥がして比較する
-  id=$(tmux list-panes -F '#{pane_id}	#{pane_start_command}' | awk -F'\t' -v c="$cmd" '{ s = $2; gsub(/"/, "", s) } s == c { print $1 }')
-  if [[ -n $id ]]; then
-    tmux kill-pane -t "$id"
-  else
-    tmux split-window -h -l 45 "$cmd"
-  fi
-}
