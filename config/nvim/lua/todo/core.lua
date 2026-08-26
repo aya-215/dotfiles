@@ -74,6 +74,7 @@ local function ensure_blank_before(out, at)
   return at
 end
 
+-- 移動系は常に移動先の行番号を返す（カーソルを項目に追従させる）
 ---@param lines string[]
 ---@param row integer 1-based
 ---@return string[] new_lines, integer new_row
@@ -97,7 +98,7 @@ function M.toggle(lines, row)
     heading = ensure_blank_before(out, #out)
   end
   table.insert(out, heading + 1, "- [x] " .. task.text)
-  return out, math.min(row, #out)
+  return out, heading + 1
 end
 
 -- 未完了 ⇄ 待ち を移動する。完了済み・タスク以外の行は何もしない。
@@ -131,7 +132,7 @@ function M.toggle_wait(lines, row)
   end
   local at = M.wait_area_end(out) + 1
   table.insert(out, at, "- [ ] " .. task.text)
-  return out, math.min(row, #out)
+  return out, at
 end
 
 return M

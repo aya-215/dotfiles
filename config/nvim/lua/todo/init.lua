@@ -2,7 +2,18 @@
 -- 窓の開閉は tmux 側（C-q t のポップアップ）に任せ、nvim からは開く導線を持たない。
 local M = {}
 
-M.path = vim.fn.expand("~/.nb/notes/todo.md")
+-- TODO_MD_PATH はテスト用の差し替え口。実ファイルをテストで壊さないために使う
+M.path = vim.env.TODO_MD_PATH or vim.fn.expand("~/.nb/notes/todo.md")
+
+local function count_nonblank(lines)
+  local n = 0
+  for _, l in ipairs(lines) do
+    if not l:match("^%s*$") then
+      n = n + 1
+    end
+  end
+  return n
+end
 
 -- core の (lines, row) -> (lines, row) 関数をカーソル行に適用して保存する
 local function apply(fn)
@@ -11,6 +22,11 @@ local function apply(fn)
     local row = vim.api.nvim_win_get_cursor(0)[1]
     local new_lines, new_row = fn(lines, row)
     if vim.deep_equal(new_lines, lines) then
+      return
+    end
+    -- 移動系の操作で非空行が減ることは無い。減るなら内容を失うバグなので反映しない
+    if count_nonblank(new_lines) < count_nonblank(lines) then
+      vim.notify("todo: 行が失われる変更を検出したため中止しました", vim.log.levels.ERROR)
       return
     end
     vim.api.nvim_buf_set_lines(0, 0, -1, false, new_lines)

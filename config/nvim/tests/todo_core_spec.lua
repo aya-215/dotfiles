@@ -34,7 +34,7 @@ do
   local lines = { "# TODO", "- [ ] a", "- [ ] b", "", "## 完了", "- [x] old" }
   local out, row = core.toggle(lines, 2)
   eq(out, { "# TODO", "- [ ] b", "", "## 完了", "- [x] a", "- [x] old" }, "toggle open->done lines")
-  eq(row, 2, "toggle open->done cursor stays on next open task")
+  eq(row, 5, "toggle open->done cursor follows to done section")
 end
 
 -- toggle: done -> open, appended to end of open area (before blank+heading)
@@ -65,7 +65,7 @@ do
   local lines = { "# TODO", "- [ ] a", "", "## 完了" }
   local out, row = core.toggle(lines, 2)
   eq(out, { "# TODO", "", "## 完了", "- [x] a" }, "toggle last open -> done")
-  eq(row, 2, "toggle last open -> cursor clamps to next line")
+  eq(row, 4, "toggle last open -> cursor follows")
 end
 
 -- open_area_end: row after which a new open task should be inserted
@@ -81,7 +81,7 @@ do
   local lines = { "# TODO", "- [ ] a", "- [ ] b", "", "## 待ち", "- [ ] w", "", "## 完了" }
   local out, row = core.toggle_wait(lines, 2)
   eq(out, { "# TODO", "- [ ] b", "", "## 待ち", "- [ ] w", "- [ ] a", "", "## 完了" }, "toggle_wait open->wait lines")
-  eq(row, 2, "toggle_wait open->wait cursor stays")
+  eq(row, 6, "toggle_wait open->wait cursor follows")
 end
 
 -- toggle_wait: wait -> open (appended to end of open area)
