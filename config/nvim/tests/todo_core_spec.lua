@@ -73,8 +73,62 @@ eq(core.open_area_end({ "# TODO", "- [ ] a", "", "## 完了" }), 2, "open_area_e
 eq(core.open_area_end({ "# TODO", "", "## 完了" }), 1, "open_area_end with no tasks")
 eq(core.open_area_end({ "# TODO", "- [ ] a" }), 2, "open_area_end without heading")
 
+-- open_area_end stops before ## 待ち when present
+eq(core.open_area_end({ "# TODO", "- [ ] a", "", "## 待ち", "- [ ] w", "", "## 完了" }), 2, "open_area_end stops before wait")
+
+-- toggle_wait: open -> wait (appended to end of wait area)
+do
+  local lines = { "# TODO", "- [ ] a", "- [ ] b", "", "## 待ち", "- [ ] w", "", "## 完了" }
+  local out, row = core.toggle_wait(lines, 2)
+  eq(out, { "# TODO", "- [ ] b", "", "## 待ち", "- [ ] w", "- [ ] a", "", "## 完了" }, "toggle_wait open->wait lines")
+  eq(row, 2, "toggle_wait open->wait cursor stays")
+end
+
+-- toggle_wait: wait -> open (appended to end of open area)
+do
+  local lines = { "# TODO", "- [ ] a", "", "## 待ち", "- [ ] w", "", "## 完了" }
+  local out, row = core.toggle_wait(lines, 5)
+  eq(out, { "# TODO", "- [ ] a", "- [ ] w", "", "## 待ち", "", "## 完了" }, "toggle_wait wait->open lines")
+  eq(row, 3, "toggle_wait wait->open cursor follows")
+end
+
+-- toggle_wait: heading missing -> created before ## 完了
+do
+  local lines = { "# TODO", "- [ ] a", "", "## 完了", "- [x] z" }
+  local out = core.toggle_wait(lines, 2)
+  eq(out, { "# TODO", "", "## 待ち", "- [ ] a", "", "## 完了", "- [x] z" }, "toggle_wait creates heading before done")
+end
+
+-- toggle_wait: heading missing and no ## 完了 -> appended at end
+do
+  local out = core.toggle_wait({ "# TODO", "- [ ] a" }, 2)
+  eq(out, { "# TODO", "", "## 待ち", "- [ ] a" }, "toggle_wait creates heading at end")
+end
+
+-- toggle_wait: done task or non-task -> unchanged
+do
+  local lines = { "# TODO", "- [ ] a", "", "## 待ち", "", "## 完了", "- [x] z" }
+  eq(core.toggle_wait(lines, 7), lines, "toggle_wait on done -> unchanged")
+  eq(core.toggle_wait(lines, 4), lines, "toggle_wait on heading -> unchanged")
+end
+
+-- toggle (<CR>) from wait area -> done
+do
+  local lines = { "# TODO", "- [ ] a", "", "## 待ち", "- [ ] w", "", "## 完了" }
+  local out = core.toggle(lines, 5)
+  eq(out, { "# TODO", "- [ ] a", "", "## 待ち", "", "## 完了", "- [x] w" }, "toggle from wait -> done")
+end
+
+-- toggle (<CR>) done -> open lands in open area, not wait area
+do
+  local lines = { "# TODO", "- [ ] a", "", "## 待ち", "- [ ] w", "", "## 完了", "- [x] z" }
+  local out, row = core.toggle(lines, 8)
+  eq(out, { "# TODO", "- [ ] a", "- [ ] z", "", "## 待ち", "- [ ] w", "", "## 完了" }, "toggle done->open respects wait")
+  eq(row, 3, "toggle done->open cursor")
+end
+
 -- skeleton
-eq(core.skeleton(), { "# TODO", "", "## 完了" }, "skeleton")
+eq(core.skeleton(), { "# TODO", "", "## 待ち", "", "## 完了" }, "skeleton")
 
 if failures > 0 then
   print(failures .. " failure(s)")

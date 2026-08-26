@@ -4,17 +4,19 @@ local M = {}
 
 M.path = vim.fn.expand("~/.nb/notes/todo.md")
 
-local function toggle()
-  local core = require("todo.core")
-  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  local row = vim.api.nvim_win_get_cursor(0)[1]
-  local new_lines, new_row = core.toggle(lines, row)
-  if vim.deep_equal(new_lines, lines) then
-    return
+-- core の (lines, row) -> (lines, row) 関数をカーソル行に適用して保存する
+local function apply(fn)
+  return function()
+    local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+    local row = vim.api.nvim_win_get_cursor(0)[1]
+    local new_lines, new_row = fn(lines, row)
+    if vim.deep_equal(new_lines, lines) then
+      return
+    end
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, new_lines)
+    vim.api.nvim_win_set_cursor(0, { new_row, 0 })
+    vim.cmd.write()
   end
-  vim.api.nvim_buf_set_lines(0, 0, -1, false, new_lines)
-  vim.api.nvim_win_set_cursor(0, { new_row, 0 })
-  vim.cmd.write()
 end
 
 function M._insert_task(above)
@@ -42,7 +44,9 @@ local function attach(buf)
   local function map(lhs, rhs, desc, expr)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc, expr = expr })
   end
-  map("<CR>", toggle, "TODO: 完了/未完了を切り替え")
+  local core = require("todo.core")
+  map("<CR>", apply(core.toggle), "TODO: 完了/未完了を切り替え")
+  map("<Tab>", apply(core.toggle_wait), "TODO: 未完了/待ちを移動")
   map("o", function() return new_task(false) end, "TODO: 下に新規タスク", true)
   map("O", function() return new_task(true) end, "TODO: 上に新規タスク", true)
   map("q", "<cmd>x<cr>", "TODO: 保存して閉じる")
