@@ -7,7 +7,7 @@ tmux からワンキーで開く、markdown 1ファイルの雑メモ用 TODO �
 
 | 操作 | 動き |
 |---|---|
-| `C-q t`（tmux prefix + t） | ポップアップ（中央 60%×70%）で `~/.nb/notes/todo.md` を nvim で開く |
+| `C-q t`（tmux prefix + t） | ポップアップ（中央 60%×70%）で `~/memo/todo.md` を nvim で開く |
 
 Neovim 側から開く導線は意図的に持たない（tmux のどこからでも同じキーで開けることを優先）。
 ポップアップは `-E` 付きなので nvim を終了すればそのまま消える。
@@ -32,7 +32,12 @@ Neovim 側から開く導線は意図的に持たない（tmux のどこから�
 - 新規ファイルなら上記の骨組みを自動生成する。既存ファイルには手を入れない
 - 完了はたまる一方。消したいときは `dd` で手で消す
 
-保存先が nb の `notes` ノートブック配下なので、`nb` コマンドを叩いたタイミングで git 履歴に乗る。
+保存先は `~/memo/`（雑メモ `memo/quick` と同じ置き場、`docs/memo-quick.md`）。nb は経由しない。
+
+`~/memo` は git リポジトリで、**`q` で閉じるとき・Neovim 終了時に `todo.md` だけを自動コミット**する
+（`<CR>`/`<Tab>` ごとの保存ではコミットしない）。同じディレクトリの他ファイルは add しない。
+当初は `~/.nb/notes/todo.md` に置いていたが、nb は nb コマンド実行時にしかコミットしないため
+nvim から直接書いた変更が長く未コミットのまま残る問題があり、移動した。
 
 ## バッファ内キー（`todo.md` を開いたときだけ有効）
 
@@ -41,7 +46,7 @@ Neovim 側から開く導線は意図的に持たない（tmux のどこから�
 | `<CR>` | `[ ]`⇄`[x]` を切り替えて移動。未完了/待ち → `## 完了` の直下、完了 → 未完了の末尾 |
 | `<Tab>` | 未完了 ⇄ `## 待ち` を往復。移動先の末尾に付く。完了済みの行では何もしない |
 | `o` / `O` | `- [ ] ` 付きの新規行を開いて挿入モード（`## 完了` エリアでは素の `o`/`O`） |
-| `q` | 保存して閉じる（`:x`） |
+| `q` | 保存して閉じ、変更があれば git commit |
 | `dd` 等 | 通常の vim 操作。vim-auto-save が自動保存する |
 
 軸は直交している: `<CR>` は「終わったか」、`<Tab>` は「今動けるか」。
@@ -72,7 +77,7 @@ nvim --headless -u NONE -l config/nvim/tests/todo_core_spec.lua
 対話的な挙動を確かめたいときは、実ファイルのコピーに対して `TODO_MD_PATH` を指定して開く:
 
 ```sh
-cp ~/.nb/notes/todo.md /tmp/todo_test.md
+cp ~/memo/todo.md /tmp/todo_test.md
 TODO_MD_PATH=/tmp/todo_test.md nvim /tmp/todo_test.md
 ```
 

@@ -1,9 +1,9 @@
--- ~/.nb/notes/todo.md を開いたときだけ効くチェックボックス操作。
+-- ~/memo/todo.md を開いたときだけ効くチェックボックス操作。
 -- 窓の開閉は tmux 側（C-q t のポップアップ）に任せ、nvim からは開く導線を持たない。
 local M = {}
 
 -- TODO_MD_PATH はテスト用の差し替え口。実ファイルをテストで壊さないために使う
-M.path = vim.env.TODO_MD_PATH or vim.fn.expand("~/.nb/notes/todo.md")
+M.path = vim.env.TODO_MD_PATH or vim.fn.expand("~/memo/todo.md")
 
 local function count_nonblank(lines)
   local n = 0
@@ -33,6 +33,27 @@ local function apply(fn)
     vim.api.nvim_win_set_cursor(0, { new_row, 0 })
     vim.cmd.write()
   end
+end
+
+-- 閉じるときだけ git にコミットする（<CR> ごとに保存はするがコミットは荒らさない）
+-- 対象ファイルだけ add するので、同じディレクトリの他ファイルは巻き込まない
+function M.commit()
+  local dir = vim.fn.fnamemodify(M.path, ":h")
+  if vim.fn.isdirectory(dir .. "/.git") == 0 then
+    return
+  end
+  local name = vim.fn.fnamemodify(M.path, ":t")
+  vim.system({ "git", "-C", dir, "add", "--", name }):wait()
+  local diff = vim.system({ "git", "-C", dir, "diff", "--cached", "--quiet", "--", name }):wait()
+  if diff.code == 0 then
+    return
+  end
+  vim.system({ "git", "-C", dir, "commit", "-q", "-m", "todo: " .. os.date("%Y-%m-%d %H:%M"), "--", name }):wait()
+end
+
+local function quit()
+  vim.cmd("exit")
+  M.commit()
 end
 
 function M._insert_task(above)
@@ -65,7 +86,7 @@ local function attach(buf)
   map("<Tab>", apply(core.toggle_wait), "TODO: 未完了/待ちを移動")
   map("o", function() return new_task(false) end, "TODO: 下に新規タスク", true)
   map("O", function() return new_task(true) end, "TODO: 上に新規タスク", true)
-  map("q", "<cmd>x<cr>", "TODO: 保存して閉じる")
+  map("q", quit, "TODO: 保存して閉じる（git commit）")
 end
 
 function M.setup()
@@ -82,6 +103,15 @@ function M.setup()
     pattern = M.path,
     callback = function(ev)
       attach(ev.buf)
+    end,
+  })
+  -- :q / :wq で抜けた場合の保険
+  vim.api.nvim_create_autocmd("VimLeavePre", {
+    group = group,
+    callback = function()
+      if vim.fn.bufnr(M.path) ~= -1 and vim.fn.filereadable(M.path) == 1 then
+        M.commit()
+      end
     end,
   })
 end

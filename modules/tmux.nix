@@ -208,7 +208,7 @@
       bind D display-popup -E -h 80% -w 80% "$SHELL -ic tsd"
 
       # TODO リスト (C-q t)。編集は nvim 側 (lua/todo)
-      bind t display-popup -E -h 70% -w 60% "nvim ~/.nb/notes/todo.md"
+      bind t display-popup -E -h 70% -w 60% "nvim ~/memo/todo.md"
       # 雑メモ (C-q m)。日時ファイルを新規作成して開く。一覧は nvim 側 <leader>e (lua/memo)
       bind m display-popup -E -h 70% -w 60% 'nvim ~/memo/quick/$(date +%Y%m%d-%H%M%S).md'
 
