@@ -37,6 +37,12 @@ vim.opt.shiftwidth = 4     -- インデント幅
 vim.opt.expandtab = false  -- タブ文字を使用
 vim.opt.softtabstop = 0    -- タブ文字を使用
 
+-- フォールド設定：treesitter で関数・クラス単位に折り畳む
+vim.opt.foldmethod = "expr"
+vim.opt.foldexpr = "v:lua.vim.treesitter.foldexpr()"
+vim.opt.foldlevel = 99  -- 開いた直後は全展開（zM で構造だけ見る）
+vim.opt.foldtext = ""   -- 畳んだ行はそのまま先頭行を表示
+
 -- 自動フォーマッター無効化
 vim.g.autoformat = false
 
