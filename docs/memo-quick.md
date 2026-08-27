@@ -67,6 +67,16 @@ MEMO_DIR=/tmp/memo_test nvim /tmp/memo_test/20260827-100000.md
 - 流派B（日時ファイル + ピッカー）: tdo.nvim / zk-nvim / telekasten / DumbNotes.nvim。本実装はこちら。picker 内 `<C-n>` 新規 / `<C-x>` 削除は DumbNotes.nvim に倣った
 - 「空のまま閉じたら消す」はどこにも無かったが、timestamped draft 方式で空ドラフトがゴミになる問題への対策として入れた
 
+## 既知の問題と対処: popup 内で貼り付けると改行が `^[[27;5;106~` になる
+
+tmux の popup は貼り付け（bracketed paste）を専用処理せず1キーずつ `input_key` に流すため、
+`extended-keys on` の環境では LF が拡張キー `\e[27;5;106~`（csi-u なら `\e[106;5u`）にエンコードされて
+paste の中に混ざる。通常ペインは `window_pane_paste` で生バイトを書くので起きない（tmux 3.7b、popup.c は master でも未修正）。
+nvim は paste 中の内容を解釈しないので、`config/nvim/lua/config/paste.lua` で `vim.paste` をフックして改行に戻している。
+todo.md のポップアップも同じ対処で守られる。
+
+参考: tmux #4663 / #4163、neovim #38021、claude-code #43169
+
 ## やっていないこと
 
 - タグ・検索（`~/memo/quick` に対して普通の grep / Telescope で足りる）

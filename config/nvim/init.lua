@@ -16,6 +16,7 @@ vim.opt.secure = true
 -- 設定ファイルの読み込み
 require("config.options")
 require("config.keymaps")
+require("config.paste").setup()
 require("todo").setup()
 require("memo").setup()
 
