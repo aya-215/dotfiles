@@ -209,6 +209,8 @@
 
       # TODO リスト (C-q t)。編集は nvim 側 (lua/todo)
       bind t display-popup -E -h 70% -w 60% "nvim ~/.nb/notes/todo.md"
+      # 雑メモ (C-q m)。日時ファイルを新規作成して開く。一覧は nvim 側 <leader>e (lua/memo)
+      bind m display-popup -E -h 70% -w 60% 'nvim ~/memo/quick/$(date +%Y%m%d-%H%M%S).md'
 
       # 確認なしでペイン/ウィンドウを閉じる
       bind x kill-pane

@@ -17,6 +17,7 @@ vim.opt.secure = true
 require("config.options")
 require("config.keymaps")
 require("todo").setup()
+require("memo").setup()
 
 -- bootstrap lazy.nvim, LazyVim and your plugins
 require("config.lazy")
