@@ -101,15 +101,6 @@ snippets:
     keyword: ghd
     snippet: gh auth switch --user eBASE-Mori && gh-dash
 
-  # hunk関連
-  - name: hunk diff origin/main (PR相当の3点差分をレビュー)
-    keyword: hdm
-    snippet: hunk diff origin/main...HEAD
-
-  - name: hunk show (直近コミット/指定refをレビュー)
-    keyword: hsh
-    snippet: hunk show
-
   # npm
   - name: npm dev
     keyword: npmd

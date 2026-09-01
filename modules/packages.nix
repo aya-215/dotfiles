@@ -17,7 +17,6 @@
     zoxide     # スマートcd
     nb         # ノート管理
     delta      # Git diff viewer（pager・色付き差分）
-    # hunk は nixpkgs版がWSLでSIGSEGVするため modules/hunk.nix で bun wrapper 版を導入
     ghq        # リポジトリ管理
     gh         # GitHub CLI
     gcalcli    # Googleカレンダー

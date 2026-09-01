@@ -187,12 +187,6 @@ nix-collect-garbage -d                      # 古い世代を削除
 nix-collect-garbage --delete-older-than 30d # 30日より古いものだけ削除
 ```
 
-### hunk が起動しない
-
-`hunk` は nixpkgs 版がこの WSL 環境で SIGSEGV するため、`modules/hunk.nix` で
-`buildNpmPackage` + bun wrapper 版を導入している。`pkgs.hunk` に戻すとクラッシュする。
-理由は `modules/hunk.nix` の冒頭コメントに記載。
-
 ## 注意事項
 
 - 手書き設定は `config/` に集約されている（nvim/wezterm/starship 等すべて）
