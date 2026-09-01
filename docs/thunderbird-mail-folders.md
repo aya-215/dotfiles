@@ -65,11 +65,11 @@ GitHub / GitBucket はどちらも「通知の大半が自分に無関係」と�
 | 3 | GitHub bot (actions) | `AND` from:`notifications@github.com` + from:`github-actions[bot]` | 開発/GitHub/bot |
 | 4 | GitHub 自分宛 | `AND` from:`notifications@github.com` + body:`@eBASE-Mori` | 開発/GitHub/自分宛 |
 | 5 | GitHub | from:`notifications@github.com` | 開発/GitHub |
-| 6 | GitBucket 自分宛 | `AND` from:`no-reply@ebase.co.jp` + body:`森彪人(@mori.a)` | 開発/GitBucket/自分宛 |
+| 6 | GitBucket 自分宛 | `AND` from:`no-reply@ebase.co.jp` + body:`森彪人` | 開発/GitBucket/自分宛 |
 | 7 | GitBucket | from:`no-reply@ebase.co.jp` | 開発/GitBucket |
 | 8 | 課題DB | from:`notice-pdmebase@ebase.co.jp` | 開発/課題DB |
 | 9 | スケジュール | from:`schedule@ebase.co.jp` | 連絡/スケジュール |
-| 10 | 勤怠 | to:`member-repo@ebase.co.jp` | 連絡/勤怠 |
+| 10 | 勤怠 | `OR` to:`member-repo@` `OR` from:`kintai@ebase.co.jp` | 連絡/勤怠 |
 | 11 | 週報 | `OR` to:`weekly_report@` `OR` to:`ml-dev@` | 連絡/週報 |
 | 12 | 掃除 | from:`osaka-dev-2f@ebase.co.jp` | 連絡/掃除 |
 | 13 | Anthropic | from:`mail.anthropic.com` | 連絡/Anthropic |
@@ -113,10 +113,31 @@ OK: (body,contains,森彪人(@mori.a))
 NG: (body,contains,森彪人(@mori.a)     ← 値の ( が閉じ括弧を食う
 ```
 
-`GitBucket 自分宛` にこの不整合がある。**2026-08-25 時点で未修正**（実ファイルは
-開き括弧 3・閉じ括弧 2 のまま）。8/24 の GitBucket 通知が `自分宛` ではなく
-`GitBucket`（ルール7）に落ちており関連が疑われるが、**未検証**。
-直すなら値から `(@mori.a)` を外して `森彪人` だけで判定するのが簡単。
+`GitBucket 自分宛` にこの不整合があり、**2026-09-01 に修正済み**。値から `(@mori.a)` を
+外して `森彪人` だけで判定する形にした。全13本の括弧バランスが揃っていることを確認済み。
+
+### 2026-09-01 の実測結果（着弾ゼロの原因は2つあり得る）
+
+| 事実 | 判定 |
+|---|---|
+| `GitBucket/自分宛` が **0 バイト**（`find -printf '%s'` で実測） | **CONFIRMED** |
+| 原因が括弧不整合であること | **PLAUSIBLE** |
+| 緩和 `森彪人` が他人宛assignを過剰捕捉すること | **REFUTED** |
+
+括弧が壊れていたのは事実だが、**それが着弾ゼロの原因と断定はできない**。親 `GitBucket`
+フォルダの直近15件を見ると、アサイン先は kishimoto / miyoshi / fukui.m / inoshita のみで
+**自分宛のアサインがそもそも1件も来ていない**。「条件が壊れていた」と「対象メールが
+来ていない」は両立するため、条件を直しただけでは着弾は確認できない。
+
+過剰捕捉の懸念は REFUTED。`folder: GitBucket` に対する `森彪人` 検索が **0件**で、
+他人宛のアサイン通知には他人の氏名しか含まれない。本文は
+`assigned from not assigned to 氏名(@アカウント) by 氏名(@アカウント)` の形式のため、
+`森彪人` が出るのは自分がアサインされたときだけ。緩和により表記ゆれにも耐える。
+
+**`du -h` でサイズを判定しないこと。** DrvFs 上ではブロック単位に丸められ、
+0 バイトのファイルと 141KB のファイルがどちらも `140K` と表示される。
+実バイト数は `find -printf '%s'` で取る。
+
 書き換えたら括弧の数を数えて検証する:
 
 ```bash
@@ -138,9 +159,20 @@ find Inbox.sbd -type f ! -name '*.msf' -printf '%s\t%p\n'
 
 ### 判定キーの選択理由
 
-**勤怠は From ではなく To。** 送信者が社員数十人にばらけるため、From では必ず取りこぼす。
-宛先 ML が唯一の安定した判定キー。自分が送った早退連絡も ML 経由で戻り `勤怠` に入るが、
-これは意図通り。
+**勤怠は To と From の OR。** 集約通知（全社員分）は送信者が社員数十人にばらけるため
+From では取りこぼし、宛先 ML `member-repo@` が唯一の安定した判定キー。
+自分が送った早退連絡も ML 経由で戻り `勤怠` に入るが、これは意図通り。
+
+ただし**同じ `kintai@ebase.co.jp` から To の異なる2種類が来る**。2026-09-01 に
+`OR from:kintai@` を追加してこれを拾うようにした。
+
+| 種類 | To | 追加前 |
+|---|---|---|
+| 勤怠集約通知（全社員分） | `member-repo@ebase.co.jp` | 着弾 |
+| 勤怠登録完了通知（自分の登録確認） | `mori.a@ebase.co.jp` | **Inbox に残留** |
+
+完了通知を別フォルダに分ける案もあったが、**頻度が低く自分で登録した内容のため
+集約通知に混ざっても埋もれない**と判断し、フォルダを増やさず合流させた。
 
 **From の判定には `is` ではなく `contains` を使う。** `is` は完全一致のため、
 表示名付きの From ヘッダには当たらない。実際に CodeZine が
