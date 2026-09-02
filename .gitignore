@@ -36,3 +36,6 @@ __pycache__/
 # chezmoi展開ファイル（チェックイン対象外）
 /AutoHotkey/
 /PowerShell/
+
+# 日報配布キット（社内情報を含むためgit管理外。実体はgw3で共有する）
+/share/
