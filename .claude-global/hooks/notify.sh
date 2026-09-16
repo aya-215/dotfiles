@@ -86,7 +86,6 @@ case "$evt" in
     ;;
   Stop)          title="応答完了・入力待ち" ;;
   StopFailure)   title="エラーで停止: ${reason:-不明}" ;;
-  SessionEnd)    title="セッション終了" ;;
   *)             title="${evt:-Claude Code}" ;;
 esac
 
