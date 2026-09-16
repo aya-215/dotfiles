@@ -8,7 +8,12 @@
 #   transcript の「tool_result が未着の tool_use」から引く必要がある。
 #
 #   固定文言だと承認・完了・終了が全て同じ見た目になり、鳴っても判別できない。
-#   Windows 側の重複トースト抑制を踏む可能性も下がる。
+#
+# 文言を ASCII に限定している理由:
+#   wsl-notify-send.exe は引数の非ASCIIを CP932 として解釈するため日本語が
+#   復元不能に壊れる。UTF-8 直渡しも CP932 への事前変換も効かない(実測)。
+#   PowerShell の ToastNotificationManager を直接叩く方式は、未登録の
+#   AppUserModelID では Show() が成功を返しつつ表示されないため使えない。
 
 set -uo pipefail
 
@@ -63,25 +68,25 @@ case "$evt" in
       permission_prompt)
         tool=$(pending_tool)
         if [[ "$tool" == AskUserQuestion* ]]; then
-          title="❓ 質問に回答して"
+          title="QUESTION: answer required"
         elif [[ -n "$tool" ]]; then
-          title="🔐 承認待ち: $tool"
+          title="PERMISSION: $tool"
         else
-          title="🔐 承認待ち"
+          title="PERMISSION required"
         fi
         ;;
-      agent_needs_input)   title="🤖 エージェントが入力待ち" ;;
+      agent_needs_input)   title="AGENT waiting for input" ;;
       elicitation_dialog|elicitation_url_dialog)
-                           title="📝 MCP が入力を要求" ;;
+                           title="MCP input required" ;;
       quota_auto_resume_fired)
-                           title="▶️ クォータ回復で再開" ;;
-      *)                   title="🔔 ${ntype:-通知}" ;;
+                           title="QUOTA resumed" ;;
+      *)                   title="NOTICE: ${ntype:-?}" ;;
     esac
     ;;
-  Stop)          title="✅ 応答完了・入力待ち" ;;
-  StopFailure)   title="⚠️ エラーで停止${reason:+: $reason}" ;;
-  SessionEnd)    title="🚪 セッション終了" ;;
-  *)             title="🔔 ${evt:-Claude Code}" ;;
+  Stop)          title="DONE - waiting for input" ;;
+  StopFailure)   title="ERROR: ${reason:-stopped}" ;;
+  SessionEnd)    title="SESSION ended" ;;
+  *)             title="${evt:-Claude Code}" ;;
 esac
 
 "$NOTIFIER" --appId "Claude Code" --category "$DIR_NAME" --icon "$ICON_PATH" "$title"
