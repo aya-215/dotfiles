@@ -13,8 +13,8 @@
 #   AppUserModelId の IconUri に指定しても表示されない(実測)。
 #   appLogoOverride で src を直接指定した場合のみ表示される。
 #
-# 本文は stdin から UTF-8 で受け取る。引数経由は cmd 層でのエンコード劣化を
-# 避けられないため使わない。
+# stdin の形式: 1行目=見出し, 2行目=作業ディレクトリ, 3行目=tmux pane ID
+# pane ID を渡すと、クリックでその pane へ移動できる通知になる。
 
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 
@@ -23,10 +23,10 @@ try {
   $text = [Console]::In.ReadToEnd().Trim()
   if (-not $text) { exit 0 }
 
-  # 1行目を見出し、2行目を本文(作業ディレクトリ)として扱う
-  $lines = $text -split "`n", 2
+  $lines = $text -split "`n", 3
   $title = [System.Security.SecurityElement]::Escape($lines[0].Trim())
   $body = if ($lines.Count -gt 1) { [System.Security.SecurityElement]::Escape($lines[1].Trim()) } else { "" }
+  $pane = if ($lines.Count -gt 2) { $lines[2].Trim() } else { "" }
 
   [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType=WindowsRuntime] | Out-Null
   [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom, ContentType=WindowsRuntime] | Out-Null
@@ -36,8 +36,13 @@ try {
     "<image placement='appLogoOverride' hint-crop='circle' src='$([System.Security.SecurityElement]::Escape($icon))'/>"
   } else { "" }
 
+  # pane ID が無い(tmux 外での実行など)場合もクリックで WezTerm へは飛べるよう、
+  # activation 自体は常に付ける。ハンドラ側が pane 不在をフォールバックする。
+  $launch = [System.Security.SecurityElement]::Escape("claude-pane://$pane")
+  $attr = "activationType='protocol' launch='$launch'"
+
   $xml = New-Object Windows.Data.Xml.Dom.XmlDocument
-  $xml.LoadXml("<toast><visual><binding template='ToastGeneric'>$img<text>$title</text><text>$body</text></binding></visual></toast>")
+  $xml.LoadXml("<toast $attr><visual><binding template='ToastGeneric'>$img<text>$title</text><text>$body</text></binding></visual></toast>")
 
   $toast = New-Object Windows.UI.Notifications.ToastNotification $xml
   [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("Claude Code").Show($toast)

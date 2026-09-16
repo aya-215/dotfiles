@@ -89,6 +89,9 @@ case "$evt" in
   *)             title="${evt:-Claude Code}" ;;
 esac
 
-printf '%s\n%s' "$title" "$DIR_NAME" |
+# フックは対象の pane 内で実行されるため $TMUX_PANE がそのまま使える。
+# pane_index ではなく pane ID を使うのは、ペインを閉じると index が
+# 繰り上がってズレるため(scripts/claude-pane-session/record.sh と同じ理由)。
+printf '%s\n%s\n%s' "$title" "$DIR_NAME" "${TMUX_PANE:-}" |
   "$PWSH" -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$TOAST_PS1")" 2>/dev/null
 exit 0
