@@ -105,6 +105,15 @@
             "command": "~/.dotfiles/scripts/claude-pane-session/forget.sh"
           }
         ]
+      },
+      {
+        "matcher": "logout|prompt_input_exit|other",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify.sh"
+          }
+        ]
       }
     ],
     "UserPromptSubmit": [
@@ -119,19 +128,19 @@
     ],
     "Notification": [
       {
-        "matcher": "idle_prompt|permission_prompt",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/notify.sh"
-          }
-        ]
-      },
-      {
         "hooks": [
           {
             "type": "command",
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude notification"
+          }
+        ]
+      },
+      {
+        "matcher": "permission_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog|quota_auto_resume_fired",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify.sh"
           }
         ]
       }
@@ -164,6 +173,14 @@
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude stop"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify.sh"
+          }
+        ]
       }
     ],
     "StopFailure": [
@@ -172,6 +189,14 @@
           {
             "type": "command",
             "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude stop-failure"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/notify.sh"
           }
         ]
       }
