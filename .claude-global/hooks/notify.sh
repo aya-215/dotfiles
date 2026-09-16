@@ -9,19 +9,20 @@
 #
 #   固定文言だと承認・完了・終了が全て同じ見た目になり、鳴っても判別できない。
 #
-# 文言を ASCII に限定している理由:
+# 送信を PowerShell 経由にしている理由:
 #   wsl-notify-send.exe は引数の非ASCIIを CP932 として解釈するため日本語が
 #   復元不能に壊れる。UTF-8 直渡しも CP932 への事前変換も効かない(実測)。
-#   PowerShell の ToastNotificationManager を直接叩く方式は、未登録の
-#   AppUserModelID では Show() が成功を返しつつ表示されないため使えない。
+#   ToastNotificationManager を直接叩けば日本語が保たれる。ただし
+#   AppUserModelId の登録が無いと Show() が成功を返しつつ表示されないため、
+#   HKCU への登録が前提(この環境では登録済み)。
 
 set -uo pipefail
 
-NOTIFIER="/mnt/c/Users/368/bin/wsl-notify-send.exe"
-ICON_PATH="C:\\Users\\368\\bin\\claude-icon.png"
+PWSH="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+TOAST_PS1="$HOME/.claude/hooks/toast.ps1"
 
 input=$(cat)
-[[ -x "$NOTIFIER" ]] || exit 0
+[[ -x "$PWSH" && -r "$TOAST_PS1" ]] || exit 0
 
 get() { printf '%s' "$input" | jq -r "$1 // empty" 2>/dev/null; }
 
@@ -68,26 +69,27 @@ case "$evt" in
       permission_prompt)
         tool=$(pending_tool)
         if [[ "$tool" == AskUserQuestion* ]]; then
-          title="QUESTION: answer required"
+          title="質問に回答して"
         elif [[ -n "$tool" ]]; then
-          title="PERMISSION: $tool"
+          title="承認待ち: $tool"
         else
-          title="PERMISSION required"
+          title="承認待ち"
         fi
         ;;
-      agent_needs_input)   title="AGENT waiting for input" ;;
+      agent_needs_input)   title="エージェントが入力待ち" ;;
       elicitation_dialog|elicitation_url_dialog)
-                           title="MCP input required" ;;
+                           title="MCP が入力を要求" ;;
       quota_auto_resume_fired)
-                           title="QUOTA resumed" ;;
-      *)                   title="NOTICE: ${ntype:-?}" ;;
+                           title="クォータ回復で再開" ;;
+      *)                   title="通知: ${ntype:-?}" ;;
     esac
     ;;
-  Stop)          title="DONE - waiting for input" ;;
-  StopFailure)   title="ERROR: ${reason:-stopped}" ;;
-  SessionEnd)    title="SESSION ended" ;;
+  Stop)          title="応答完了・入力待ち" ;;
+  StopFailure)   title="エラーで停止: ${reason:-不明}" ;;
+  SessionEnd)    title="セッション終了" ;;
   *)             title="${evt:-Claude Code}" ;;
 esac
 
-"$NOTIFIER" --appId "Claude Code" --category "$DIR_NAME" --icon "$ICON_PATH" "$title"
+printf '%s\n%s' "$title" "$DIR_NAME" |
+  "$PWSH" -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$TOAST_PS1")" 2>/dev/null
 exit 0
