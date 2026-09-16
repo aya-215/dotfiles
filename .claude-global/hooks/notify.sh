@@ -8,15 +8,19 @@
 #   transcript の「tool_result が未着の tool_use」から引く必要がある。
 #
 #   固定文言だと承認・完了・終了が全て同じ見た目になり、鳴っても判別できない。
-#   Windows 側の重複トースト抑制を踏む可能性も下がる。
+#
+# 送信を PowerShell 経由にしている理由:
+#   wsl-notify-send.exe は引数の非ASCIIを CP932 として解釈するため日本語が
+#   壊れる。UTF-8 のまま渡しても CP932 に変換して渡しても復元できない(実測)。
+#   PowerShell に stdin から UTF-8 で渡せばコードポイントが保たれる。
 
 set -uo pipefail
 
-NOTIFIER="/mnt/c/Users/368/bin/wsl-notify-send.exe"
-ICON_PATH="C:\\Users\\368\\bin\\claude-icon.png"
+PWSH="/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+TOAST_PS1="$HOME/.claude/hooks/toast.ps1"
 
 input=$(cat)
-[[ -x "$NOTIFIER" ]] || exit 0
+[[ -x "$PWSH" && -r "$TOAST_PS1" ]] || exit 0
 
 get() { printf '%s' "$input" | jq -r "$1 // empty" 2>/dev/null; }
 
@@ -63,26 +67,27 @@ case "$evt" in
       permission_prompt)
         tool=$(pending_tool)
         if [[ "$tool" == AskUserQuestion* ]]; then
-          title="❓ 質問に回答して"
+          title="質問に回答して"
         elif [[ -n "$tool" ]]; then
-          title="🔐 承認待ち: $tool"
+          title="承認待ち: $tool"
         else
-          title="🔐 承認待ち"
+          title="承認待ち"
         fi
         ;;
-      agent_needs_input)   title="🤖 エージェントが入力待ち" ;;
+      agent_needs_input)   title="エージェントが入力待ち" ;;
       elicitation_dialog|elicitation_url_dialog)
-                           title="📝 MCP が入力を要求" ;;
+                           title="MCP が入力を要求" ;;
       quota_auto_resume_fired)
-                           title="▶️ クォータ回復で再開" ;;
-      *)                   title="🔔 ${ntype:-通知}" ;;
+                           title="クォータ回復で再開" ;;
+      *)                   title="通知: ${ntype:-?}" ;;
     esac
     ;;
-  Stop)          title="✅ 応答完了・入力待ち" ;;
-  StopFailure)   title="⚠️ エラーで停止${reason:+: $reason}" ;;
-  SessionEnd)    title="🚪 セッション終了" ;;
-  *)             title="🔔 ${evt:-Claude Code}" ;;
+  Stop)          title="応答完了・入力待ち" ;;
+  StopFailure)   title="エラーで停止${reason:+: $reason}" ;;
+  SessionEnd)    title="セッション終了" ;;
+  *)             title="${evt:-Claude Code}" ;;
 esac
 
-"$NOTIFIER" --appId "Claude Code" --category "$DIR_NAME" --icon "$ICON_PATH" "$title"
+printf '%s\n%s' "$title" "$DIR_NAME" |
+  "$PWSH" -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "$TOAST_PS1")" 2>/dev/null
 exit 0
