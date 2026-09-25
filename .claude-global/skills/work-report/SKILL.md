@@ -160,19 +160,18 @@ fi
 ```bash
 d="$start_date"
 while [ "$(date -d "$d" +%s)" -le "$(date -d "$end_date" +%s)" ]; do
-  if [ -d ~/.nb/claude/sessions/"$d" ]; then
-    for sf in ~/.nb/claude/sessions/"$d"/*.md; do
-      proj=$(sed -n 's/^project: //p' "$sf" | head -1)
-      echo "=== $d: $proj ==="
-      # frontmatter構造がファイルごとに異なる（先頭 --- の数が2〜3個）ため固定閾値では本文を取り逃す。
-      # `project:` 行を含むfrontmatterブロックの閉じ `---` 以降を本文とする構造非依存な方式を使う。
-      awk '
-        seen_project && /^---$/ { body=1; next }
-        /^project:/ { seen_project=1 }
-        body { print }
-      ' "$sf"
-    done 2>/dev/null
-  fi
+  # glob だと zsh は空ディレクトリでコマンドごと中断するため find で列挙する
+  find ~/.nb/claude/sessions/"$d" -maxdepth 1 -name '*.md' 2>/dev/null | sort | while IFS= read -r sf; do
+    proj=$(sed -n 's/^project: //p' "$sf" | head -1)
+    echo "=== $d: $proj ==="
+    # frontmatter構造がファイルごとに異なる（先頭 --- の数が2〜3個）ため固定閾値では本文を取り逃す。
+    # `project:` 行を含むfrontmatterブロックの閉じ `---` 以降を本文とする構造非依存な方式を使う。
+    awk '
+      seen_project && /^---$/ { body=1; next }
+      /^project:/ { seen_project=1 }
+      body { print }
+    ' "$sf"
+  done
   d=$(date -d "$d +1 day" +%Y-%m-%d)
 done
 ```
@@ -336,7 +335,6 @@ gitログに紐づかない作業（日報・Claudeセッション要約のみ�
 1. **N を決定的にカウントする**：対象期間（今週月〜金）の平日のうち、「日報Work欄に記述がある」「仕事系リポジトリにcommitがある」「Claudeセッション要約がある」のいずれかを満たす日を数える。祝日・休みにも空の日報が作られるため、日報の有無だけでは数えない（例: 2026-09-21〜23 のシルバーウィークは空の blog md が存在した）。当日分は日報cron前でWork欄が空でも、commit・セッションで拾える。
 
    ```bash
-   # zsh は glob 不一致でコマンドごと落ちるため bash -c で実行する
    work_repos=(~/src/github.com/ebase-dev/*/ /mnt/d/tomcat/webapps/eb-api-extended /mnt/d/tomcat/webapps/hankyu)
    N=0
    d="$start_date"
