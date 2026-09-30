@@ -364,10 +364,21 @@ if men: why.append(f"@me{len(men)}")
 # join は必ず変数に退避してから埋め込む
 tag = ",".join(why)
 print(f"===== {name} [{tag}] {len(sel)}/{len(msgs)}件 =====")
+# 時刻順に平坦化するとスレッド返信が直前の別話題への返答に見えるため、返信先の親を添える
+by_id = {m["_id"]: m for m in msgs if m.get("_id")}
 for m in sorted(sel, key=lambda x: x.get("ts", "")):
     tstr = (m.get("ts") or "")[11:16]
     u = m.get("u", {}).get("username", "?")
     body = (m.get("msg") or "").replace("\n", " / ")
+    tmid = m.get("tmid")
+    if tmid:
+        p = by_id.get(tmid)
+        if p:
+            pt = (p.get("ts") or "")[11:16]
+            pu = p.get("u", {}).get("username", "?")
+            u = f"{u} [↳{pt} {pu}]"
+        else:
+            u = f"{u} [↳期間外の親]"
     print(f"  {tstr} {u}: {body}")
 '
 }

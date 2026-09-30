@@ -650,6 +650,16 @@ assert_grep   "スレッド子/兄弟返信は窓外でも残る" "THREAD-CHILD-
 assert_grep   "スレッド親メッセージは窓外でも残る" "THREAD-PARENT-FAR" "$out"
 assert_absent "スレッドと無関係な窓外雑談は落ちる" "THREAD-UNRELATED-NOISE" "$out"
 
+# (e) スレッド返信には返信先の親（時刻・発言者）が付く。時刻順に平坦化すると
+# 直前の別話題への返答に見えてしまうため（実例: スケジュール確認への返信
+# 「問題ないです」が2分前のPR共有への返答と誤読され、日報に誤記された）。
+assert_grep   "スレッド返信に親の時刻・発言者が付く(親が自分以外)" \
+  "07:02 mori.a \[↳05:16 suzuki.n\]: 親スレッドへの返信seed" "$out"
+assert_grep   "スレッド返信に親の時刻・発言者が付く(親が自分)" \
+  "08:43 yamada.k \[↳07:00 mori.a\]: THREAD-CHILD-FAR" "$out"
+assert_grep   "スレッド外の発言には印が付かない" \
+  "07:00 mori.a: seed発言" "$out"
+
 # 正常運用（RC_CHANNEL が実際のルーム名と一致している）では WARN が出ないこと。
 # mytimes_seen の永続化は process substitution（`done < <(...)`）が現在シェルで
 # 実行されることに依存しており、将来 `list_active_rooms | while ...`（パイプ=
@@ -776,6 +786,8 @@ assert_grep "スレッド取得失敗がstderrに記録される" "スレッド 
 out="$(run_rc --from 2026-07-21 --to 2026-07-28 2>/dev/null)"
 assert_grep "親が期間外のスレッドの期間内返信が回収される" \
   "SYNC-OUTSIDE-PARENT-SENTINEL" "$out"
+assert_grep "親が期間外のスレッド返信にもスレッド返信の印が付く" \
+  "mori.a \[↳期間外の親\]: SYNC-OUTSIDE-PARENT-SENTINEL" "$out"
 assert_absent "syncThreadsListで発見したスレッドでも期間外は落ちる" \
   "SYNC-OUTSIDE-RANGE-SENTINEL" "$out"
 
