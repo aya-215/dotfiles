@@ -63,7 +63,7 @@ pr_context が「残っている scratchpad worktree」を出したら、片付�
 ## Step 3: 初回モード
 
 1. PR本文・closing issue（背景・実測・検討した案）を読み、diff を読み、PR を **「要するに〜した」1〜2文** にする
-2. references の観点 A〜M を当てる。当てる条件に該当しない観点は飛ばす。関連PRがある、または repo のプロンプト・設定を eBASE へ手で転記する変更なら D（リリース順序）は必ず当てる
+2. references の観点 A〜M を当てる。当てる条件に該当しない観点は飛ばす。関連PRがある、または repo のプロンプト・設定を eBASE へ手で転記する変更なら D（リリース順序）は必ず当てる。評価ケース・期待値を変える PR には I（どのランナーで測り、変更したコード経路を通るか）を必ず当てる
 3. claude[bot] 等の既存レビュー: 作者が対応済みのものは繰り返さず、「既存指摘 n 件は対応済み（テストで確認）」を扱い=記録の1行にまとめる。未対応や対応が不十分なものだけ所見にする
 4. 所見ごとに一次情報で裏取りし、CONFIRMED / PLAUSIBLE / REFUTED を付ける（Step 4 の範囲で自分で検証する）
 5. Step 5 の形式で出力する
@@ -81,7 +81,7 @@ pr_context が「残っている scratchpad worktree」を出したら、片付�
 
 **読み取りの検証は許可を求めずに自分で行う。** ユーザーや作者に「確認してもらう」と投げない。
 
-- PRプレビュー（URL は PR の github-actions[bot] コメント）や MCP に JSON-RPC（`tools/call` / `resources/read`）を送る。プレビューが古い head なら、そう明記する。プレビューのブランドが変更対象のブランドと違えば、プレビューでの確認は根拠にしない
+- PRプレビュー（URL は PR の github-actions[bot] コメント）や MCP に JSON-RPC（`tools/call` / `resources/read`）を送る。プレビューが古い head なら、そう明記する。プレビューのブランドが変更対象のブランドと違えば、プレビューでの確認は根拠にしない。その場合は対象ブランドで dev を起動して、アプリ経由の挙動まで自分で確かめる（未確認欄に回さない）
 - MCP の接続先: PR プレビュー（MCP の PR）→ dev の `EB_API_MCP_URL`（`npx dotenvx get EB_API_MCP_URL -f .env`）→ agent-memory の順に探す。見つからなければ未確認欄に「接続先不明」と書く
 - JSP / eB-API を直接叩く。必要なら全件を走査する
 - `npx vitest run <関連パス>`、`npm run type-check`。テストが効いているかは、修正を戻して落ちることで確かめる
