@@ -7,7 +7,7 @@ Claude Code の会話ごとに、自分用の作業メモ（数行の箇条書�
 
 ## 前提となる決定
 
-- 書くのは自分。Claude はメモを書き換えない（`/memo ○○` で足した行は会話に残り、Claude が読めてよい）
+- 書くのは自分。Claude はメモを書き換えない（`/note ○○` で足した行は会話に残り、Claude が読めてよい）
 - 使い捨て。会話にくっつき、`/clear`、同じセッション内の `/resume`、終了で消える。`claude --resume` で戻ったら空から始まる
 - 編集は Claude の画面の中だけ（パネル）。外部エディタ（nvim）経由の編集は今回は作らない
 - 並べた Claude の見分けは自動命名 mod（`session-autoname`）の役目。この mod は見分けを目的にしない
@@ -26,7 +26,7 @@ Claude Code の会話ごとに、自分用の作業メモ（数行の箇条書�
 - 1行に収まらない分は、メモ本文の側を切り詰める（`Text` の `wrap="truncate"`。全角の幅は本体が数える）。`（+N）` は切らずに残す
 - メモが0件、またはアンケートが帯を使っている（`e.props.hasSurvey`）ときは何も描かず `next(e)` に任せる
 
-### パネル（Pane、`/memo` で開閉）
+### パネル（Pane、`/note` で開閉）
 
 - `$.ui.open({ id: 'memo', title: 'Memo', focus: true, closeOnEscape: true, rows })` で開く。開いた時点でキーボードがパネルに移り、Tab と矢印でボタンを移動、Esc で閉じる
 - 中身:
@@ -51,13 +51,15 @@ Claude Code の会話ごとに、自分用の作業メモ（数行の箇条書�
 
 ## コマンド
 
-`session.start` で `$.command.register({ name: 'memo', immediate: true, ... })` し、`command.run` hook（`{ command: 'memo' }`）で答える。
+コマンド名は `note`（`/memo` は本体の `/memory` と打ち始めが同じで補完が紛らわしいため）。パネルの id・見出し・plugin 名は `memo` のまま。
+
+`session.start` で `$.command.register({ name: 'note', immediate: true, ... })` し、`command.run` hook（`{ command: 'note' }`）で答える。
 `immediate` により、Claude の作業中（ターン実行中）に打ってもターン終了を待たずにすぐ動く。hook はターンの状態に依存しない。
 
 | 打つもの | 動き | 会話に残る返事 |
 |---|---|---|
-| `/memo ○○` | 末尾に追加 | `メモを追加（N件）` |
-| `/memo`（引数なし） | パネルが開いていれば閉じ、閉じていれば開く | `メモを開いた` / `メモを閉じた` |
+| `/note ○○` | 末尾に追加 | `メモを追加（N件）` |
+| `/note`（引数なし） | パネルが開いていれば閉じ、閉じていれば開く | `メモを開いた` / `メモを閉じた` |
 
 ## 状態
 
@@ -74,7 +76,7 @@ session-memo/
 ├── .claude-plugin/plugin.json   # name: session-memo, "types": "./types/index.d.ts"
 ├── hooks/hooks.json             # { "modules": ["./register.tsx"] }
 ├── hooks/register.tsx           # hook の登録と描画（薄いつなぎ）
-├── hooks/memo.ts                # 純粋関数（追加・書き換え・先頭へ・削除・帯の1行の生成）
+├── hooks/note.ts                # 純粋関数（追加・書き換え・先頭へ・削除・帯の1行の生成）
 ├── tests/*.test.ts(x)           # claude plugin test 用
 ├── tsconfig.json                # 型ファイル冒頭の推奨設定
 ├── types/index.d.ts             # $.state の型定義（PluginState）
@@ -92,7 +94,7 @@ session-memo/
 1. 純粋関数: 追加（空白だけは無視）・書き換え・先頭へ移動・削除・全消去
 2. 帯の1行: 0件で描かない、1件で `（+N）` なし、複数件で `（+N）`、本文が `wrap="truncate"` で `（+N）` は別要素、アンケート中は描かない
 3. パネル: 入力欄 Enter で追加され欄が空に戻る、`[e]` → Enter で書き換え、`[取消]` で元のまま、`[↑]` で先頭へ、`[x]` で削除、編集中のメモを `[x]` すると編集モードを抜ける
-4. コマンド: `/memo ○○` で追加、引数なし `/memo` で開閉が切り替わる、`immediate: true` で登録される
+4. コマンド: `/note ○○` で追加、引数なし `/note` で開閉が切り替わる、`immediate: true` で登録される
 5. `session.end` の `clear` / `resume` でメモが消える
 
 加えて `claude plugin validate` と `tsc -p` が通ること。

@@ -9,7 +9,7 @@ const memo = atom({ plugin: 'session-memo', key: 'memo' } as const, EMPTY)
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
-      name: 'memo',
+      name: 'note',
       description: '作業メモを追加（引数なしでメモのパネルを開閉）',
       argumentHint: '[メモ]',
       immediate: true,
@@ -17,7 +17,7 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'memo' }, async ($, e) => {
+  on('command.run', { command: 'note' }, async ($, e) => {
     const text = e.args.trim()
     if (text !== '') {
       let count = 0

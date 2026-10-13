@@ -35,7 +35,7 @@ function world(on: On) {
 
 function memo($: Engine, args: string) {
   return $.command.run({
-    command: 'memo',
+    command: 'note',
     args,
     origin: { kind: 'composer' },
     presentation: { isFullscreen: false, columns: 80 },
@@ -56,20 +56,20 @@ async function bandText($: Engine): Promise<string | undefined> {
   return (await band.find({ type: 'Text', text: /^📝 / }))?.text
 }
 
-test('起動時に /memo を immediate で登録する', async ($, on) => {
+test('起動時に /note を immediate で登録する', async ($, on) => {
   const w = world(on)
   await $.session.start({ cwd: '/tmp/work', surface: 'terminal', isInteractive: true })
-  expect(w.registered).toEqual([{ name: 'memo', immediate: true }])
+  expect(w.registered).toEqual([{ name: 'note', immediate: true }])
 })
 
-test('/memo ○○ で追加し、件数を返す', async ($, on) => {
+test('/note ○○ で追加し、件数を返す', async ($, on) => {
   world(on)
   expect((await memo($, '  買い物  ')).text).toBe('メモを追加（1件）')
   expect((await memo($, '洗濯')).text).toBe('メモを追加（2件）')
   expect(await bandText($)).toBe('📝 買い物')
 })
 
-test('引数なしの /memo でパネルを開閉する', async ($, on) => {
+test('引数なしの /note でパネルを開閉する', async ($, on) => {
   const w = world(on)
   expect((await memo($, '')).text).toBe('メモを開いた')
   expect(w.opened).toEqual([{ id: 'memo', focus: true, closeOnEscape: true }])
