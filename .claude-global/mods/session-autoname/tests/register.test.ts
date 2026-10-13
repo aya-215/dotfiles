@@ -36,6 +36,7 @@ const FAIL = '<fail>'
 function world(on: On, store: Record<string, unknown> = {}) {
   const commands = recorder<{ command: string; args: string }>()
   const models = recorder<string>()
+  const systems: (string | undefined)[] = []
   const statuses = recorder<string | undefined>()
   const replies: string[] = []
 
@@ -44,8 +45,9 @@ function world(on: On, store: Record<string, unknown> = {}) {
     return {}
   })
   on('model.complete', ($, e) => {
+    systems.push(e.system)
     models.push(e.prompt)
-    const text = replies.shift() ?? `名前${models.items.length}`
+    const text = replies.shift() ?? `<name>名前${models.items.length}</name>`
     return {
       value:
         text === FAIL
@@ -65,7 +67,7 @@ function world(on: On, store: Record<string, unknown> = {}) {
   mock.store(on, store)
   const clock = mock.clock(on)
 
-  return { commands, models, statuses, replies, clock }
+  return { commands, models, systems, statuses, replies, clock }
 }
 
 function start($: Engine, isInteractive = true) {
@@ -114,7 +116,7 @@ test('命名は1回目と以後5ターンごとにだけ走り、自分の /rena
   await w.models.until(2)
   expect(w.models.items[0]).toContain('answer-1')
   expect(w.models.items[1]).toContain('answer-6')
-  expect(w.models.items[1]).toContain('現在の名前は「名前1」')
+  expect(w.models.items[1]).toContain('<current>名前1</current>')
   await w.commands.until(3)
   expect(w.commands.items).toEqual([
     { command: 'color', args: 'red' },
@@ -161,7 +163,7 @@ test('手で /rename したら自動命名を止め、/clear で数え直す', a
   await w.clock.advance(1)
   await w.models.until(2)
   expect(w.models.items[1]).toContain('after-clear')
-  expect(w.models.items[1]).not.toContain('現在の名前')
+  expect(w.models.items[1]).not.toContain('<current>')
 })
 
 test('Haiku が失敗したら名前を変えずに status に出す', async ($, on) => {
@@ -207,7 +209,7 @@ test('同じセッション内の /resume では、前の会話の状態を引�
   await w.clock.advance(1)
   await w.models.until(2)
   expect(w.models.items[1]).toContain('resumed-1')
-  expect(w.models.items[1]).not.toContain('現在の名前')
+  expect(w.models.items[1]).not.toContain('<current>')
 })
 
 test('/resume の後に SessionStart が来なくても、戻った会話は自動命名しない', async ($, on) => {
@@ -226,4 +228,40 @@ test('/resume の後に SessionStart が来なくても、戻った会話は自�
   await w.clock.advance(1)
   await w.models.until(2)
   expect(w.models.items[1]).toContain('after-clear')
+})
+
+test('指示文は system prompt として渡す', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await turn($, 'answer-1')
+  await w.clock.advance(1)
+  await w.models.until(1)
+  expect(w.systems[0]).toContain('名札')
+  expect(w.models.items[0]).toContain('<answer>\nanswer-1\n</answer>')
+})
+
+test('Haiku の出力が形式違反なら、理由を添えて1回だけ頼み直す', async ($, on) => {
+  const w = world(on)
+  w.replies.push('ユーザーの依頼は「実際の画面は今どうなっているか')
+  await start($)
+  await turn($, 'answer-1')
+  await w.clock.advance(1)
+  await w.commands.until(2)
+  expect(w.models.items).toHaveLength(2)
+  expect(w.models.items[1]).toContain('前回の出力は使えませんでした')
+  expect(w.commands.items[1]).toEqual({ command: 'rename', args: '名前2' })
+})
+
+test('頼み直しても形式違反なら、名前を変えずに status に出す', async ($, on) => {
+  const w = world(on)
+  w.replies.push('名前は認証バグ調査です。', '<name>「認証バグ調査」</name>')
+  await start($)
+  await w.clock.advance(1)
+  await w.commands.until(1)
+  await turn($, 'answer-1')
+  await w.clock.advance(1)
+  await w.statuses.until(1)
+  expect(w.statuses.items[0]).toContain('命名をスキップ')
+  expect(w.models.items).toHaveLength(2)
+  expect(w.commands.items.map(c => c.command)).toEqual(['color'])
 })

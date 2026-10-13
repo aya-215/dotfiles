@@ -7,14 +7,17 @@ import {
   activate,
   addPrompt,
   buildPrompt,
+  buildRetryPrompt,
+  buildSystem,
   clearConversation,
   countTurn,
   needsColor,
-  nextName,
+  judgeReply,
   noteRename,
   pickColor,
   resumeConversation,
 } from './naming'
+import type { Verdict } from './naming'
 
 const naming = atom({ plugin: 'session-autoname', key: 'naming' } as const, INITIAL)
 const STATUS_MS = 10000
@@ -32,26 +35,35 @@ async function runCommand($: EngineInterface, command: string, args: string): Pr
   }
 }
 
-async function nameSession($: EngineInterface, answer: string): Promise<void> {
-  const before = await read($, naming)
-  if (before.isManual) return
+type Asked = Verdict | { kind: 'failed'; reason: string }
+
+async function askName($: EngineInterface, prompt: string, current: string): Promise<Asked> {
   const reply = await $.model.complete({
     model: 'haiku',
-    prompt: buildPrompt(before.prompts, answer, before.current),
+    system: buildSystem(),
+    prompt,
     maxTokens: 64,
     effort: 'low',
     timeoutMs: 30000,
   })
-  if (!reply.isAnswered) {
-    showStatus($, `session-autoname: 命名をスキップ (${reply.reason})`)
+  return reply.isAnswered ? judgeReply(reply.text, current) : { kind: 'failed', reason: reply.reason }
+}
+
+async function nameSession($: EngineInterface, answer: string): Promise<void> {
+  const before = await read($, naming)
+  if (before.isManual) return
+  const prompt = buildPrompt(before.prompts, answer, before.current)
+  let asked = await askName($, prompt, before.current)
+  if (asked.kind === 'invalid') asked = await askName($, buildRetryPrompt(prompt, asked.reason), before.current)
+  if (asked.kind === 'failed' || asked.kind === 'invalid') {
+    showStatus($, `session-autoname: 命名をスキップ (${asked.reason})`)
     return
   }
-  const name = nextName(reply.text, before.current)
+  if (asked.kind === 'keep') return
   // Haiku を待つ間に手で /rename された名前は上書きしない
-  const after = await read($, naming)
-  if (name === null || after.isManual) return
-  await update($, naming, s => ({ ...s, current: name }))
-  await runCommand($, 'rename', name)
+  if ((await read($, naming)).isManual) return
+  await update($, naming, s => ({ ...s, current: asked.name }))
+  await runCommand($, 'rename', asked.name)
 }
 
 export const register: Register = on => {

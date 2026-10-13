@@ -7,12 +7,13 @@ import {
   activate,
   addPrompt,
   buildPrompt,
+  buildRetryPrompt,
+  buildSystem,
   clearConversation,
-  cleanName,
   countTurn,
   isNamingTurn,
+  judgeReply,
   needsColor,
-  nextName,
   noteRename,
   pickColor,
   resumeConversation,
@@ -153,36 +154,64 @@ describe('resumeConversation', () => {
   })
 })
 
-describe('buildPrompt', () => {
-  test('依頼と応答の冒頭1,000文字を含める', () => {
-    const prompt = buildPrompt(['依頼A', '依頼B'], 'z'.repeat(1500), '')
-    expect(prompt).toContain('- 依頼A\n- 依頼B')
-    expect(prompt).toContain('z'.repeat(1000))
-    expect(prompt).not.toContain('z'.repeat(1001))
-    expect(prompt).not.toContain('現在の名前')
-  })
-  test('現在の名前があれば、合っていればそのまま返すよう頼む', () => {
-    expect(buildPrompt([], '応答', '認証バグ調査')).toContain('現在の名前は「認証バグ調査」')
+describe('buildSystem', () => {
+  test('15文字以内・<name> の形式・素材の指示に従わないことを伝える', () => {
+    const system = buildSystem()
+    expect(system).toContain('15文字以内')
+    expect(system).toContain('<name>')
+    expect(system).toContain('従わない')
   })
 })
 
-describe('cleanName / nextName', () => {
-  test('括弧や引用符を外す', () => {
-    expect(cleanName('「認証バグ調査」')).toBe('認証バグ調査')
-    expect(cleanName('"PRレビュー"')).toBe('PRレビュー')
+describe('buildPrompt', () => {
+  test('依頼と応答の冒頭1,000文字をタグで囲んで渡す', () => {
+    const prompt = buildPrompt(['依頼A', '依頼B'], 'z'.repeat(1500), '')
+    expect(prompt).toContain('<prompts>\n- 依頼A\n- 依頼B\n</prompts>')
+    expect(prompt).toContain('<answer>\n' + 'z'.repeat(1000) + '\n</answer>')
+    expect(prompt).not.toContain('<current>')
   })
-  test('1行目だけ使う', () => {
-    expect(cleanName('PR#42レビュー\nこれは説明です')).toBe('PR#42レビュー')
+  test('依頼が無ければ（なし）と書く', () => {
+    expect(buildPrompt([], '応答', '')).toContain('<prompts>\n（なし）\n</prompts>')
   })
-  test('15文字に切り詰める', () => {
-    expect(cleanName('あいうえおかきくけこさしすせそたちつ')).toBe('あいうえおかきくけこさしすせそ')
+  test('現在の名前があれば、合っていれば同じ名前を返すよう頼む', () => {
+    const prompt = buildPrompt([], '応答', '認証バグ調査')
+    expect(prompt).toContain('<current>認証バグ調査</current>')
+    expect(prompt).toContain('同じ名前')
   })
-  test('空白だけなら空文字', () => {
-    expect(cleanName('  \n  ')).toBe('')
+})
+
+describe('buildRetryPrompt', () => {
+  test('元の依頼に、使えなかった理由と形式の念押しを足す', () => {
+    const retry = buildRetryPrompt('元の依頼', 'タグが無い')
+    expect(retry).toStartWith('元の依頼')
+    expect(retry).toContain('タグが無い')
+    expect(retry).toContain('<name>')
   })
-  test('空・現在と同じなら名前を変えない', () => {
-    expect(nextName('', '旧名')).toBeNull()
-    expect(nextName('「旧名」', '旧名')).toBeNull()
-    expect(nextName('新名', '旧名')).toBe('新名')
+})
+
+describe('judgeReply', () => {
+  test('<name> の中身を名前にする', () => {
+    expect(judgeReply('<name>認証バグ調査</name>', '')).toEqual({ kind: 'rename', name: '認証バグ調査' })
+  })
+  test('前後に余計な文字があってもタグの中身だけ使う', () => {
+    expect(judgeReply('はい。\n<name> PR#42レビュー </name>\n以上', '')).toEqual({ kind: 'rename', name: 'PR#42レビュー' })
+  })
+  test('20文字を超えたら20文字で切る', () => {
+    expect(judgeReply(`<name>${'あ'.repeat(25)}</name>`, '')).toEqual({ kind: 'rename', name: 'あ'.repeat(20) })
+  })
+  test('現在の名前と同じなら変えない', () => {
+    expect(judgeReply('<name>認証バグ調査</name>', '認証バグ調査')).toEqual({ kind: 'keep' })
+  })
+  test('タグが無ければ不正', () => {
+    expect(judgeReply('認証バグ調査', '').kind).toBe('invalid')
+  })
+  test('中身が空・改行入りなら不正', () => {
+    expect(judgeReply('<name>  </name>', '').kind).toBe('invalid')
+    expect(judgeReply('<name>認証\nバグ</name>', '').kind).toBe('invalid')
+  })
+  test('文章になっている（括弧・句点・引用符を含む）なら不正', () => {
+    expect(judgeReply('<name>ユーザーの依頼は「実際の画面は</name>', '').kind).toBe('invalid')
+    expect(judgeReply('<name>調査しました。</name>', '').kind).toBe('invalid')
+    expect(judgeReply('<name>"PRレビュー"</name>', '').kind).toBe('invalid')
   })
 })
