@@ -121,6 +121,9 @@ describe('noteRename', () => {
   test('手で打った /rename なら止める', () => {
     expect(noteRename(active, { kind: 'composer' }, 'session-autoname').isManual).toBe(true)
   })
+  test('出どころが分からない /rename でも止める', () => {
+    expect(noteRename(active, undefined, 'session-autoname').isManual).toBe(true)
+  })
   test('別の plugin の /rename でも止める', () => {
     expect(noteRename(active, { kind: 'plugin', name: 'other' }, 'session-autoname').isManual).toBe(true)
   })

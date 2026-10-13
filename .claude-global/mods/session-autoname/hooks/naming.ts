@@ -62,8 +62,8 @@ export function countTurn(state: Naming, turn: TurnEnd): { state: Naming; isDue:
   return { state: { ...state, answered }, isDue: !state.isManual && isNamingTurn(answered) }
 }
 
-export function noteRename(state: Naming, origin: CommandOrigin, pluginName: string): Naming {
-  if (origin.kind === 'plugin' && origin.name === pluginName) {
+export function noteRename(state: Naming, origin: CommandOrigin | undefined, pluginName: string): Naming {
+  if (origin?.kind === 'plugin' && origin.name === pluginName) {
     return state
   }
   return { ...state, isManual: true }
