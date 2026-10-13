@@ -20,6 +20,8 @@ dotfiles/
 │   ├── zsh/                # Zshカスタム関数
 │   ├── nb/                 # nbノート管理
 │   └── gh-dash/            # GitHub Dashboard
+├── .claude-global/        # ~/.claude にリンクされる Claude Code 設定
+│   └── mods/              # 自作 mod（function hooks plugin）。触る前に mods/README.md を読むこと
 ├── modules/               # Nixモジュール（WSL/Nix管理）
 ├── windows/               # Windows専用設定（chezmoi管理）
 │   ├── Documents/PowerShell/  # PowerShell設定
