@@ -1,8 +1,8 @@
 ---
 name: write-review-comment
 description: Use when the user has finished reviewing a PR and needs to write a review comment. Triggers on "レビューコメント書いて", "Approveコメント作成", "Request Changesのコメント", "PRにコメント書きたい".
-allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
-version: 1.0.0
+allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion, Skill
+version: 1.1.0
 ---
 
 # PRレビューコメント作成
@@ -78,6 +78,27 @@ diff分析とユーザーの所感を組み合わせてMarkdownコメントを�
 4. **Request Changes時**: 問題指摘も質問形式にする（「〜のように見えるのですが、意図的でしょうか？」）
 5. コメント全体は**簡潔に**。良いと感じた点: 2-3項目、確認した点: ユーザー申告分のみ、質問: 1-2項目
 
+### Step 3.5: yomiyasu で推敲
+
+Step 3 で生成したコメント本文を、Skill ツールで `yomiyasu:yomiyasu` を起動して推敲する。
+プラグインが使えない環境では本ステップを飛ばし、Step 4a で「yomiyasu 未適用」と添える。
+
+yomiyasu に渡す指示（コメント本文の前に付ける）:
+
+```text
+ドメイン: business
+文書の立場: 上司のPRへのレビューコメント。感想・依頼・質問の行が混在しており、行ごとの働きを保つ
+推敲の範囲: 各箇条の行の中身だけを直す。行数・セクション見出し行・箇条の数と順序は元のまま残す
+固定表現（変えない）: 「実装ありがとうございます！」「確認しました！」「〜だと思いました」「〜が参考になりました」「〜ご確認いただきたいです」「〜でしょうか？」「質問（マージには影響しません）」
+優先順位: 上の固定表現・構成と yomiyasu の規則が食い違う場合は、固定表現・構成を優先する
+```
+
+推敲結果の扱い:
+
+- Step 4a と Step 5 で使うのは yomiyasu の「書き直した本文」だけ
+- 「変えたところ」「書き手に確かめたい点」は Step 4a でコメント本文の下に添えて提示する
+- 固定表現・行構成が崩れていたら、崩れた箇所を Step 3 の生成結果に戻す
+
 ### Step 4: コメント提示とユーザー承認
 
 Step 4 は Step 5 への前提条件。以下を順に実行する。**この順序を崩して Step 5 に進むことは禁止**。
@@ -97,7 +118,7 @@ AskUserQuestion で以下の選択肢を提示する：
 #### Step 4c: 承認結果の判定
 
 - 「このまま投稿」→ Step 5 に進む
-- 「修正してから投稿」→ コメントを更新し、Step 4a から再実施
+- 「修正してから投稿」→ コメントを更新し、Step 4a から再実施。ユーザーが指定した文言はそのまま使い、AI が新たに書き直した行だけ Step 3.5 で推敲する
 - 「キャンセル」→ 処理終了（Step 5 を実行しない）
 
 ### Step 5: CLI投稿
