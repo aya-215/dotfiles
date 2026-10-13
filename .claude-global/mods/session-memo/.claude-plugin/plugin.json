@@ -1,0 +1,6 @@
+{
+  "name": "session-memo",
+  "version": "0.1.0",
+  "description": "会話ごとの作業メモを帯とパネルで扱う",
+  "types": "./types/index.d.ts"
+}
