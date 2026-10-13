@@ -15,6 +15,7 @@ import {
   nextName,
   noteRename,
   pickColor,
+  resumeConversation,
 } from '../hooks/naming'
 
 const active = activate(INITIAL, 'red')
@@ -133,6 +134,22 @@ describe('clearConversation', () => {
   test('会話に紐づく値だけ戻し、色と対象フラグは残す', () => {
     const used = { ...active, answered: 7, prompts: ['p'], current: '名前', isManual: true }
     expect(clearConversation(used)).toEqual({ ...active, answered: 0, prompts: [], current: '', isManual: false })
+  })
+})
+
+describe('resumeConversation', () => {
+  const used = { ...active, answered: 7, prompts: ['p'], current: '前の名前', isManual: false }
+  test('名前が付いた会話に戻ったら、数え直したうえで自動命名しない', () => {
+    expect(resumeConversation(used, true)).toEqual({ ...active, answered: 0, prompts: [], current: '', isManual: true })
+  })
+  test('名前の無い会話に戻ったら、数え直して自動命名する', () => {
+    expect(resumeConversation({ ...used, isManual: true }, false)).toEqual({
+      ...active,
+      answered: 0,
+      prompts: [],
+      current: '',
+      isManual: false,
+    })
   })
 })
 

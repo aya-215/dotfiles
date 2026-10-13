@@ -61,6 +61,7 @@ function world(on: On, store: Record<string, unknown> = {}) {
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
+  on('classic.SessionStart', () => ({}))
   mock.store(on, store)
   const clock = mock.clock(on)
 
@@ -174,4 +175,55 @@ test('Haiku が失敗したら名前を変えずに status に出す', async ($,
   await w.statuses.until(1)
   expect(w.statuses.items[0]).toContain('命名をスキップ')
   expect(w.commands.items.map(c => c.command)).toEqual(['color'])
+  await w.clock.advance(10000)
+  await w.statuses.until(2)
+  expect(w.statuses.items[1]).toBeUndefined()
+})
+
+test('名前の付いた会話に --resume で戻ったら、その名前を上書きしない', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await $.classic.SessionStart({ source: 'resume', session_title: '手動の名前' })
+  for (let n = 1; n <= 6; n++) {
+    await turn($, `resumed-${n}`)
+    await w.clock.advance(1)
+  }
+  await $.session.end({ reason: 'clear', sessionId: 's-1', resume: { id: 's-1' } })
+  await turn($, 'after-clear')
+  await w.clock.advance(1)
+  await w.models.until(1)
+  expect(w.models.items[0]).toContain('after-clear')
+})
+
+test('同じセッション内の /resume では、前の会話の状態を引き継がない', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await turn($, 'answer-1')
+  await w.clock.advance(1)
+  await w.commands.until(2)
+  await $.session.end({ reason: 'resume', sessionId: 's-1', resume: { id: 's-2' } })
+  await $.classic.SessionStart({ source: 'resume' })
+  await turn($, 'resumed-1')
+  await w.clock.advance(1)
+  await w.models.until(2)
+  expect(w.models.items[1]).toContain('resumed-1')
+  expect(w.models.items[1]).not.toContain('現在の名前')
+})
+
+test('/resume の後に SessionStart が来なくても、戻った会話は自動命名しない', async ($, on) => {
+  const w = world(on)
+  await start($)
+  await turn($, 'answer-1')
+  await w.clock.advance(1)
+  await w.commands.until(2)
+  await $.session.end({ reason: 'resume', sessionId: 's-1', resume: { id: 's-2' } })
+  for (let n = 1; n <= 6; n++) {
+    await turn($, `resumed-${n}`)
+    await w.clock.advance(1)
+  }
+  await $.session.end({ reason: 'clear', sessionId: 's-2', resume: { id: 's-2' } })
+  await turn($, 'after-clear')
+  await w.clock.advance(1)
+  await w.models.until(2)
+  expect(w.models.items[1]).toContain('after-clear')
 })

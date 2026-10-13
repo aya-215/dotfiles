@@ -13,15 +13,22 @@ import {
   nextName,
   noteRename,
   pickColor,
+  resumeConversation,
 } from './naming'
 
 const naming = atom({ plugin: 'session-autoname', key: 'naming' } as const, INITIAL)
+const STATUS_MS = 10000
+
+function showStatus($: EngineInterface, text: string): void {
+  $.ui.status(text)
+  $.clock.after(STATUS_MS, () => $.ui.status(undefined))
+}
 
 async function runCommand($: EngineInterface, command: string, args: string): Promise<void> {
   try {
     await $.command.run({ command, args })
   } catch {
-    $.ui.status(`session-autoname: /${command} に失敗`)
+    showStatus($, `session-autoname: /${command} に失敗`)
   }
 }
 
@@ -36,10 +43,9 @@ async function nameSession($: EngineInterface, answer: string): Promise<void> {
     timeoutMs: 30000,
   })
   if (!reply.isAnswered) {
-    $.ui.status(`session-autoname: 命名をスキップ (${reply.reason})`)
+    showStatus($, `session-autoname: 命名をスキップ (${reply.reason})`)
     return
   }
-  $.ui.status(undefined)
   const name = nextName(reply.text, before.current)
   // Haiku を待つ間に手で /rename された名前は上書きしない
   const after = await read($, naming)
@@ -82,6 +88,16 @@ export const register: Register = on => {
 
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') await update($, naming, clearConversation)
+    // 戻った先の会話に名前があるかはまだ分からないので、上書きしない側に倒す
+    if (e.reason === 'resume') await update($, naming, s => resumeConversation(s, true))
+    return next(e)
+  })
+
+  on('classic.SessionStart', async ($, e, next) => {
+    if (e.source === 'resume') {
+      const hasTitle = (e.session_title ?? '').trim() !== ''
+      await update($, naming, s => resumeConversation(s, hasTitle))
+    }
     return next(e)
   })
 }

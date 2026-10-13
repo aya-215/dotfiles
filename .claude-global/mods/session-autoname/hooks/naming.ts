@@ -73,6 +73,10 @@ export function clearConversation(state: Naming): Naming {
   return { ...state, answered: 0, prompts: [], current: '', isManual: false }
 }
 
+export function resumeConversation(state: Naming, hasTitle: boolean): Naming {
+  return { ...clearConversation(state), isManual: hasTitle }
+}
+
 export function buildPrompt(prompts: readonly string[], answer: string, current: string): string {
   const lines = [
     'Claude Code のセッションに、作業内容を表す名前を付けてください。',
