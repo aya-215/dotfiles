@@ -3,7 +3,7 @@
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_AFK_TIMEOUT_MS": "604800000",
-    "CLAUDE_CODE_PLUGIN_DIRS": "/home/aya/.dotfiles/.claude-global/mods/session-autoname"
+    "CLAUDE_CODE_PLUGIN_DIRS": "/home/aya/.dotfiles/.claude-global/mods/session-autoname:/home/aya/.dotfiles/.claude-global/mods/session-memo"
   },
   "attribution": {
     "commit": "",
