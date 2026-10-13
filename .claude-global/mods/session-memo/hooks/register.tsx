@@ -1,12 +1,48 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { EMPTY, bandParts, cancelEdit, inputValue, moveToTop, removeItem, startEdit, submitInput } from './memo'
+import { EMPTY, addItem, bandParts, cancelEdit, inputValue, moveToTop, removeItem, startEdit, submitInput } from './memo'
 
 export const PANE = 'memo'
 const memo = atom({ plugin: 'session-memo', key: 'memo' } as const, EMPTY)
 
 export const register: Register = on => {
+  on('session.start', async ($, e, next) => {
+    await $.command.register({
+      name: 'memo',
+      description: '作業メモを追加（引数なしでメモのパネルを開閉）',
+      argumentHint: '[メモ]',
+      immediate: true,
+    })
+    return next(e)
+  })
+
+  on('command.run', { command: 'memo' }, async ($, e) => {
+    const text = e.args.trim()
+    if (text !== '') {
+      let count = 0
+      await update($, memo, s => {
+        const added = addItem(s, text)
+        count = added.items.length
+        return added
+      })
+      return { text: `メモを追加（${count}件）` }
+    }
+    if ((await $.ui.panes()).some(p => p.id === PANE)) {
+      await $.ui.close({ id: PANE })
+      return { text: 'メモを閉じた' }
+    }
+    await update($, memo, cancelEdit)
+    const { items } = await read($, memo)
+    await $.ui.open({ id: PANE, title: 'Memo', focus: true, closeOnEscape: true, rows: Math.min(items.length + 3, 20) })
+    return { text: 'メモを開いた' }
+  })
+
+  on('session.end', async ($, e, next) => {
+    if (e.reason === 'clear' || e.reason === 'resume') await update($, memo, () => EMPTY)
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const parts = bandParts((await read($, memo)).items)
     if (e.props.hasSurvey || parts === null) return next(e)
