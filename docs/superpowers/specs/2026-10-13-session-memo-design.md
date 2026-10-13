@@ -23,7 +23,7 @@ Claude Code の会話ごとに、自分用の作業メモ（数行の箇条書�
 ### 帯（AbovePrompt、常に表示）
 
 - メモが1件以上あるとき、`📝 <先頭のメモ>（+N）` の1行を出す。N は先頭以外の件数で、0なら `（+N）` を付けない
-- 1行に収まらない分は切り詰める（`e.props.bodyColumns` に合わせる）
+- 1行に収まらない分は、メモ本文の側を切り詰める（`Text` の `wrap="truncate"`。全角の幅は本体が数える）。`（+N）` は切らずに残す
 - メモが0件、またはアンケートが帯を使っている（`e.props.hasSurvey`）ときは何も描かず `next(e)` に任せる
 
 ### パネル（Pane、`/memo` で開閉）
@@ -51,7 +51,8 @@ Claude Code の会話ごとに、自分用の作業メモ（数行の箇条書�
 
 ## コマンド
 
-`session.start` で `$.command.register({ name: 'memo', ... })` し、`command.run` hook（`{ command: 'memo' }`）で答える。
+`session.start` で `$.command.register({ name: 'memo', immediate: true, ... })` し、`command.run` hook（`{ command: 'memo' }`）で答える。
+`immediate` により、Claude の作業中（ターン実行中）に打ってもターン終了を待たずにすぐ動く。hook はターンの状態に依存しない。
 
 | 打つもの | 動き | 会話に残る返事 |
 |---|---|---|
@@ -89,9 +90,9 @@ session-memo/
 `claude plugin test` で以下を確認する。画面のテストは `$.ui.mount` で terminal と desktop の両方に対して行う。
 
 1. 純粋関数: 追加（空白だけは無視）・書き換え・先頭へ移動・削除・全消去
-2. 帯の1行: 0件で描かない、1件で `（+N）` なし、複数件で `（+N）`、幅に合わせた切り詰め、アンケート中は描かない
+2. 帯の1行: 0件で描かない、1件で `（+N）` なし、複数件で `（+N）`、本文が `wrap="truncate"` で `（+N）` は別要素、アンケート中は描かない
 3. パネル: 入力欄 Enter で追加され欄が空に戻る、`[e]` → Enter で書き換え、`[取消]` で元のまま、`[↑]` で先頭へ、`[x]` で削除、編集中のメモを `[x]` すると編集モードを抜ける
-4. コマンド: `/memo ○○` で追加、引数なし `/memo` で開閉が切り替わる
+4. コマンド: `/memo ○○` で追加、引数なし `/memo` で開閉が切り替わる、`immediate: true` で登録される
 5. `session.end` の `clear` / `resume` でメモが消える
 
 加えて `claude plugin validate` と `tsc -p` が通ること。
