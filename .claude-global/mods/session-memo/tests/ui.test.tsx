@@ -12,11 +12,12 @@ function bandProps(hasSurvey = false) {
   return { hasSurvey, isWorking: false, maxRows: 10, bodyColumns: 60, scroll: SCROLL, view: {} }
 }
 
-function engineBand(on: On) {
+function world(on: On) {
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Text } = $.ui.resolve(e)
     return <Text>engine</Text>
   })
+  on('ui.focus', () => ({}))
 }
 
 function openPane($: Engine, surface: Surface) {
@@ -27,58 +28,69 @@ function openBand($: Engine, surface: Surface, hasSurvey = false) {
   return $.ui.mount({ plugin: 'session-memo', surface, component: 'AbovePrompt', props: bandProps(hasSurvey) })
 }
 
+function ring($: Engine, element: string) {
+  return $.ui.focus({ component: 'Pane', requestId: 'memo', plugin: 'session-memo', element, origin: { kind: 'person' } })
+}
+
+async function rows(pane: Awaited<ReturnType<typeof openPane>>): Promise<string[]> {
+  return (await pane.findAll({ type: 'Button', key: undefined })).filter(b => /^row:/.test(b.key ?? '')).map(b => b.text)
+}
+
 for (const surface of SURFACES) {
   test(`パネルの入力欄で追加すると並び、入力欄は空に戻る (${surface})`, async ($, on) => {
-    engineBand(on)
+    world(on)
     const pane = await openPane($, surface)
     expect(await pane.find({ text: 'メモはまだありません' })).toBeDefined()
     await pane.input({ key: 'input', text: '認証まわりは触らんとく' })
     await pane.input({ key: 'input', text: 'あとでテスト追加' })
-    expect((await pane.find({ key: 'row:0' }))?.text).toContain('1. 認証まわりは触らんとく')
-    expect((await pane.find({ key: 'row:1' }))?.text).toContain('2. あとでテスト追加')
+    expect(await rows(pane)).toEqual(['1. 認証まわりは触らんとく', '2. あとでテスト追加'])
     expect((await pane.find({ key: 'input' }))?.text).toBe('')
   })
 
-  test(`[e] で書き換え、[取消] なら元のまま (${surface})`, async ($, on) => {
-    engineBand(on)
+  test(`行を押す（Enter・クリック）と編集に入り、[取消] なら元のまま (${surface})`, async ($, on) => {
+    world(on)
     const pane = await openPane($, surface)
     await pane.input({ key: 'input', text: 'a' })
     await pane.input({ key: 'input', text: 'b' })
-    await pane.press({ key: 'edit:1' })
+    await pane.press({ key: 'row:1' })
     expect((await pane.find({ key: 'input' }))?.text).toBe('b')
-    expect(await pane.find({ key: 'cancel' })).toBeDefined()
     await pane.input({ key: 'input', text: 'B' })
-    expect((await pane.find({ key: 'row:1' }))?.text).toContain('2. B')
-    expect(await pane.find({ key: 'cancel' })).toBeUndefined()
-    await pane.press({ key: 'edit:0' })
+    expect(await rows(pane)).toEqual(['1. a', '2. B'])
+    await pane.press({ key: 'row:0' })
     await pane.press({ key: 'cancel' })
-    expect((await pane.find({ key: 'row:0' }))?.text).toContain('1. a')
+    expect(await rows(pane)).toEqual(['1. a', '2. B'])
     expect((await pane.find({ key: 'input' }))?.text).toBe('')
   })
 
-  test(`[↑] で先頭へ、[x] で削除、先頭の行に [↑] は無い (${surface})`, async ($, on) => {
-    engineBand(on)
+  test(`行を選ぶまで文字キーの操作は出さず、選ぶと e / t / x が出る (${surface})`, async ($, on) => {
+    world(on)
     const pane = await openPane($, surface)
     for (const text of ['a', 'b', 'c']) await pane.input({ key: 'input', text })
-    expect(await pane.find({ key: 'up:0' })).toBeUndefined()
-    await pane.press({ key: 'up:2' })
-    expect((await pane.find({ key: 'row:0' }))?.text).toContain('1. c')
-    await pane.press({ key: 'del:1' })
-    expect((await pane.findAll({ type: 'Text', text: /^\d+\. / })).map(t => t.text)).toEqual(['1. c', '2. b'])
+    expect(await pane.find({ key: 'act:e' })).toBeUndefined()
+    await ring($, 'row:1')
+    expect((await pane.find({ key: 'act:e' }))?.props.hotkey).toBe('e')
+    expect((await pane.find({ key: 'act:t' }))?.props.hotkey).toBe('t')
+    expect((await pane.find({ key: 'act:x' }))?.props.hotkey).toBe('x')
+    await ring($, 'input')
+    expect(await pane.find({ key: 'act:e' })).toBeUndefined()
   })
 
-  test(`二度押ししても、押した行のメモにしか効かない (${surface})`, async ($, on) => {
-    engineBand(on)
+  test(`選んだ行に e で編集、t で先頭へ、x で削除 (${surface})`, async ($, on) => {
+    world(on)
     const pane = await openPane($, surface)
-    for (const text of ['a', 'b', 'c', 'd']) await pane.input({ key: 'input', text })
-    await Promise.all([pane.press({ key: 'del:0' }), pane.press({ key: 'del:0' })])
-    expect((await pane.findAll({ type: 'Text', text: /^\d+\. / })).map(t => t.text)).toEqual(['1. b', '2. c', '3. d'])
-    await Promise.all([pane.press({ key: 'up:2' }), pane.press({ key: 'up:2' })])
-    expect((await pane.findAll({ type: 'Text', text: /^\d+\. / })).map(t => t.text)).toEqual(['1. d', '2. b', '3. c'])
+    for (const text of ['a', 'b', 'c']) await pane.input({ key: 'input', text })
+    await ring($, 'row:2')
+    await pane.press({ key: 'act:t' })
+    expect(await rows(pane)).toEqual(['1. c', '2. a', '3. b'])
+    await ring($, 'row:1')
+    await pane.press({ key: 'act:x' })
+    expect(await rows(pane)).toEqual(['1. c', '2. b'])
+    await pane.press({ key: 'act:e' })
+    expect((await pane.find({ key: 'input' }))?.text).toBe('b')
   })
 
   test(`帯は0件なら出さず、先頭と（+N）を出す (${surface})`, async ($, on) => {
-    engineBand(on)
+    world(on)
     const empty = await openBand($, surface)
     expect(await empty.find({ text: 'engine' })).toBeDefined()
     const pane = await openPane($, surface)
@@ -94,7 +106,7 @@ for (const surface of SURFACES) {
   })
 
   test(`長いメモでも（+N）は別要素で残る (${surface})`, async ($, on) => {
-    engineBand(on)
+    world(on)
     const pane = await openPane($, surface)
     await pane.input({ key: 'input', text: 'あ'.repeat(200) })
     await pane.input({ key: 'input', text: '二件目' })
@@ -106,7 +118,7 @@ for (const surface of SURFACES) {
   })
 
   test(`アンケート中は帯を譲る (${surface})`, async ($, on) => {
-    engineBand(on)
+    world(on)
     const pane = await openPane($, surface)
     await pane.input({ key: 'input', text: '買い物' })
     const band = await openBand($, surface, true)

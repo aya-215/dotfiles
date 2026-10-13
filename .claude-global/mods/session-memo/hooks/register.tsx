@@ -1,7 +1,19 @@
 import { atom, read, update } from 'claude-code'
 import type { Register } from 'claude-code'
 
-import { EMPTY, addItem, bandParts, cancelEdit, inputValue, moveToTop, removeItem, startEdit, submitInput } from './memo'
+import {
+  EMPTY,
+  addItem,
+  bandParts,
+  cancelEdit,
+  editFocused,
+  focusRow,
+  inputValue,
+  removeFocused,
+  startEdit,
+  submitInput,
+  topFocused,
+} from './memo'
 
 export const PANE = 'memo'
 const memo = atom({ plugin: 'session-memo', key: 'memo' } as const, EMPTY)
@@ -61,32 +73,63 @@ export const register: Register = on => {
     )
   })
 
+  on('ui.focus', { requestId: PANE }, async ($, e, next) => {
+    await update($, memo, s => focusRow(s, e.element))
+    return next(e)
+  })
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e, next) => {
     if (e.surface === 'mobile') return next(e)
     const state = await read($, memo)
     const { Box, Button, Input, Text } = $.ui.resolve(e)
-    const editing = state.editing
+    const { editing, focused } = state
     const focusInput = () => $.ui.focus({ requestId: PANE, key: 'input' }).catch(() => undefined)
+    const focusRowAt = (i: number) => $.ui.focus({ requestId: PANE, key: `row:${i}` }).catch(() => undefined)
     return (
       <Box flexDirection="column">
         {state.items.length === 0 && <Text dimColor>メモはまだありません</Text>}
         {state.items.map((item, i) => (
-          <Box key={`row:${i}`} flexDirection="row">
-            <Box flexGrow={1} flexShrink={1}>
-              <Text wrap="truncate" bold={editing === i}>{`${i + 1}. ${item}`}</Text>
-            </Box>
-            {i > 0 && <Button key={`up:${i}`} label="↑" onPress={() => update($, memo, s => moveToTop(s, i, item))} />}
-            <Button
-              key={`edit:${i}`}
-              label="e"
-              onPress={async () => {
-                await update($, memo, s => startEdit(s, i, item))
-                await focusInput()
-              }}
-            />
-            <Button key={`del:${i}`} label="x" onPress={() => update($, memo, s => removeItem(s, i, item))} />
-          </Box>
+          <Button
+            key={`row:${i}`}
+            plain
+            onPress={async () => {
+              await update($, memo, s => startEdit(s, i, item))
+              await focusInput()
+            }}
+          >
+            <Text bold={editing === i}>{`${i + 1}. ${item}`}</Text>
+          </Button>
         ))}
+        {state.items.length > 0 &&
+          (focused === null ? (
+            <Text dimColor>↑↓ で行を選ぶと e:編集 t:先頭へ x:削除</Text>
+          ) : (
+            <Box flexDirection="row" columnGap={1}>
+              <Button
+                key="act:e"
+                plain
+                dimColor
+                hotkey="e"
+                label="e:編集"
+                onPress={async () => {
+                  await update($, memo, editFocused)
+                  await focusInput()
+                }}
+              />
+              <Button
+                key="act:t"
+                plain
+                dimColor
+                hotkey="t"
+                label="t:先頭へ"
+                onPress={async () => {
+                  await update($, memo, topFocused)
+                  await focusRowAt(0)
+                }}
+              />
+              <Button key="act:x" plain dimColor hotkey="x" label="x:削除" onPress={() => update($, memo, removeFocused)} />
+            </Box>
+          ))}
         <Box flexDirection="row">
           <Input
             key="input"

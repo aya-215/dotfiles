@@ -1,6 +1,6 @@
 import type { MemoState } from '../types'
 
-export const EMPTY: MemoState = { items: [], editing: null }
+export const EMPTY: MemoState = { items: [], editing: null, focused: null }
 
 function inRange(s: MemoState, index: number): boolean {
   return Number.isInteger(index) && index >= 0 && index < s.items.length
@@ -33,7 +33,7 @@ export function submitInput(s: MemoState, text: string): MemoState {
   if (s.editing === null) return addItem(s, text)
   const item = normalize(text)
   if (item === '' || !inRange(s, s.editing)) return cancelEdit(s)
-  return { items: s.items.map((old, i) => (i === s.editing ? item : old)), editing: null }
+  return { ...s, items: s.items.map((old, i) => (i === s.editing ? item : old)), editing: null }
 }
 
 export function moveToTop(s: MemoState, index: number, item: string): MemoState {
@@ -42,7 +42,7 @@ export function moveToTop(s: MemoState, index: number, item: string): MemoState 
   let editing = s.editing
   if (editing === index) editing = 0
   else if (editing !== null && editing < index) editing += 1
-  return { items, editing }
+  return { ...s, items, editing }
 }
 
 export function removeItem(s: MemoState, index: number, item: string): MemoState {
@@ -51,7 +51,31 @@ export function removeItem(s: MemoState, index: number, item: string): MemoState
   let editing = s.editing
   if (editing === index) editing = null
   else if (editing !== null && editing > index) editing -= 1
-  return { items, editing }
+  return { ...s, items, editing }
+}
+
+export function focusRow(s: MemoState, element: string | undefined): MemoState {
+  if (element === 'input') return { ...s, focused: null }
+  const index = Number(/^row:(\d+)$/.exec(element ?? '')?.[1])
+  return inRange(s, index) ? { ...s, focused: index } : s
+}
+
+export function editFocused(s: MemoState): MemoState {
+  return s.focused === null ? s : startEdit(s, s.focused, s.items[s.focused] ?? '')
+}
+
+export function topFocused(s: MemoState): MemoState {
+  if (s.focused === null) return s
+  const moved = moveToTop(s, s.focused, s.items[s.focused] ?? '')
+  return moved === s ? s : { ...moved, focused: 0 }
+}
+
+export function removeFocused(s: MemoState): MemoState {
+  if (s.focused === null) return s
+  const removed = removeItem(s, s.focused, s.items[s.focused] ?? '')
+  if (removed === s) return s
+  const last = removed.items.length - 1
+  return { ...removed, focused: last < 0 ? null : Math.min(s.focused, last) }
 }
 
 export function inputValue(s: MemoState): string {

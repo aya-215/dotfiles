@@ -87,7 +87,7 @@ test('開き直したら編集モードではない', async ($, on) => {
     requestId: 'memo',
     props: { title: 'Memo', isFocused: true, bodyColumns: 60, placement: 'inline', scroll: { offset: 0, bodyRows: 10 }, view: {} },
   })
-  await pane.press({ key: 'edit:0' })
+  await pane.press({ key: 'row:0' })
   expect(await pane.find({ key: 'cancel' })).toBeDefined()
   await memo($, '')
   expect(await pane.find({ key: 'cancel' })).toBeUndefined()
