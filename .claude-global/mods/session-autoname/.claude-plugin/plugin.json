@@ -1,0 +1,6 @@
+{
+  "name": "session-autoname",
+  "version": "0.1.0",
+  "description": "対話セッションに色と、会話内容から作った名前を自動で付ける",
+  "types": "./types/index.d.ts"
+}
