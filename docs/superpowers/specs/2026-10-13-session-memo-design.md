@@ -76,7 +76,7 @@ session-memo/
 ├── .claude-plugin/plugin.json   # name: session-memo, "types": "./types/index.d.ts"
 ├── hooks/hooks.json             # { "modules": ["./register.tsx"] }
 ├── hooks/register.tsx           # hook の登録と描画（薄いつなぎ）
-├── hooks/note.ts                # 純粋関数（追加・書き換え・先頭へ・削除・帯の1行の生成）
+├── hooks/memo.ts                # 純粋関数（追加・書き換え・先頭へ・削除・帯の1行の生成）
 ├── tests/*.test.ts(x)           # claude plugin test 用
 ├── tsconfig.json                # 型ファイル冒頭の推奨設定
 ├── types/index.d.ts             # $.state の型定義（PluginState）
