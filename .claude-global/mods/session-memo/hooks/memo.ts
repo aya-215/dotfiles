@@ -6,13 +6,23 @@ function inRange(s: MemoState, index: number): boolean {
   return Number.isInteger(index) && index >= 0 && index < s.items.length
 }
 
+// ボタンは描いた時点の位置を持つので、押すまでに行がずれていたら別のメモに効かせない
+function isAt(s: MemoState, index: number, item: string): boolean {
+  return inRange(s, index) && s.items[index] === item
+}
+
+// 帯を1行に保つため、改行や連続した空白は1つの空白にまとめる
+function normalize(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
 export function addItem(s: MemoState, text: string): MemoState {
-  const item = text.trim()
+  const item = normalize(text)
   return item === '' ? s : { ...s, items: [...s.items, item] }
 }
 
-export function startEdit(s: MemoState, index: number): MemoState {
-  return inRange(s, index) ? { ...s, editing: index } : s
+export function startEdit(s: MemoState, index: number, item: string): MemoState {
+  return isAt(s, index, item) ? { ...s, editing: index } : s
 }
 
 export function cancelEdit(s: MemoState): MemoState {
@@ -21,13 +31,13 @@ export function cancelEdit(s: MemoState): MemoState {
 
 export function submitInput(s: MemoState, text: string): MemoState {
   if (s.editing === null) return addItem(s, text)
-  const item = text.trim()
+  const item = normalize(text)
   if (item === '' || !inRange(s, s.editing)) return cancelEdit(s)
   return { items: s.items.map((old, i) => (i === s.editing ? item : old)), editing: null }
 }
 
-export function moveToTop(s: MemoState, index: number): MemoState {
-  if (!inRange(s, index) || index === 0) return s
+export function moveToTop(s: MemoState, index: number, item: string): MemoState {
+  if (!isAt(s, index, item) || index === 0) return s
   const items = [s.items[index]!, ...s.items.filter((_, i) => i !== index)]
   let editing = s.editing
   if (editing === index) editing = 0
@@ -35,8 +45,8 @@ export function moveToTop(s: MemoState, index: number): MemoState {
   return { items, editing }
 }
 
-export function removeItem(s: MemoState, index: number): MemoState {
-  if (!inRange(s, index)) return s
+export function removeItem(s: MemoState, index: number, item: string): MemoState {
+  if (!isAt(s, index, item)) return s
   const items = s.items.filter((_, i) => i !== index)
   let editing = s.editing
   if (editing === index) editing = null

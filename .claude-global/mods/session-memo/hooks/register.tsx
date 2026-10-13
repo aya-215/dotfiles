@@ -52,7 +52,11 @@ export const register: Register = on => {
         <Box flexShrink={1}>
           <Text wrap="truncate">{parts.text}</Text>
         </Box>
-        {parts.more !== '' && <Text dimColor>{parts.more}</Text>}
+        {parts.more !== '' && (
+          <Box key="more" flexShrink={0}>
+            <Text dimColor>{parts.more}</Text>
+          </Box>
+        )}
       </Box>
     )
   })
@@ -71,16 +75,16 @@ export const register: Register = on => {
             <Box flexGrow={1} flexShrink={1}>
               <Text wrap="truncate" bold={editing === i}>{`${i + 1}. ${item}`}</Text>
             </Box>
-            {i > 0 && <Button key={`up:${i}`} label="↑" onPress={() => update($, memo, s => moveToTop(s, i))} />}
+            {i > 0 && <Button key={`up:${i}`} label="↑" onPress={() => update($, memo, s => moveToTop(s, i, item))} />}
             <Button
               key={`edit:${i}`}
               label="e"
               onPress={async () => {
-                await update($, memo, s => startEdit(s, i))
+                await update($, memo, s => startEdit(s, i, item))
                 await focusInput()
               }}
             />
-            <Button key={`del:${i}`} label="x" onPress={() => update($, memo, s => removeItem(s, i))} />
+            <Button key={`del:${i}`} label="x" onPress={() => update($, memo, s => removeItem(s, i, item))} />
           </Box>
         ))}
         <Box flexDirection="row">

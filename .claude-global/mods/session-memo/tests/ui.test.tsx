@@ -67,6 +67,16 @@ for (const surface of SURFACES) {
     expect((await pane.findAll({ type: 'Text', text: /^\d+\. / })).map(t => t.text)).toEqual(['1. c', '2. b'])
   })
 
+  test(`二度押ししても、押した行のメモにしか効かない (${surface})`, async ($, on) => {
+    engineBand(on)
+    const pane = await openPane($, surface)
+    for (const text of ['a', 'b', 'c', 'd']) await pane.input({ key: 'input', text })
+    await Promise.all([pane.press({ key: 'del:0' }), pane.press({ key: 'del:0' })])
+    expect((await pane.findAll({ type: 'Text', text: /^\d+\. / })).map(t => t.text)).toEqual(['1. b', '2. c', '3. d'])
+    await Promise.all([pane.press({ key: 'up:2' }), pane.press({ key: 'up:2' })])
+    expect((await pane.findAll({ type: 'Text', text: /^\d+\. / })).map(t => t.text)).toEqual(['1. d', '2. b', '3. c'])
+  })
+
   test(`帯は0件なら出さず、先頭と（+N）を出す (${surface})`, async ($, on) => {
     engineBand(on)
     const empty = await openBand($, surface)
@@ -92,6 +102,7 @@ for (const surface of SURFACES) {
     const head = await band.find({ type: 'Text', text: /^📝 / })
     expect(head?.props.wrap).toBe('truncate')
     expect(await band.find({ type: 'Text', text: '（+1）' })).toBeDefined()
+    expect((await band.find({ key: 'more' }))?.props.flexShrink).toBe(0)
   })
 
   test(`アンケート中は帯を譲る (${surface})`, async ($, on) => {
