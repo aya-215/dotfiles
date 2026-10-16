@@ -38,6 +38,9 @@ version: 1.0.0
 DL前なら、ユーザーに管理センターからDLしてもらう。**Claude がブラウザを開く必要はない**
 （Playwright 不採用の理由は下記）。DL先は Windows の Downloads。
 
+DL手順は「`https://admin.cloud.microsoft/?source=applauncher#/billoverview/invoice-list` を開いて最新の請求書PDFをDL」だけ。
+引数なしで実行してDL済みの請求書が見つからないときは、スクリプトがこの手順を表示して止まる。
+
 ### 2. ドライランで内容を見せる
 
 ```bash

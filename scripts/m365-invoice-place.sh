@@ -19,6 +19,7 @@ AUTO_NO="${M365_INVOICE_AUTO_NO:-AUTO-000010660}"
 SHARE_DIR='\\kanri-yayoi-svr\共有\法人名義カード使用履歴\インボイス(領収書)eBASE\AUTO-000011215_マイクロソフト_Microsoft365Copilotのライセンス'
 NAME_SUFFIX='Microsoft365Copilotのライセンス'
 DOWNLOADS_GLOB='/mnt/c/Users/*/Downloads'
+INVOICE_LIST_URL='https://admin.cloud.microsoft/?source=applauncher#/billoverview/invoice-list'
 
 PS='/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe'
 
@@ -31,6 +32,20 @@ header() { printf "\n\033[1;36m=== %s ===\033[0m\n" "$1"; }
 die() { red "NG: $1"; exit 1; }
 ok()  { green "OK: $1"; }
 
+# 請求書PDFのDL手順を表示する
+show_download_steps() {
+  header "請求書のDL手順"
+  echo "  1. Chrome で次を開く: $INVOICE_LIST_URL"
+  echo "  2. 一番上（最新）の請求書のPDFを Downloads にDLする"
+  echo "  3. このスクリプトを引数なしでもう一回実行する"
+}
+
+# 自動検出のときだけDL手順を添えて止める。パス指定時は手順を出さずに止める
+die_with_steps() {
+  [[ "$AUTO_DETECTED" == true ]] && show_download_steps
+  die "$1"
+}
+
 # PowerShell を UTF-8 出力で呼ぶ。共有フォルダのパスに日本語が入るため必須
 ps_run() {
   "$PS" -NoProfile -Command "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $1" 2>/dev/null | tr -d '\r'
@@ -40,6 +55,7 @@ ps_run() {
 
 COMMIT=false
 SRC=""
+AUTO_DETECTED=false
 for arg in "$@"; do
   case "$arg" in
     --commit) COMMIT=true ;;
@@ -53,10 +69,12 @@ done
 header "入力ファイル"
 
 if [[ -z "$SRC" ]]; then
-  # Downloads 内で最終更新が一番新しいPDFを拾う
-  SRC="$(find $DOWNLOADS_GLOB -maxdepth 1 -name '*.pdf' -printf '%T@ %p\n' 2>/dev/null \
+  AUTO_DETECTED=true
+  # Downloads 内で最終更新が一番新しいPDFを拾う。他ユーザーの Downloads は権限エラーで find が非0を返すので握りつぶす
+  # shellcheck disable=SC2086 # glob 展開させるため意図的に非クォート
+  SRC="$( { find $DOWNLOADS_GLOB -maxdepth 1 -name '*.pdf' -printf '%T@ %p\n' 2>/dev/null || true; } \
          | sort -rn | head -1 | cut -d' ' -f2-)"
-  [[ -n "$SRC" ]] || die "Downloads にPDFが見つからん。パスを引数で渡してや"
+  [[ -n "$SRC" ]] || die_with_steps "Downloads にPDFが見つからん。まだDLしてへんなら上の手順でDLしてや"
   echo "自動検出（Downloads の最新PDF）"
 fi
 
@@ -81,7 +99,7 @@ if grep -qi 'Microsoft 365 Copilot' "$TXT"; then
 else
   red "Copilot の請求書ちゃうかもしれん。中身の冒頭を出すで:"
   head -20 "$TXT" | sed 's/^/  /'
-  die "Copilot の明細が見つからん。DLするファイルを間違えてへんか確認してや"
+  die_with_steps "Copilot の明細が見つからん。まだDLしてへんか、DLするファイルを間違えてへんか確認してや"
 fi
 
 # --- 3. 請求書発行日をPDFから取得 ---
@@ -118,7 +136,7 @@ DEST_PATH="${SHARE_DIR}\\${DEST_NAME}"
 
 # 上書きは絶対にせん。経理が処理済みのファイルを壊す事故を物理的に防ぐ
 if [[ "$(ps_run "if (Test-Path -LiteralPath '$DEST_PATH') { 'YES' } else { 'NO' }")" == "YES" ]]; then
-  die "同名ファイルが既にある。上書きはせえへん: $DEST_NAME"
+  die_with_steps "同名ファイルが既にある。上書きはせえへん（設置済みか、今月分をまだDLしてへんか）: $DEST_NAME"
 fi
 ok "同名ファイルなし（上書きの心配なし）"
 
