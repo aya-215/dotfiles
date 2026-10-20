@@ -37,6 +37,10 @@
           #     切り出すだけでtrimしないため、"claude -> ..." だと match が "claude "
           #     (末尾スペース付き) になり ^claude<スペース2つ> となって一切マッチしない
           set -g @resurrect-processes '"claude->~/.dotfiles/scripts/claude-pane-session/restore.sh"'
+          # agent-sidebar を復元時にサイドバーとして戻す（仕組みは autocreate.sh 冒頭）
+          set -g @resurrect-hook-pre-restore-all '~/.dotfiles/scripts/tmux-agent-sidebar/autocreate.sh pre-restore'
+          set -g @resurrect-hook-pre-restore-pane-processes '~/.dotfiles/scripts/tmux-agent-sidebar/autocreate.sh pre-processes'
+          set -g @resurrect-hook-post-restore-all '~/.dotfiles/scripts/tmux-agent-sidebar/autocreate.sh post-restore'
         '';
       }
       {
@@ -235,10 +239,14 @@
       set -g @sidebar_key_all 'A'
       set -g @sidebar_width '15%'
       set -g @sidebar_bottom_height '20'
+      # 標準の自動作成は resurrect の復元中にも発火してレイアウトを崩すため使わず、下の自前フックで作る
       set -g @sidebar_auto_create 'off'
       # 通知は ~/.claude/hooks/notify.sh (Windows トースト) が担う。WSL に notify-send も無い
       set -g @sidebar_notifications 'off'
       run-shell ~/src/github.com/hiroppy/tmux-agent-sidebar/tmux-agent-sidebar.tmux
+      # 添字固定なので設定を再読込しても重複しない
+      set-hook -g after-new-window[90] 'run-shell "~/.dotfiles/scripts/tmux-agent-sidebar/autocreate.sh window #{window_id}"'
+      set-hook -g session-created[90] 'run-shell "~/.dotfiles/scripts/tmux-agent-sidebar/autocreate.sh window #{window_id}"'
 
     '';
   };
