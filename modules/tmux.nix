@@ -236,6 +236,8 @@
       set -g @sidebar_width '15%'
       set -g @sidebar_bottom_height '20'
       set -g @sidebar_auto_create 'off'
+      # 通知は ~/.claude/hooks/notify.sh (Windows トースト) が担う。WSL に notify-send も無い
+      set -g @sidebar_notifications 'off'
       run-shell ~/src/github.com/hiroppy/tmux-agent-sidebar/tmux-agent-sidebar.tmux
 
     '';

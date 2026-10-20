@@ -137,22 +137,32 @@
         ]
       }
     ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude pre-tool-use"
-          }
-        ]
-      }
-    ],
     "PostToolUse": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude post-tool-use"
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude activity-log"
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude permission-denied"
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude cwd-changed"
           }
         ]
       }
@@ -233,22 +243,12 @@
         ]
       }
     ],
-    "WorktreeCreate": [
+    "TeammateIdle": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude worktree-create"
-          }
-        ]
-      }
-    ],
-    "WorktreeRemove": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude worktree-remove"
+            "command": "~/src/github.com/hiroppy/tmux-agent-sidebar/hook.sh claude teammate-idle"
           }
         ]
       }
