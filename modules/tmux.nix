@@ -238,7 +238,21 @@
       set -g @sidebar_key 'e'
       set -g @sidebar_key_all 'A'
       set -g @sidebar_width '15%'
-      set -g @sidebar_bottom_height '20'
+      set -g @sidebar_bottom_height '0'
+      # 配色は catppuccin mocha に合わせる
+      set -g @sidebar_color_running '#a6e3a1'
+      set -g @sidebar_color_waiting '#f9e2af'
+      set -g @sidebar_color_idle '#89b4fa'
+      set -g @sidebar_color_error '#f38ba8'
+      set -g @sidebar_color_filter_inactive '#6c7086'
+      set -g @sidebar_color_border '#45475a'
+      set -g @sidebar_color_accent '#b4befe'
+      set -g @sidebar_color_session '#89dceb'
+      set -g @sidebar_color_selection '#313244'
+      set -g @sidebar_color_text_active '#cdd6f4'
+      set -g @sidebar_color_text_muted '#bac2de'
+      set -g @sidebar_color_text_inactive '#7f849c'
+      set -g @sidebar_color_agent_claude '#fab387'
       # 標準の自動作成は resurrect の復元中にも発火してレイアウトを崩すため使わず、下の自前フックで作る
       set -g @sidebar_auto_create 'off'
       # 通知は ~/.claude/hooks/notify.sh (Windows トースト) が担う。WSL に notify-send も無い
