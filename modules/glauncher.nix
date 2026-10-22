@@ -2,6 +2,6 @@
 
 {
   home.packages = [
-    glauncher.packages.${pkgs.system}.default
+    glauncher.packages.${pkgs.stdenv.hostPlatform.system}.default
   ];
 }
