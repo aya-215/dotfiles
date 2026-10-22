@@ -39,3 +39,7 @@ __pycache__/
 
 # 日報配布キット（社内情報を含むためgit管理外。実体はgw3で共有する）
 /share/
+
+# Claude Code が自動生成するスキル置き場（削除済みスキルの退避・claude.ai 同期）
+.claude-global/skills/.trash/
+.claude-global/skills/synced/
