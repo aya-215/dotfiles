@@ -17,14 +17,6 @@ function prompt {
 }
 
 # ======================
-# mise（キャッシュ優先）
-# ======================
-$miseCache = "$env:TEMP\mise_activate_cache.ps1"
-if (Test-Path $miseCache) {
-    . $miseCache
-}
-
-# ======================
 # エイリアス（即座に設定）
 # ======================
 # git用abbrと衝突する組み込みReadOnlyエイリアスを削除
