@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, pkgs-deno, ... }:
 
 {
   home.packages = with pkgs; [
@@ -24,7 +24,7 @@
 
     # ランタイム・バージョン管理
     fnm        # Node.jsバージョン管理
-    deno       # Deno JavaScript runtime
+    pkgs-deno.deno  # Deno JavaScript runtime（flake.nix で 2.9.2 に固定）
     bun        # Bun JavaScript runtime
 
     # Python
