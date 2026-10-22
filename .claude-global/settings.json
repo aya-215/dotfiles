@@ -61,7 +61,8 @@
       "mcp__gitbucket__gitbucket_create_pr",
       "mcp__gitbucket__gitbucket_update_pr"
     ],
-    "defaultMode": "auto"
+    "defaultMode": "auto",
+    "blockReadsOutsideWorkingDirectories": false
   },
   "hooks": {
     "SessionStart": [
@@ -266,13 +267,29 @@
     "rust-analyzer-lsp@claude-plugins-official": false,
     "superpowers@claude-plugins-official": true,
     "ebaseweb-coding-check@ebase-marketplace": true,
-    "superpowers-developing-for-claude-code@superpowers-marketplace": true
+    "superpowers-developing-for-claude-code@superpowers-marketplace": true,
+    "ebase-infra@ebase-claude-marketplace": true,
+    "aiebase-infra@ebase-claude-marketplace": true,
+    "yomiyasu@yomiyasu": true,
+    "aiebase-devkit@ebase-claude-marketplace": true
   },
   "extraKnownMarketplaces": {
     "superpowers-marketplace": {
       "source": {
         "source": "github",
         "repo": "obra/superpowers-marketplace"
+      }
+    },
+    "ebase-claude-marketplace": {
+      "source": {
+        "source": "git",
+        "url": "http://192.168.208.80:8080/gitbucket/git/eBASE/ebase-claude-marketplace.git"
+      }
+    },
+    "yomiyasu": {
+      "source": {
+        "source": "github",
+        "repo": "nanaism/yomiyasu"
       }
     }
   },
@@ -355,13 +372,22 @@
     ]
   },
   "alwaysThinkingEnabled": false,
-  "idleCompaction": false,
   "effortLevel": "medium",
+  "modelSettings": {
+    "claude-sonnet-5": {
+      "effortLevel": "high"
+    },
+    "claude-opus-5-5": {
+      "effortLevel": "high"
+    }
+  },
   "advisorModel": "opus",
   "plansDirectory": "./.claude/plans",
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "skipWorkflowUsageWarning": true,
+  "idleCompaction": false,
+  "autoContinueAtUsageLimit": true,
   "mcpServers": {
     "gitbucket": {
       "command": "uv",
