@@ -169,10 +169,10 @@ def main():
         row("F04", "自己評価に★と理由", "FAIL", "★" + ("あり" if stars else "なし") + "・理由" + ("あり" if reason else "なし"))
 
     # F05 needs-review
-    if not labels:
+    if "labels" not in meta:
         row("F05", "PRに `needs-review` ラベル", "UNKNOWN", "meta に labels が無い（get_issue をPR番号で呼んで取得する）")
     else:
-        row("F05", "PRに `needs-review` ラベル", "PASS" if "needs-review" in labels else "FAIL", ", ".join(labels))
+        row("F05", "PRに `needs-review` ラベル", "PASS" if "needs-review" in labels else "FAIL", ", ".join(labels) or "ラベルなし")
 
     # F06 ブランチ名
     if not track:
