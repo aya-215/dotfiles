@@ -248,7 +248,7 @@
       set -g @sidebar_color_border '#45475a'
       set -g @sidebar_color_accent '#b4befe'
       set -g @sidebar_color_session '#89dceb'
-      set -g @sidebar_color_selection '#313244'
+      set -g @sidebar_color_selection '#45475a'
       set -g @sidebar_color_text_active '#cdd6f4'
       set -g @sidebar_color_text_muted '#bac2de'
       set -g @sidebar_color_text_inactive '#7f849c'
