@@ -4,6 +4,7 @@
 
 # Claude global settings - exclude memory data
 .claude-global/skills/*/memories/
+.claude-global/skills/*/config.local.json
 
 # PowerShell secrets
 PowerShell/secrets.ps1
