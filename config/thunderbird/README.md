@@ -114,6 +114,11 @@ if (luminance(style.color) <= LUMINANCE_THRESHOLD) {
 これを知る前は個別の症状に対症療法（`transparent` の総当たり、色の全要素上書き、
 `opacity` 打ち消し）を重ねてしまったが、いずれも不要だった。
 
+### `mail.notification.count.inbox_only = false`
+
+アイコンのバッジに受信トレイ以外（フィルタで振り分けたフォルダ）の未読も数える。
+フォルダ単位の指定はできず全フォルダが対象になる（ごみ箱・送信済み等の特殊フォルダと仮想フォルダは除外）。
+
 ## CSS 実装のポイント
 
 ### 背景は `body` のみに当てる
