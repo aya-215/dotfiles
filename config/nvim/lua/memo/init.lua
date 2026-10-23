@@ -3,7 +3,8 @@
 local M = {}
 
 -- MEMO_DIR はテスト用の差し替え口。実ファイルをテストで壊さないために使う
-M.dir = vim.env.MEMO_DIR or vim.fn.expand("~/memo/quick")
+-- Windows の `\` は autocmd の pattern で後方参照扱い(E65)になるので `/` に揃える
+M.dir = (vim.env.MEMO_DIR or vim.fn.expand("~/memo/quick")):gsub("\\", "/")
 
 local function core()
   return require("memo.core")

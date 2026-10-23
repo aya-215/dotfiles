@@ -3,7 +3,8 @@
 local M = {}
 
 -- TODO_MD_PATH はテスト用の差し替え口。実ファイルをテストで壊さないために使う
-M.path = vim.env.TODO_MD_PATH or vim.fn.expand("~/memo/todo.md")
+-- Windows の `\` は autocmd の pattern で `\3` 等が後方参照扱いになる(E65)ので `/` に揃える
+M.path = (vim.env.TODO_MD_PATH or vim.fn.expand("~/memo/todo.md")):gsub("\\", "/")
 
 local function count_nonblank(lines)
   local n = 0
