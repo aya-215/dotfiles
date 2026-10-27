@@ -16,6 +16,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import unicodedata
@@ -23,6 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
+import zipfile
 from dataclasses import dataclass
 from xml.sax.saxutils import escape, quoteattr
 
@@ -209,6 +211,8 @@ def search(items, words):
 
 
 def snippet(text, word, width=60):
+    # MEMO 項目は改行を「\n」の2文字で持っているので、本物の改行と一緒に空白へ畳む
+    text = re.sub(r"(?:\\n|\r?\n)+", " ", text)
     n, w = normalize(text), normalize(word)
     # NFKC で長さが変わった文字列は位置がずれるので、正規化後の文字列から切り出す
     src = text if len(n) == len(text) else n
@@ -220,6 +224,131 @@ def snippet(text, word, width=60):
 
 def detail_url(viewer_url, vol, item_id):
     return f"{viewer_url.rstrip('/')}/DispDetail.do?volumeName={vol}&itemID={item_id}"
+
+
+class Unsupported(Exception):
+    pass
+
+
+TEXT_FORMATS = ("PDF", "DOCX", "XLSX", "TXT")
+
+
+def file_url(file_base, vol, filename):
+    return f"{file_base}{vol}/imag/{filename.replace(chr(92), '/')}"
+
+
+def is_old(f):
+    return "old" in (f.get("link_comment") or "").lower()
+
+
+def fetch_file(url, dest):
+    try:
+        with urllib.request.urlopen(url, timeout=TIMEOUT) as r, open(dest, "wb") as f:
+            f.write(r.read())
+    except urllib.error.HTTPError as e:
+        raise SomuError(f"添付を取れへん（HTTP {e.code}）: {url}")
+    except (urllib.error.URLError, OSError) as e:
+        raise ConnectError(f"添付のサーバーに接続できへん: {e}")
+
+
+W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+S = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+
+def _docx_text(path):
+    with zipfile.ZipFile(path) as z:
+        root = ET.fromstring(z.read("word/document.xml"))
+    return "\n".join("".join(t.text or "" for t in p.iter(W + "t")) for p in root.iter(W + "p"))
+
+
+def _xlsx_text(path):
+    with zipfile.ZipFile(path) as z:
+        names = z.namelist()
+        shared = []
+        if "xl/sharedStrings.xml" in names:
+            shared = ["".join(t.text or "" for t in si.iter(S + "t"))
+                      for si in ET.fromstring(z.read("xl/sharedStrings.xml")).iter(S + "si")]
+        sheets = sorted((n for n in names if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", n)),
+                        key=lambda n: int(re.search(r"\d+", n.rsplit("/", 1)[1]).group()))
+        out = []
+        for n in sheets:
+            out.append(f"--- {n.rsplit('/', 1)[1]}")
+            for row in ET.fromstring(z.read(n)).iter(S + "row"):
+                cells = []
+                for c in row.iter(S + "c"):
+                    if c.get("t") == "s":
+                        cells.append(shared[int(c.findtext(S + "v"))])
+                    elif c.get("t") == "inlineStr":
+                        cells.append("".join(t.text or "" for t in c.iter(S + "t")))
+                    else:
+                        cells.append(c.findtext(S + "v") or "")
+                out.append("\t".join(cells))
+    return "\n".join(out)
+
+
+def extract_text(path, fmt):
+    fmt = (fmt or "").upper()
+    if fmt == "PDF":
+        try:
+            r = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True, timeout=120)
+        except FileNotFoundError:
+            raise Unsupported("pdftotext が無い")
+        return r.stdout.decode("utf-8", "replace")
+    if fmt == "DOCX":
+        return _docx_text(path)
+    if fmt == "XLSX":
+        return _xlsx_text(path)
+    if fmt == "TXT":
+        with open(path, "rb") as f:
+            raw = f.read()
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return raw.decode("cp932", "replace")
+    raise Unsupported(fmt)
+
+
+def _sorted_files(files):
+    return sorted(files, key=is_old)
+
+
+def cmd_files(api, cfg, args):
+    vol = norm_vol(args.vol)
+    for f in _sorted_files(api.item_files(vol, args.item_id)):
+        print(f"{f.get('file_id')}\t{f.get('link_title', '')}\t{f.get('download_name', '')}\t"
+              f"{f.get('format', '')}\t{f.get('link_comment', '')}\t"
+              f"{file_url(cfg.file_base, vol, f.get('filename', ''))}")
+
+
+def cmd_text(api, cfg, args):
+    vol = norm_vol(args.vol)
+    files = _sorted_files(api.item_files(vol, args.item_id))
+    if args.file_ids:
+        files = [f for f in files if f.get("file_id") in args.file_ids]
+    elif not args.old:
+        files = [f for f in files if not is_old(f)]
+    budget = args.max_chars
+    with tempfile.TemporaryDirectory() as tmp:
+        for f in files:
+            url = file_url(cfg.file_base, vol, f.get("filename", ""))
+            print(f"### {f.get('link_title', '')}（{f.get('download_name', '')}）  {url}")
+            if budget <= 0:
+                print("（--max-chars に達したので取らへんかった）")
+                continue
+            if (f.get("format") or "").upper() not in TEXT_FORMATS:
+                print("この形式はテキストにできへん。URL を開いて読んでな")
+                continue
+            dest = os.path.join(tmp, f.get("file_id", "file"))
+            fetch_file(url, dest)
+            try:
+                text = extract_text(dest, f.get("format"))
+            except Unsupported as e:
+                print(f"この形式はテキストにできへん（{e}）。URL を開いて読んでな")
+                continue
+            print(text[:budget])
+            if len(text) > budget:
+                print(f"（ここで打ち切り。全 {len(text)} 文字。--max-chars で増やす）")
+            budget -= len(text)
 
 
 def _volname(api, vol):
@@ -278,6 +407,17 @@ def build_parser():
     q.add_argument("--yes", action="store_true", help=f"{LARGE_THRESHOLD}件超でも取る")
     q.add_argument("--limit", type=int, default=20)
     q.set_defaults(func=cmd_search)
+    f = sub.add_parser("files", help="添付の一覧（旧版は後ろ）")
+    f.add_argument("vol")
+    f.add_argument("item_id")
+    f.set_defaults(func=cmd_files)
+    t = sub.add_parser("text", help="添付を取ってテキストにする")
+    t.add_argument("vol")
+    t.add_argument("item_id")
+    t.add_argument("file_ids", nargs="*")
+    t.add_argument("--old", action="store_true", help="file_id 省略時に旧版も読む")
+    t.add_argument("--max-chars", type=int, default=20000)
+    t.set_defaults(func=cmd_text)
     return p
 
 

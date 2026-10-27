@@ -3,9 +3,11 @@ import io
 import json
 import os
 import re
+import shutil
 import socket
 import tempfile
 import unittest
+import zipfile
 
 import somu
 
@@ -243,12 +245,16 @@ class SearchTest(unittest.TestCase):
     def test_snippet_newlines_to_space(self):
         self.assertEqual(somu.snippet("a\nX\nb", "X", 5), "a X b")
 
+    def test_snippet_literal_backslash_n(self):
+        # eBASE の MEMO 項目は改行を「\n」という2文字で持っている
+        self.assertEqual(somu.snippet("a\\n\\nX\\nb", "X", 10), "a X b")
+
     def test_detail_url(self):
         self.assertEqual(somu.detail_url("http://example.invalid/v4/", "00204", "t1"),
                          "http://example.invalid/v4/DispDetail.do?volumeName=00204&itemID=t1")
 
 
-class CliTest(CacheTestBase):
+class CliTestBase(CacheTestBase):
     def run_main(self, argv, replies):
         fake = FakePost(replies)
         cfg = somu.Config(API, "http://example.invalid/v4", "http://example.invalid/volume/")
@@ -261,6 +267,8 @@ class CliTest(CacheTestBase):
             rc = somu.main(argv)
         return rc, out.getvalue(), err.getvalue()
 
+
+class CliTest(CliTestBase):
     def test_cli_large_exit_3(self):
         rc, _, err = self.run_main(["search", "1", "x"], {"getItems": ids_xml(10001)})
         self.assertEqual(rc, 3)
@@ -288,6 +296,125 @@ class CliTest(CacheTestBase):
         rc, _, err = self.run_main(["volumes"], {"getVolume": somu.SomuError("eB-API に接続できへん: x")})
         self.assertEqual(rc, 2)
         self.assertIn("ERROR: eB-API に接続できへん", err)
+
+
+MIN_PDF = b"""%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj
+4 0 obj<</Length 41>>stream
+BT /F1 12 Tf 20 100 Td (Hello PDF) Tj ET
+endstream endobj
+5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj
+trailer<</Root 1 0 R>>
+%%EOF
+"""
+
+W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+S_NS = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+
+
+class AttachmentTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def write_zip(self, name, members):
+        path = os.path.join(self.tmp.name, name)
+        with zipfile.ZipFile(path, "w") as z:
+            for k, v in members.items():
+                z.writestr(k, v)
+        return path
+
+    def test_file_url(self):
+        self.assertEqual(somu.file_url("http://example.invalid/volume/", "00204", "file0222\\t010.pdf"),
+                         "http://example.invalid/volume/00204/imag/file0222/t010.pdf")
+
+    def test_is_old(self):
+        self.assertTrue(somu.is_old({"link_comment": "OLD 2019"}))
+        self.assertFalse(somu.is_old({"link_comment": "2024/9/19更新"}))
+        self.assertFalse(somu.is_old({}))
+
+    def test_extract_docx(self):
+        p = self.write_zip("a.docx", {"word/document.xml":
+            f'<w:document {W_NS}><w:body><w:p><w:r><w:t>第1</w:t></w:r><w:r><w:t>条</w:t></w:r></w:p>'
+            f'<w:p><w:r><w:t>在宅勤務</w:t></w:r></w:p></w:body></w:document>'})
+        self.assertEqual(somu.extract_text(p, "DOCX"), "第1条\n在宅勤務")
+
+    def test_extract_xlsx(self):
+        p = self.write_zip("a.xlsx", {
+            "xl/sharedStrings.xml": f'<sst {S_NS}><si><t>IP</t></si><si><t>PC名</t></si></sst>',
+            "xl/worksheets/sheet1.xml": f'<worksheet {S_NS}><sheetData><row r="1">'
+                                        '<c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row>'
+                                        '<row r="2"><c r="A2"><v>42</v></c></row></sheetData></worksheet>'})
+        text = somu.extract_text(p, "xlsx")
+        self.assertIn("IP\tPC名", text)
+        self.assertIn("42", text)
+
+    def test_extract_txt_cp932(self):
+        p = os.path.join(self.tmp.name, "a.txt")
+        with open(p, "wb") as f:
+            f.write("よくある質問".encode("cp932"))
+        self.assertEqual(somu.extract_text(p, "TXT"), "よくある質問")
+
+    def test_extract_doc_unsupported(self):
+        p = os.path.join(self.tmp.name, "a.doc")
+        open(p, "wb").close()
+        with self.assertRaises(somu.Unsupported):
+            somu.extract_text(p, "DOC")
+
+    def test_extract_pdf(self):
+        if not shutil.which("pdftotext"):
+            self.skipTest("pdftotext が無い")
+        p = os.path.join(self.tmp.name, "a.pdf")
+        with open(p, "wb") as f:
+            f.write(MIN_PDF)
+        self.assertIn("Hello PDF", somu.extract_text(p, "PDF"))
+
+
+class AttachmentCliTest(CliTestBase):
+    IMAGES = resp(
+        "<image><file_id>f_old</file_id><filename>file0001\\f_old.txt</filename><format>TXT</format>"
+        "<link_title>旧規則</link_title><download_name>old.txt</download_name><link_comment>old</link_comment></image>"
+        "<image><file_id>f_doc</file_id><filename>file0002\\f_doc.doc</filename><format>DOC</format>"
+        "<link_title>申請書</link_title><download_name>申請書.doc</download_name><link_comment/></image>"
+        "<image><file_id>f_txt</file_id><filename>file0003\\f_txt.txt</filename><format>TXT</format>"
+        "<link_title>新規則</link_title><download_name>new.txt</download_name><link_comment>2024</link_comment></image>")
+
+    def setUp(self):
+        super().setUp()
+        self.fetched = []
+        orig = somu.fetch_file
+
+        def fake_fetch(url, dest):
+            self.fetched.append(url)
+            with open(dest, "wb") as f:
+                f.write(("本文:" + url.rsplit("/", 1)[1]).encode("utf-8"))
+        somu.fetch_file = fake_fetch
+        self.addCleanup(setattr, somu, "fetch_file", orig)
+
+    def test_cli_files_old_last(self):
+        rc, out, _ = self.run_main(["files", "204", "t1"], {"getItemImage": self.IMAGES})
+        self.assertEqual(rc, 0)
+        self.assertLess(out.index("新規則"), out.index("旧規則"))
+        self.assertIn("http://example.invalid/volume/00204/imag/file0003/f_txt.txt", out)
+
+    def test_cli_text_skips_old_and_unsupported(self):
+        rc, out, _ = self.run_main(["text", "204", "t1"], {"getItemImage": self.IMAGES})
+        self.assertEqual(rc, 0)
+        self.assertIn("本文:f_txt.txt", out)
+        self.assertNotIn("本文:f_old.txt", out)
+        self.assertIn("テキストにできへん", out)
+        self.assertEqual(len(self.fetched), 1)
+
+    def test_cli_text_by_file_id_includes_old(self):
+        rc, out, _ = self.run_main(["text", "204", "t1", "f_old"], {"getItemImage": self.IMAGES})
+        self.assertIn("本文:f_old.txt", out)
+
+    def test_cli_text_max_chars(self):
+        rc, out, _ = self.run_main(["text", "204", "t1", "--max-chars", "4"], {"getItemImage": self.IMAGES})
+        self.assertIn("本文:f", out)
+        self.assertNotIn("本文:f_txt.txt", out)
 
 
 if __name__ == "__main__":
