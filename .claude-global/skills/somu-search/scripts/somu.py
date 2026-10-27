@@ -150,9 +150,9 @@ def cache_path(vol):
 
 def load_cache(vol):
     try:
-        with open(cache_path(vol)) as f:
+        with open(cache_path(vol), encoding="utf-8") as f:
             return json.load(f)
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError):
         return None
 
 
@@ -161,9 +161,13 @@ def _save_cache(vol, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # 取得途中で落ちても前回の保存を壊さないよう、書き切ってから置き換える
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
-    with os.fdopen(fd, "w") as f:
-        json.dump(data, f, ensure_ascii=False)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 
 def dump_volume(api, vol, confirmed=False):
@@ -172,18 +176,25 @@ def dump_volume(api, vol, confirmed=False):
         raise NeedsConfirm(len(ids))
     specs = api.spec_info(vol)
     rows = {i: {"item_id": i} for i in ids}
+    skipped, ok = [], 0
     for spec_type in dict.fromkeys(s["spec_type"] for s in specs if s["spec_type"]):
-        try:
-            for k in range(0, len(ids), BATCH):
-                for iid, vals in api.spec_values(vol, ids[k:k + BATCH], spec_type).items():
-                    if iid in rows:
-                        rows[iid].update({f"{spec_type}:{t}": v for t, v in vals.items()})
-        except ConnectError:
-            raise
-        except SomuError as e:
-            print(f"WARN: {spec_type} を飛ばした: {e}", file=sys.stderr)
+        for k in range(0, len(ids), BATCH):
+            try:
+                values = api.spec_values(vol, ids[k:k + BATCH], spec_type)
+            except ConnectError:
+                raise
+            except SomuError as e:
+                skipped.append(f"{spec_type} の {k + 1}〜{min(k + BATCH, len(ids))}件目")
+                print(f"WARN: {skipped[-1]} を飛ばした: {e}", file=sys.stderr)
+                continue
+            ok += 1
+            for iid, vals in values.items():
+                if iid in rows:
+                    rows[iid].update({f"{spec_type}:{t}": v for t, v in vals.items()})
+    if ids and skipped and not ok:
+        raise SomuError(f"{vol} の値が1件も取れへんかった（保存はせえへん）")
     data = {"vol": vol, "fetched_at": datetime.datetime.now().isoformat(timespec="seconds"),
-            "specs": specs, "items": list(rows.values())}
+            "specs": specs, "skipped": skipped, "items": list(rows.values())}
     _save_cache(vol, data)
     return data
 
@@ -234,7 +245,7 @@ TEXT_FORMATS = ("PDF", "DOCX", "XLSX", "TXT")
 
 
 def file_url(file_base, vol, filename):
-    return f"{file_base}{vol}/imag/{filename.replace(chr(92), '/')}"
+    return f"{file_base}{vol}/imag/{urllib.parse.quote(filename.replace(chr(92), '/'), safe='/')}"
 
 
 def is_old(f):
@@ -261,6 +272,13 @@ def _docx_text(path):
     return "\n".join("".join(t.text or "" for t in p.iter(W + "t")) for p in root.iter(W + "p"))
 
 
+def _col_index(ref):
+    n = 0
+    for ch in re.match(r"[A-Z]+", ref).group():
+        n = n * 26 + ord(ch) - 64
+    return n - 1
+
+
 def _xlsx_text(path):
     with zipfile.ZipFile(path) as z:
         names = z.namelist()
@@ -276,6 +294,9 @@ def _xlsx_text(path):
             for row in ET.fromstring(z.read(n)).iter(S + "row"):
                 cells = []
                 for c in row.iter(S + "c"):
+                    # 空セルは <c> 自体が省かれるので、セル番地から列位置を戻して空欄で埋める
+                    col = _col_index(c.get("r")) if c.get("r") else len(cells)
+                    cells.extend([""] * (col - len(cells)))
                     if c.get("t") == "s":
                         cells.append(shared[int(c.findtext(S + "v"))])
                     elif c.get("t") == "inlineStr":
@@ -293,11 +314,18 @@ def extract_text(path, fmt):
             r = subprocess.run(["pdftotext", "-layout", path, "-"], capture_output=True, timeout=120)
         except FileNotFoundError:
             raise Unsupported("pdftotext が無い")
+        except subprocess.TimeoutExpired:
+            raise Unsupported("pdftotext が時間切れ")
+        if r.returncode != 0:
+            raise Unsupported("PDF として読めへんかった: " + r.stderr.decode("utf-8", "replace").strip()[:200])
         return r.stdout.decode("utf-8", "replace")
-    if fmt == "DOCX":
-        return _docx_text(path)
-    if fmt == "XLSX":
-        return _xlsx_text(path)
+    try:
+        if fmt == "DOCX":
+            return _docx_text(path)
+        if fmt == "XLSX":
+            return _xlsx_text(path)
+    except (zipfile.BadZipFile, KeyError, ET.ParseError, ValueError, IndexError, TypeError, AttributeError) as e:
+        raise Unsupported(f"{fmt} として読めへんかった: {type(e).__name__}")
     if fmt == "TXT":
         with open(path, "rb") as f:
             raw = f.read()
@@ -339,11 +367,17 @@ def cmd_text(api, cfg, args):
                 print("この形式はテキストにできへん。URL を開いて読んでな")
                 continue
             dest = os.path.join(tmp, f.get("file_id", "file"))
-            fetch_file(url, dest)
+            try:
+                fetch_file(url, dest)
+            except ConnectError:
+                raise
+            except SomuError as e:
+                print(f"（{e}）")
+                continue
             try:
                 text = extract_text(dest, f.get("format"))
             except Unsupported as e:
-                print(f"この形式はテキストにできへん（{e}）。URL を開いて読んでな")
+                print(f"テキストにできへんかった（{e}）。URL を開いて読んでな")
                 continue
             print(text[:budget])
             if len(text) > budget:
@@ -375,9 +409,14 @@ def cmd_specs(api, cfg, args):
 def cmd_search(api, cfg, args):
     vol = norm_vol(args.vol)
     data = get_or_dump(api, vol, args.refresh, args.yes)
+    if "volname" not in data:
+        data["volname"] = _volname(api, vol)
+        _save_cache(vol, data)
     hits = search(data["items"], args.words)
-    print(f"{vol} {_volname(api, vol)} / {data['fetched_at']} 時点 / "
+    print(f"{vol} {data['volname']} / {data['fetched_at']} 時点 / "
           f"{len(data['items'])}件中 {len(hits)}件ヒット")
+    if data.get("skipped"):
+        print(f"（取れへんかった部分あり: {'、'.join(data['skipped'])}。--refresh で取り直す）")
     for it, keys in hits[:args.limit]:
         print(f"=== {it['item_id']}  {detail_url(cfg.viewer_url, vol, it['item_id'])}")
         for k in keys:

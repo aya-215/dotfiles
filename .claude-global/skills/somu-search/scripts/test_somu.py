@@ -417,5 +417,118 @@ class AttachmentCliTest(CliTestBase):
         self.assertNotIn("本文:f_txt.txt", out)
 
 
+class ReviewFixTest(CliTestBase):
+    """最終レビューで見つかった取りこぼし・固まり・トレースバックの再現。"""
+
+    def full_replies(self, n=3, values=None):
+        return {"getItems": ids_xml(n), "getSpecInfo": info_xml("メインスペック"),
+                "getSpecDataLite": values or values_reply(),
+                "getVolume": resp("<volume><voldbname>00095</voldbname><volname>IP管理</volname></volume>")}
+
+    def test_search_with_cache_makes_no_request(self):
+        self.run_main(["search", "95", "x"], self.full_replies())
+        rc, out, _ = self.run_main(["search", "95", "10.0.0.01"], {})
+        self.assertEqual(rc, 0)
+        self.assertIn("00095 IP管理", out)
+
+    def test_batch_404_skips_only_that_batch(self):
+        def reply(text):
+            if "<item_id>t00200</item_id>" in text:
+                return resp("", status=404)
+            return values_reply()(text)
+        fake = FakePost({"getItems": ids_xml(450), "getSpecInfo": info_xml("メインスペック"),
+                         "getSpecDataLite": reply})
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            data = somu.dump_volume(somu.Api(API, post=fake), "00095")
+        self.assertIn("メインスペック:IPアドレス", data["items"][449])
+        self.assertNotIn("メインスペック:IPアドレス", data["items"][200])
+        self.assertEqual(len(data["skipped"]), 1)
+        self.assertIn("WARN:", err.getvalue())
+
+    def test_search_header_shows_skipped(self):
+        def reply(text):
+            if "<item_id>t00000</item_id>" in text and 'spec_type="別"' in text:
+                return resp("", status=404)
+            return values_reply()(text)
+        replies = self.full_replies(values=reply)
+        replies["getSpecInfo"] = info_xml("メインスペック", "別")
+        rc, out, _ = self.run_main(["search", "95", "10.0.0.01"], replies)
+        self.assertIn("--refresh", out)
+
+    def test_all_types_fail_does_not_save(self):
+        fake = FakePost({"getItems": ids_xml(3), "getSpecInfo": info_xml("メインスペック"),
+                         "getSpecDataLite": resp("", status=404)})
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(somu.SomuError):
+            somu.dump_volume(somu.Api(API, post=fake), "00095")
+        self.assertIsNone(somu.load_cache("00095"))
+
+    def test_failed_write_keeps_old_cache_and_no_tmp(self):
+        api = somu.Api(API, post=FakePost(self.full_replies()))
+        old = somu.dump_volume(api, "00095")
+        orig = somu.json.dump
+
+        def boom(obj, f, **kw):
+            f.write('{"half": ')
+            raise OSError("disk full")
+        somu.json.dump = boom
+        self.addCleanup(setattr, somu.json, "dump", orig)
+        with self.assertRaises(OSError):
+            somu.dump_volume(api, "00095")
+        somu.json.dump = orig
+        self.assertEqual(somu.load_cache("00095")["fetched_at"], old["fetched_at"])
+        self.assertEqual([n for n in os.listdir(self.tmp.name) if n.endswith(".tmp")], [])
+
+    def test_file_url_quotes_japanese_and_space(self):
+        self.assertEqual(somu.file_url("http://example.invalid/volume/", "00204", "file0001\\規 定.pdf"),
+                         "http://example.invalid/volume/00204/imag/file0001/%E8%A6%8F%20%E5%AE%9A.pdf")
+
+    def test_extract_broken_docx_is_unsupported(self):
+        p = os.path.join(self.tmp.name, "a.docx")
+        with open(p, "w") as f:
+            f.write("<html>ログイン</html>")
+        with self.assertRaises(somu.Unsupported):
+            somu.extract_text(p, "DOCX")
+
+    def test_extract_broken_pdf_is_unsupported(self):
+        if not shutil.which("pdftotext"):
+            self.skipTest("pdftotext が無い")
+        p = os.path.join(self.tmp.name, "a.pdf")
+        with open(p, "w") as f:
+            f.write("<html>ログイン</html>")
+        with self.assertRaises(somu.Unsupported):
+            somu.extract_text(p, "PDF")
+
+    def test_extract_xlsx_keeps_columns_with_gaps(self):
+        p = os.path.join(self.tmp.name, "a.xlsx")
+        with zipfile.ZipFile(p, "w") as z:
+            z.writestr("xl/worksheets/sheet1.xml", f'<worksheet {S_NS}><sheetData>'
+                       '<row r="1"><c r="A1" t="inlineStr"><is><t>IP</t></is></c>'
+                       '<c r="B1" t="inlineStr"><is><t>PC名</t></is></c><c r="C1" t="inlineStr"><is><t>場所</t></is></c></row>'
+                       '<row r="2"><c r="A2"><v>5</v></c><c r="C2" t="inlineStr"><is><t>3F</t></is></c></row>'
+                       '</sheetData></worksheet>')
+        self.assertIn("5\t\t3F", somu.extract_text(p, "XLSX"))
+
+    def test_text_continues_after_http_error(self):
+        orig = somu.fetch_file
+
+        def fetch(url, dest):
+            if "f_doc" in url or "f_old" in url:
+                raise somu.SomuError(f"添付を取れへん（HTTP 404）: {url}")
+            with open(dest, "wb") as f:
+                f.write("新しい本文".encode())
+        somu.fetch_file = fetch
+        self.addCleanup(setattr, somu, "fetch_file", orig)
+        images = resp(
+            "<image><file_id>f_old</file_id><filename>file0001\\f_old.txt</filename><format>TXT</format>"
+            "<link_title>A</link_title><link_comment/></image>"
+            "<image><file_id>f_new</file_id><filename>file0002\\f_new.txt</filename><format>TXT</format>"
+            "<link_title>B</link_title><link_comment/></image>")
+        rc, out, _ = self.run_main(["text", "204", "t1"], {"getItemImage": images})
+        self.assertEqual(rc, 0)
+        self.assertIn("HTTP 404", out)
+        self.assertIn("新しい本文", out)
+
+
 if __name__ == "__main__":
     unittest.main()
