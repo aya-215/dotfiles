@@ -183,6 +183,17 @@ def gitbucket_update_pr(
     if not data:
         return "更新する項目が指定されていません（title / body / state のいずれかを指定してください）"
     pr = call_api("PATCH", f"/repos/{owner}/{repo}/pulls/{number}", data)
+    # GitBucket は PATCH で body を受け取っても 200 で無視し、旧本文を返すことがある
+    def norm(k: str, s: str | None) -> str:
+        s = (s or "").replace("\r\n", "\n").strip()
+        return s.lower() if k == "state" else s
+
+    ignored = [k for k, v in data.items() if norm(k, pr.get(k)) != norm(k, v)] if isinstance(pr, dict) else list(data)
+    if ignored:
+        raise RuntimeError(
+            f"GitBucket が {', '.join(ignored)} の変更を反映しませんでした。"
+            "PR 本文は Web 画面（本文枠右上の鉛筆アイコン）で編集してください"
+        )
     return "PRを更新しました\n" + json.dumps(fmt_pr(pr), ensure_ascii=False, indent=2)
 
 
