@@ -116,7 +116,13 @@ worktreeディレクトリは `../<略称>-<ブランチ名>` の形式にする
      - `pnpm-lock.yaml` があれば → `pnpm install --prefix <worktree-path>`
      - `yarn.lock` があれば → `yarn install --cwd <worktree-path>`
      - `bun.lockb` があれば → `bun install --cwd <worktree-path>`
-     - それ以外 → `npm install --prefix <worktree-path>`
+     - それ以外（npm） → 下記のハードリンク事前コピーをしてから `npm install --prefix <worktree-path>`
+   - npm の場合、install の前に現在のディレクトリの node_modules をハードリンクで worktree に複製する（1本あたり約1GB の重複を防ぐ。差分だけ npm install が置き換える）:
+     - 対象を列挙: `find . -maxdepth 3 -name node_modules -type d -prune`
+     - 各 `<dir>/node_modules` について、worktree 側に `<dir>` が存在するときだけ `cp -al <dir>/node_modules <worktree-path>/<dir>/node_modules`
+     - `cp -al` が失敗したら（別ファイルシステム等）その node_modules を `rm -rf` で消して通常の install に任せる
+     - `npm ci` は node_modules を丸ごと消してリンクが無駄になるため使わない
+     - symlink で借りない。Next.js の Turbopack はプロジェクト外を指す node_modules の symlink を拒否する
 
 4. 環境設定ファイルのコピー（モノレポ対応）:
    - リポジトリ内の `.env.local` と `.env.keys` ファイルを検索: `find . \( -name '.env.local' -o -name '.env.keys' \) -type f 2>/dev/null`
