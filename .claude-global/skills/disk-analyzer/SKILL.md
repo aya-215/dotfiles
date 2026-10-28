@@ -13,6 +13,7 @@ Windows Cドライブの使用状況を段階的に分析し、削減候補を�
 | スクリプト | 用途 | パス |
 |-----------|------|------|
 | `analyze-disk.ps1` | 段階的容量分析 | `C:\Users\368\scripts\analyze-disk.ps1` |
+| `compact-wsl.ps1` | WSL vhdx の compact（管理者権限・`-DryRun` あり） | `C:\Users\368\scripts\compact-wsl.ps1` |
 
 ## 引数
 
@@ -36,10 +37,8 @@ Windows Cドライブの使用状況を段階的に分析し、削減候補を�
 ```
 
 ```bash
-# 直近の記録を確認
-ls -t ~/.claude/skills/agent-memory/memories/disk-analysis/
-# 最新ファイルの summary を確認
-head -5 "$(ls -t ~/.claude/skills/agent-memory/memories/disk-analysis/*.md | head -1)"
+# 記録の summary を新しい順に確認（ls は eza エイリアスで -t の意味が違うため使わない）
+grep -H '^summary:' ~/.claude/skills/agent-memory/memories/disk-analysis/*.md | sort -r
 ```
 
 前回の使用量・空き容量・主要な削減候補を把握した上で、今回の分析結果と比較すること。
@@ -60,7 +59,7 @@ head -5 "$(ls -t ~/.claude/skills/agent-memory/memories/disk-analysis/*.md | hea
 /mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe -ExecutionPolicy Bypass -File 'C:\Users\368\scripts\analyze-disk.ps1' -Phase 2
 ```
 
-`C:\` 直下の主要フォルダサイズ（降順）。WSL仮想ディスクが大きい場合はWSL内調査を別途提案。
+`C:\` 直下の主要フォルダサイズ（降順）。WSL仮想ディスクが大きい場合は下記「WSL vhdx の compact」へ。
 
 ### Phase 3: AppData詳細
 
@@ -127,6 +126,22 @@ Phase 4完了後、以下の形式でユーザーに報告する:
 | `C:\Program Files` | インストール済みアプリ。不要アプリはコントロールパネルから |
 | `nvim-data\mason` | LSPサーバー群、必要なもの |
 | `AppData\Local\Programs` | ユーザーインストールアプリ本体 |
+
+## WSL vhdx の compact
+
+`C:\WSL\Ubuntu-22.04\ext4.vhdx` は sparse になっておらず（`.wslconfig` の `sparseVhd=true` は新規作成ディストロにしか効かない）、WSL 内で消しても縮まない。WSL 内で消しただけでは C: の空きは増えないので、必ず compact まで案内する。
+
+1. 差を確認: vhdx のサイズと WSL 内の `df -h /` の使用量。差が大きければ compact で戻る
+2. WSL 内で先に減らす（主な食い手は worktree の node_modules・`/nix/store` の旧世代と `result` リンク・`/tmp/claude-1000`・`~/.npm/_npx`・`~/.cache/uv`）
+   - worktree は `/worktree rm` が全リポジトリの取り込み済み worktree を出す
+   - `result` リンクは GC root になり `nix-collect-garbage -d` でも消えない
+3. compact はユーザーが**管理者 PowerShell**で実行する（WSL が止まり、このセッションも落ちるため Claude からは実行しない）。コマンドはクリップボードに入れて渡す:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File C:\Users\368\scripts\compact-wsl.ps1
+   ```
+   - スクリプトは fstrim → `wsl --shutdown` → diskpart compact の順に行う。`-DryRun` は Claude から実行してよい
+   - WezTerm の WSL タブや VS Code Remote 等は閉じておく（shutdown 後に WSL を再起動すると vhdx が使用中になり diskpart が失敗する）
+   - `wsl --update` と同じスクリプトに混ぜない（2026-10-23 に update の段階で止まり compact されなかった）
 
 ## 推奨運用サイクル
 
