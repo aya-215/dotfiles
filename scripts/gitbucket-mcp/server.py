@@ -182,6 +182,9 @@ def gitbucket_update_pr(
     }
     if not data:
         return "更新する項目が指定されていません（title / body / state のいずれかを指定してください）"
+    # GitBucket は title を送ったときにしか body を書き込まない（updatePullRequestsByApi が title.foreach の中で body を更新する）
+    if "body" in data and "title" not in data:
+        data = {"title": call_api("GET", f"/repos/{owner}/{repo}/pulls/{number}").get("title"), **data}
     pr = call_api("PATCH", f"/repos/{owner}/{repo}/pulls/{number}", data)
     # GitBucket は PATCH で body を受け取っても 200 で無視し、旧本文を返すことがある
     def norm(k: str, s: str | None) -> str:
