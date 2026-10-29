@@ -36,6 +36,18 @@ class UpdatePrTest(unittest.TestCase):
             server.gitbucket_update_pr("o", "r", 2, body="new")
         self.assertEqual(calls[-1], ("PATCH", {"title": "current", "body": "new"}))
 
+    def test_title_only_sends_current_body(self):
+        # GitBucket 4.47 は title を送ると body も書き込むため、body を省くと本文が空になる
+        calls = []
+
+        def fake(method, endpoint, data=None):
+            calls.append((method, data))
+            return _pr(body="current") if method == "GET" else _pr(title="new", body="current")
+
+        with mock.patch.object(server, "call_api", side_effect=fake):
+            server.gitbucket_update_pr("o", "r", 2, title="new")
+        self.assertEqual(calls[-1], ("PATCH", {"title": "new", "body": "current"}))
+
     def test_state_applied(self):
         with mock.patch.object(server, "call_api", return_value=_pr(state="closed")):
             self.assertIn("PRを更新しました", server.gitbucket_update_pr("o", "r", 2, state="closed"))
