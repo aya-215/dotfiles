@@ -2,7 +2,7 @@
 name: triage-review-findings
 description: Use when review findings have arrived (typically from /code-review) and you must decide what to actually fix. First decides whether each finding needs any response at all (default 何もしない), then where to handle it — このPRで対応 by default, issue化 only for large-impact ones. Triggers on "レビュー結果を判定して", "この指摘はどう扱う", "triage", "指摘の取捨選択", "/triage-review-findings".
 allowed-tools: Bash, Read, Grep, Glob, AskUserQuestion
-version: 1.5.1
+version: 1.6.0
 ---
 
 # レビュー指摘のトリアージ
@@ -258,15 +258,19 @@ SDKや外部ライブラリの機能なら、型定義を読み、最小の疎�
 **却下した issue をコメントに振り替えない。** issue化 を見送った既定は
 「このPRで対応」であり、コメントではない。コメントを書くのは手順5の関門を通ったときだけ。
 
-### 8. 周回を記録する
-
-スクラッチパッドに判定履歴を残す（`review-triage-round<N>.md`）。
+### 8. 前の周回の判定を読む
 
 同じ指摘・同じ修正案が別の周回で再登場することがある。前回どう判断したかを
-参照できないと、一度却下した案を再検討して一貫性を失う。
+参照できないと、一度却下した案を再検討して一貫性を失う。前の周回が別セッションでも読める。
 
-記録する内容: 指摘の要約 / 分類 / 判断根拠 / 却下した修正案とその理由 /
-第2段に入ったものは全件、入口で測った実測値（`+N/−M行`）。
+```bash
+# PR がまだ無ければ --branch だけ。両方渡すと PR 作成前の手元レビューの周回も出る
+scripts/summarize-findings.sh --pr <repo>#<番号> --branch <repo>:<ブランチ>
+# 今回の round はこれで決める（自分で数えない。セッションをまたぐと 1 からやり直しになる）
+scripts/summarize-findings.sh --next-round --pr <repo>#<番号> --branch <repo>:<ブランチ>
+```
+
+今回の判定は、手順9で承認を得てから記録する（手順9の末尾）。
 
 ### 9. 報告して承認を待つ
 
@@ -279,6 +283,39 @@ SDKや外部ライブラリの機能なら、型定義を読み、最小の疎�
 - 据え置いたものについて、なぜ対応しないか
 - 第2段に入ったものは実測値。issue化 を提案するものは当たった基準も
 - 前周回で却下した案が再登場していればその旨
+
+承認を得たら、**全件**を記録する。ユーザーが行き先を変えたものは `user_override` に変更前と変更後を入れる。
+値の検証はスクリプトが行い、1件でも不正なら1件も書かずに止まる。エラーを直して入れ直す。
+
+```bash
+scripts/record-finding.sh <<'EOF'
+[{"repo": "ebase-portal-chat", "pr": 766, "branch": "feat/x", "round": 2, "reviewer": "claude[bot]",
+  "file": "apps/x.ts", "symbol": "foo", "claim": "失敗シナリオの1行要約",
+  "severity": "HIGH", "verdict": "CONFIRMED",
+  "in_diff": "yes", "callers": "3", "has_test": "no",
+  "stage1": "壊れている", "destination": "このPRで対応", "basis": "根拠1行",
+  "measured": "+4/-1", "rejected_fix": "却下した修正案とその理由"}]
+EOF
+```
+
+| 項目 | 必須 | 値 |
+|---|---|---|
+| `repo` / `round` / `file` / `claim` / `basis` | ○ | `round` は手順8の `--next-round` の値 |
+| `pr` / `branch` | どちらか○ | わかる方を全部入れる。PR 作成前は `branch` だけ。`pr` は1以上の整数 |
+| `reviewer` | ○ | `claude[bot]` / `code-review:<level>` / `human:<login>` |
+| `stage1` | ○ | 壊れている / 主張が嘘になる / 該当なし |
+| `destination` | ○ | 何もしない / コメントで判断を残す / このPRで対応 / issue化 |
+| `reason` | 該当なしのとき○ | 到達不能 / 安全側 / 設計判断 / 理論上のみ |
+| `symbol` / `severity` / `verdict` | | 手順1で書き出したもの。`verdict` は CONFIRMED / PLAUSIBLE |
+| `in_diff` / `callers` / `has_test` | | `check-finding.sh` の出力をそのまま。判定不可なら「判定不可」 |
+| `measured` | | 第2段に入ったものの実測値（`+N/-M`） |
+| `rejected_fix` | | 却下した修正案とその理由 |
+| `user_override` | | `{"before": "<destination>", "after": "<destination>"}` |
+| `from_own_fix` | | 前の周回の自分の修正が生んだ指摘なら `true` |
+
+記録先は `~/.nb/claude/review-findings/findings.jsonl`。`~/.nb/claude/sessions/` の中には置かない
+（日報のクラウドルーティンに送られる）。引数なしの `scripts/summarize-findings.sh` で、
+レビュアー別のノイズ率とユーザーが判定を変えた件数を出せる。
 
 ### 10. 修正後、再レビューを依頼する
 
@@ -304,7 +341,7 @@ SDKや外部ライブラリの機能なら、型定義を読み、最小の疎�
 - **未検証の項目は「未検証」と書く** — 検証できない理由も添える。
   隠すより、レビュアーが妥当性を判断できる形にする
 - **前周回で却下した案が再登場していれば、判断の変化を説明する**
-  （手順8の記録を読む）。実測例: 却下理由が「iframe を通す必要がある」だった案が、
+  （手順8の `summarize-findings.sh` で読む）。実測例: 却下理由が「iframe を通す必要がある」だった案が、
   後の周回で iframe を塞いだ時点で採用に転じた。**前提が変わったのであって
   同じ前提で翻したのではない**、と書けたのは記録があったため
 
