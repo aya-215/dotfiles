@@ -15,7 +15,7 @@ tamaki-ai-training の提出PRについて、**形式はスクリプトで、内
    - `gitbucket_get_issue` を**PR番号で**呼ぶ → `labels` と最新の `body`。`get_pr` の body は古いことがあるので使わない
    - `gitbucket_get_pr` → `head` / `base`
    - 本文の `closes #N` の Issue を**すべて** `gitbucket_get_issue` → `labels` / `body`
-   - `gitbucket_list_comments` をPR番号で呼ぶ → メンターのコメントがあれば**再レビュー**（下の「再レビュー」）
+   - `gitbucket_list_comments` をPR番号で呼ぶ → メンターのコメントに**依頼**があり、そのコメントより後に head へコミットが積まれていれば**再レビュー**（下の「再レビュー」）。「明日返します」「確認しました」のような依頼の無いコメントは数えない
 3. **meta.json を Write ツールで scratchpad に書く**（形式は `scripts/check_submission.py` の docstring。Issue が複数なら `issue` を配列にする）。body は MCP の値を改変せずに入れる
 4. **形式チェックを実行する**
    ```bash
@@ -31,7 +31,7 @@ tamaki-ai-training の提出PRについて、**形式はスクリプトで、内
 
 ## 再レビュー（修正が push された後）
 
-- 見るのは**前回のコメントで依頼した点が満たされたか**だけ。依頼した点ごとに「満たした / まだ」を1行で出す
+- 見るのは、**直近の依頼コメントで依頼した点が満たされたか**だけ。依頼した点ごとに「満たした / まだ」を1行で出す
 - 新しい指摘は足さない（前回言わなかった点を後から言わない）。例外は形式チェックの FAIL と秘匿情報
 - 依頼がすべて満たされていれば、推奨は「マージ可」にする
 
