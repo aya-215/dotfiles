@@ -23,7 +23,7 @@ tamaki-ai-training の提出PRについて、**形式はスクリプトで、内
      --repo-dir <tamaki-ai-training の clone> --meta <meta.json>
    ```
    - clone に `refs/review/head` / `refs/review/base` を fetch する（作業ツリーは触らない）
-   - 出力は PASS 以外の行と PASS の件数だけ。全行が要るときは `--all`
+   - 出力は PASS・N/A 以外の行と、PASS・N/A の ID の1行だけ。全行が要るときは `--all`
    - マージ済みPRを見直すときは `--merge-commit <sha>` を足す
 5. **内容チェック**: `references/criteria.md` の正本を読み、C1〜C8 を判定する。提出物は `git show refs/review/head:<path>` で読む。指摘の重さは criteria.md の「指摘の重さ」で決める
 6. **取り直し**: 結論の直前に `get_issue`（本文）と `git ls-remote origin <head>`（head SHA が `refs/review/head` と同じか）を確認する。変わっていたら 2 からやり直す
@@ -41,7 +41,7 @@ tamaki-ai-training の提出PRについて、**形式はスクリプトで、内
 
 1. **結論（1行）**: 推奨（マージ可 / 修正依頼後マージ / 差し戻し）と、その理由を一言
 2. **Issue の要件と PR の対応**: `| Issue の要件 | PR の対応 | 指摘 |`
-   - Issue の内容要件1つにつき1行（C1）。太字の要件（C2）は要件の頭に「**太字**」と付ける
+   - Issue の内容要件1つにつき1行（C1）。太字の要件（C2）は要件の頭に「**太字**」と付ける。太字の要件が他の行と同じ中身（同じものが欠けている等）なら、行を分けずにその行へ「**太字**」を付ける
    - 「PR の対応」は、提出物のどこに何を書いたかを1文で
    - 「指摘」は `不要` / `依頼` / `任意` のどれか
 3. **形式チェック**: スクリプトの出力をそのまま貼る。表に出た行（FAIL / WARN / UNKNOWN）だけ、下に1行ずつ補足する

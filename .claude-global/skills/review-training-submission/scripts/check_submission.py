@@ -279,8 +279,10 @@ def main():
     elif claimed and not claimed_none:
         row("F12", "チェックリストの[x]と本文「消化した項目」が一致", "FAIL",
             f"本文で {len(claimed)}件を主張しているが `{cl_path or 'progress/<track>/checklist.md'}` が差分に無い（同じPRに含める運用）")
+        row("F13", "[x]にした行の根拠が実在し矛盾しない", "N/A", "チェックリスト差分なし")
     else:
         row("F12", "チェックリストの[x]と本文「消化した項目」が一致", "PASS", "消化項目なし・チェックリスト差分なし")
+        row("F13", "[x]にした行の根拠が実在し矛盾しない", "N/A", "チェックリスト差分なし")
 
     # F14 コミットメッセージ
     subjects = git(repo, "log", "--no-merges", "--format=%s", f"{mb}..{HEAD_REF}").splitlines()
@@ -313,13 +315,14 @@ def main():
     print(f"## 形式チェック（PR #{meta.get('number')} / {track or '?'} phase{phase or '?'}）\n")
     shown_rows = rows if a.all else [r for r in rows if r[2] not in ("PASS", "N/A")]
     passed = [r[0] for r in rows if r[2] == "PASS"]
+    na = [r[0] for r in rows if r[2] == "N/A"]
     if shown_rows:
         print("| ID | 項目 | 判定 | 根拠 |\n|---|---|---|---|")
         for r in shown_rows:
             print("| " + " | ".join(str(x).replace("|", "\\|") for x in r) + " |")
         print()
     if not a.all:
-        print(f"PASS {len(passed)}件（{', '.join(passed)}）" if passed else "PASS 0件")
+        print(f"PASS {len(passed)}件（{', '.join(passed)}）" + (f"／N/A: {', '.join(na)}" if na else ""))
     print("変更ファイル: " + ", ".join(f"{s} `{p}`" for s, p in changes))
     return 0
 
