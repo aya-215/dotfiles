@@ -70,8 +70,9 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     if (!needsColor(await read($, naming), e.isInteractive)) return next(e)
     const { color, nextIndex } = pickColor(await $.store.get(COLOR_INDEX_KEY))
+    const hasHistory = (await $.session.turns()) > 0
     await $.store.set(COLOR_INDEX_KEY, nextIndex)
-    await update($, naming, s => activate(s, color))
+    await update($, naming, s => activate(s, color, hasHistory))
     // session.start は最初のプロンプト前に待たれるため、ここで /color を await すると詰まる
     $.clock.after(0, () => void runCommand($, 'color', color))
     return next(e)
@@ -102,14 +103,6 @@ export const register: Register = on => {
     if (e.reason === 'clear') await update($, naming, clearConversation)
     // 戻った先の会話に名前があるかはまだ分からないので、上書きしない側に倒す
     if (e.reason === 'resume') await update($, naming, s => resumeConversation(s, true))
-    return next(e)
-  })
-
-  on('classic.SessionStart', async ($, e, next) => {
-    if (e.source === 'resume') {
-      const hasTitle = (e.session_title ?? '').trim() !== ''
-      await update($, naming, s => resumeConversation(s, hasTitle))
-    }
     return next(e)
   })
 }

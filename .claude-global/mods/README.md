@@ -51,6 +51,7 @@ nix shell nixpkgs#typescript -c tsc -p <mod フォルダ>
 
 ## ハマりどころ（2つの mod で踏んだもの）
 
+- `classic.*`（settings hook と同じイベント）の hook は、本体同梱の `cc-plugin-sec-default` が user 層の分を飛ばすので届かない（2.1.318 で確認。起動時に「its classic.SessionStart hook was skipped」と出る）。engine 側のイベント（`session.start` 等）と `$.session.*` で代わりを探す
 - `$.command.run` は「ターンが待っている hook」の中では拒否される。`session.start` や `turn.complete` から実行するときは `$.clock.after(0, ...)` で hook の外に出す
 - テストで `$` 呼び出しを受ける hook（`model.complete`・`ui.status`・`ui.open` など）は `{ value: ... }` で包んで返す
 - テストの `$.command.run` には `origin` と `presentation` も渡す

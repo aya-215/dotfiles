@@ -39,6 +39,7 @@ function world(on: On, store: Record<string, unknown> = {}) {
   const systems: (string | undefined)[] = []
   const statuses = recorder<string | undefined>()
   const replies: string[] = []
+  const session = { turns: 0 }
 
   on('command.run', ($, e) => {
     commands.push({ command: e.command, args: e.args })
@@ -63,11 +64,11 @@ function world(on: On, store: Record<string, unknown> = {}) {
   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('prompt.submit', ($, e) => ({ text: e.text }))
-  on('classic.SessionStart', () => ({}))
+  on('session.turns', () => ({ value: session.turns }))
   mock.store(on, store)
   const clock = mock.clock(on)
 
-  return { commands, models, systems, statuses, replies, clock }
+  return { commands, models, systems, statuses, replies, clock, session }
 }
 
 function start($: Engine, isInteractive = true) {
@@ -99,6 +100,7 @@ test('hot reload で session.start が再発火しても色を付け直さない
   await start($)
   await w.clock.advance(1)
   await w.commands.until(1)
+  w.session.turns = 1
   await start($)
   await turn($, 'answer-1')
   await w.clock.advance(1)
@@ -182,10 +184,10 @@ test('Haiku が失敗したら名前を変えずに status に出す', async ($,
   expect(w.statuses.items[1]).toBeUndefined()
 })
 
-test('名前の付いた会話に --resume で戻ったら、その名前を上書きしない', async ($, on) => {
+test('履歴のある会話を --resume で開いたら、自動命名で名前を上書きしない', async ($, on) => {
   const w = world(on)
+  w.session.turns = 3
   await start($)
-  await $.classic.SessionStart({ source: 'resume', session_title: '手動の名前' })
   for (let n = 1; n <= 6; n++) {
     await turn($, `resumed-${n}`)
     await w.clock.advance(1)
@@ -197,22 +199,7 @@ test('名前の付いた会話に --resume で戻ったら、その名前を上�
   expect(w.models.items[0]).toContain('after-clear')
 })
 
-test('同じセッション内の /resume では、前の会話の状態を引き継がない', async ($, on) => {
-  const w = world(on)
-  await start($)
-  await turn($, 'answer-1')
-  await w.clock.advance(1)
-  await w.commands.until(2)
-  await $.session.end({ reason: 'resume', sessionId: 's-1', resume: { id: 's-2' } })
-  await $.classic.SessionStart({ source: 'resume' })
-  await turn($, 'resumed-1')
-  await w.clock.advance(1)
-  await w.models.until(2)
-  expect(w.models.items[1]).toContain('resumed-1')
-  expect(w.models.items[1]).not.toContain('<current>')
-})
-
-test('/resume の後に SessionStart が来なくても、戻った会話は自動命名しない', async ($, on) => {
+test('同じセッション内で /resume したら、戻った会話は自動命名せず、前の会話の状態も引き継がない', async ($, on) => {
   const w = world(on)
   await start($)
   await turn($, 'answer-1')
@@ -228,6 +215,7 @@ test('/resume の後に SessionStart が来なくても、戻った会話は自�
   await w.clock.advance(1)
   await w.models.until(2)
   expect(w.models.items[1]).toContain('after-clear')
+  expect(w.models.items[1]).not.toContain('<current>')
 })
 
 test('指示文は system prompt として渡す', async ($, on) => {

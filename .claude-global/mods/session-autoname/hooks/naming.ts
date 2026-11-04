@@ -29,8 +29,10 @@ export function needsColor(state: Naming, isInteractive: boolean): boolean {
   return isInteractive && state.color === null
 }
 
-export function activate(state: Naming, color: Color): Naming {
-  return { ...state, isActive: true, color }
+export function activate(state: Naming, color: Color, hasHistory: boolean): Naming {
+  const active = { ...state, isActive: true, color }
+  // 名前の有無を運ぶ classic.SessionStart は builtin の cc-plugin-sec-default に飛ばされて届かないので、上書きしない側に倒す
+  return hasHistory ? resumeConversation(active, true) : active
 }
 
 export function isNamingTurn(answered: number): boolean {

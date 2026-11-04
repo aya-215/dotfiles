@@ -11,7 +11,7 @@
 | 応答1回目と、以後5ターンごと | Haiku に「15文字以内」で名前を頼み、`<name>…</name>` の中身を `/rename` で付ける（表示は20文字まで、超えた分は切る）。今の名前がまだ合っていれば変えない。形式違反（タグ無し・文章になっている等）なら理由を添えて1回だけ頼み直す |
 | 手で `/rename` したとき | そのセッションでは自動命名を止める |
 | `/clear` | 数え直して、新しい会話の内容で付け直す |
-| resume で戻ったとき | 戻った会話に名前があれば自動命名しない（手で付けた名前を上書きしないため） |
+| resume で戻ったとき（`claude -c`/`--resume` で開いたときも、セッション内の `/resume` も） | 戻った会話は自動命名しない（付いている名前を上書きしないため）。名前の有無は mod から分からないので、名前が無くても付けない。`/clear` すれば付け直す |
 | 命名に失敗したとき（Haiku のエラー、頼み直しても形式違反） | 名前は変えず、ステータス行に10秒だけ出す |
 
 サブエージェントのターン・中断したターンは数えない。命名の材料にするのは、自分が打ったプロンプト（スラッシュコマンド・タスク通知を除く）と直近の応答の冒頭だけ。
@@ -30,7 +30,7 @@
 | 形式違反の判定 | `hooks/naming.ts` の `judgeReply` |
 | 使うモデル・上限トークン・タイムアウト | `hooks/register.ts` の `nameSession` 内の `$.model.complete` |
 | 失敗表示を出す時間 | `hooks/register.ts` の `STATUS_MS` |
-| resume で戻ったときも付け直したい | `hooks/register.ts` の `classic.SessionStart` hook で `hasTitle` を見ないようにする |
+| resume で戻ったときも付け直したい | `hooks/register.ts` の `session.start` hook で `activate` に渡す `hasHistory` と、`session.end` hook の `resumeConversation` に渡す `true` を `false` にする |
 | 色を付けない | `hooks/register.ts` の `session.start` hook の `/color` 実行を外す |
 
 ## 仕組み
@@ -39,6 +39,7 @@
 - `/color` `/rename` と Haiku の呼び出しは、hook の中で待たず `$.clock.after(0, ...)` で hook の外で実行する（hook の中で `$.command.run` を待つと拒否される）
 - 次の色の番号は `$.store`（セッションをまたいで残る）の `nextColorIndex`。それ以外の状態は `$.state`（そのセッションだけ）
 - 自分が実行した `/rename` と手で打った `/rename` は、`command.run` の `origin` で見分ける
+- 起動時の resume は、`session.start` で `$.session.turns()` が1以上かで見分ける。`classic.*` の hook は本体同梱の `cc-plugin-sec-default` が user 層の分を飛ばすので、mod からは使えない（2.1.318 で確認）
 - Haiku の出力は `<name>` タグの中身だけを使う。指示文を変えたら、Haiku に何パターンか投げて形式どおりに返るか確かめる（2026-10-13 に6パターン×2回＝12件すべて形式どおりを確認）
 
 ## 資料

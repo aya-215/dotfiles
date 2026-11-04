@@ -19,7 +19,17 @@ import {
   resumeConversation,
 } from '../hooks/naming'
 
-const active = activate(INITIAL, 'red')
+const active = activate(INITIAL, 'red', false)
+
+describe('activate', () => {
+  test('新しく始めた会話は、色を付けて自動命名の対象にする', () => {
+    expect(active).toEqual({ ...INITIAL, isActive: true, color: 'red' })
+  })
+  test('履歴のある会話を --resume で開いたら、名前の有無が分からないので自動命名しない', () => {
+    const used = { ...INITIAL, answered: 3, prompts: ['前の依頼'], current: '前の名前' }
+    expect(activate(used, 'blue', true)).toEqual({ ...INITIAL, isActive: true, color: 'blue', isManual: true })
+  })
+})
 
 describe('pickColor', () => {
   test('保存された番号の色を選び、次の番号を返す', () => {
