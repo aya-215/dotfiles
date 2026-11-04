@@ -2,7 +2,9 @@
 """tamaki-ai-training の提出PRを、機械的に判定できる項目だけ検査して Markdown 表で出す。
 
 使い方:
-    python3 check_submission.py --repo-dir <clone> --meta <meta.json> [--merge-commit <sha>]
+    python3 check_submission.py --repo-dir <clone> --meta <meta.json> [--merge-commit <sha>] [--all]
+
+既定では PASS / N/A 以外の行だけを表に出し、PASS は件数とIDの1行にまとめる。--all で全行を出す。
 
 meta.json（MCP の get_issue / get_pr の結果から作る）:
     {
@@ -13,6 +15,7 @@ meta.json（MCP の get_issue / get_pr の結果から作る）:
       "labels": ["needs-review", "agent-phase0"],
       "issue": {"number": 98, "labels": ["agent-phase0"], "body": "<Issue本文>"}
     }
+本文が `closes` で複数の Issue を指すときは、"issue" を同じ形の配列にして全部入れる。
 
 判定: PASS / FAIL / WARN（要目視）/ UNKNOWN（判定不能）/ N/A（該当なし）
 副作用: clone に refs/review/head と refs/review/base を fetch する（作業ツリー・index は触らない）。
@@ -94,6 +97,7 @@ def main():
     ap.add_argument("--repo-dir", required=True)
     ap.add_argument("--meta", required=True)
     ap.add_argument("--merge-commit", help="マージ済みPRを再検査するときのマージコミット（^1=base, ^2=head）")
+    ap.add_argument("--all", action="store_true", help="PASS / N/A の行も表に出す")
     a = ap.parse_args()
     repo = a.repo_dir
     meta = json.load(open(a.meta, encoding="utf-8"))
@@ -119,9 +123,13 @@ def main():
 
     # トラック・フェーズは Issue ラベル → ブランチ名の順に決める
     labels = meta.get("labels", [])
-    issue = meta.get("issue") or {}
+    raw_issue = meta.get("issue") or []
+    issues = raw_issue if isinstance(raw_issue, list) else [raw_issue]
+    issue_labels = [lb for i in issues for lb in i.get("labels", [])]
+    issue_body = "\n".join(i.get("body", "") for i in issues)
+    issue_nums = {int(i["number"]) for i in issues if i.get("number")}
     track = phase = None
-    for lb in issue.get("labels", []) + labels:
+    for lb in issue_labels + labels:
         m = re.fullmatch(r"(agent-)?phase(\d+)", lb)
         if m:
             track, phase = ("agent" if m.group(1) else "infra"), m.group(2)
@@ -131,13 +139,17 @@ def main():
     sec = sections(body)
 
     # F01 closes
-    cm = re.search(r"(?i)\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#(\d+)", body)
-    if cm and issue.get("number") and int(cm.group(3)) != int(issue["number"]):
-        row("F01", "`closes #N` が対象Issueを指す", "FAIL", f"本文は #{cm.group(3)}、meta の Issue は #{issue['number']}")
-    elif cm:
-        row("F01", "`closes #N` が対象Issueを指す", "PASS", f"`{cm.group(0)}`")
-    else:
+    closes = {int(m.group(3)) for m in re.finditer(r"(?i)\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#(\d+)", body)}
+    shown = ", ".join(f"#{n}" for n in sorted(closes))
+    if not closes:
         row("F01", "`closes #N` が対象Issueを指す", "FAIL", "本文に closes 系キーワードが無い")
+    elif issue_nums and closes != issue_nums:
+        row("F01", "`closes #N` が対象Issueを指す", "FAIL",
+            f"本文は {shown}、meta の Issue は " + ", ".join(f"#{n}" for n in sorted(issue_nums)))
+    elif len(closes) > 1:
+        row("F01", "`closes #N` が対象Issueを指す", "WARN", f"{shown} を1本で閉じる（提出物1点＝PR1本。許容するかはメンター判断）")
+    else:
+        row("F01", "`closes #N` が対象Issueを指す", "PASS", shown)
 
     # F02 雛形の見出し
     missing = [s for s in TEMPLATE_SECTIONS if s not in sec]
@@ -160,11 +172,9 @@ def main():
     se = sec.get("自己評価", "")
     stars = re.search(r"★[★☆]{2}", se)
     reason = re.sub(r"★[★☆]{2}", "", se).strip()
-    reason_lines = [l for l in reason.splitlines() if l.strip()]
-    if stars and len(reason_lines) >= 2:
-        row("F04", "自己評価に★と理由", "PASS", f"{stars.group(0)}／理由 {len(reason_lines)}行")
-    elif stars and reason:
-        row("F04", "自己評価に★と理由", "WARN", f"{stars.group(0)}／理由 {len(reason_lines)}行（pr-checklist.md は2〜3行）")
+    # 理由の中身（何を確かめてどう判断したか）は C6 で見るので、ここでは有無だけ見る
+    if stars and reason:
+        row("F04", "自己評価に★と理由", "PASS", f"{stars.group(0)}／理由 {len([l for l in reason.splitlines() if l.strip()])}行")
     else:
         row("F04", "自己評価に★と理由", "FAIL", "★" + ("あり" if stars else "なし") + "・理由" + ("あり" if reason else "なし"))
 
@@ -293,7 +303,7 @@ def main():
         "; ".join(sorted(set(hits))) + "（誤検知か目視）" if hits else "OK")
 
     # F17 白紙再現テスト
-    if "白紙再現テスト" in issue.get("body", ""):
+    if "白紙再現テスト" in issue_body:
         touched = "progress/agent/blank-page-tests.md" in [p for _, p in changes]
         row("F17", "白紙再現テストの記録を更新", "PASS" if touched else "WARN",
             "blank-page-tests.md 更新あり" if touched else "Issueに白紙再現テストの記載あり。記録の更新が差分に無い")
@@ -301,10 +311,16 @@ def main():
         row("F17", "白紙再現テストの記録を更新", "N/A", "Issueに白紙再現テストの記載なし")
 
     print(f"## 形式チェック（PR #{meta.get('number')} / {track or '?'} phase{phase or '?'}）\n")
-    print("| ID | 項目 | 判定 | 根拠 |\n|---|---|---|---|")
-    for r in rows:
-        print("| " + " | ".join(str(x).replace("|", "\\|") for x in r) + " |")
-    print("\n変更ファイル: " + ", ".join(f"{s} `{p}`" for s, p in changes))
+    shown_rows = rows if a.all else [r for r in rows if r[2] not in ("PASS", "N/A")]
+    passed = [r[0] for r in rows if r[2] == "PASS"]
+    if shown_rows:
+        print("| ID | 項目 | 判定 | 根拠 |\n|---|---|---|---|")
+        for r in shown_rows:
+            print("| " + " | ".join(str(x).replace("|", "\\|") for x in r) + " |")
+        print()
+    if not a.all:
+        print(f"PASS {len(passed)}件（{', '.join(passed)}）" if passed else "PASS 0件")
+    print("変更ファイル: " + ", ".join(f"{s} `{p}`" for s, p in changes))
     return 0
 
 
