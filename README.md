@@ -127,7 +127,9 @@ git add -p && git commit && git push
 | `setup/` | Windows の依存ツール・フォント導入（→「セットアップ」章） | — |
 
 単発スクリプト: `cleanup-wsl.sh`（キャッシュ・ログ・Nix store のクリーンアップ、`--dry-run` 対応）、
-`nb-sync.sh`（nb リポジトリを GitHub と同期）。
+`nb-sync.sh`（nb リポジトリを GitHub と同期）、
+`temp-wsl-cleanup.sh`（Windows 受け渡し用の `D:\temp_wsl` から14日更新のない項目を削除。cron 毎日12:30、`--dry-run` 対応）、
+`wsl-compact.ps1`（WSL の vhdx を縮小。管理者 PowerShell で `D:\git\dotfiles\scripts\wsl-compact.ps1` を実行）。
 
 ## ツール構成
 

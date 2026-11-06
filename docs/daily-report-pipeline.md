@@ -34,10 +34,11 @@
 
 ---
 
-## cron（3本）
+## cron（4本）
 
 ```cron
 */30 * * * *  ~/.dotfiles/scripts/nb-sync.sh                       # 日報とは無関係（nb同期）
+30 12 * * *   ~/.dotfiles/scripts/temp-wsl-cleanup.sh              # 日報とは無関係（D:\temp_wsl の掃除）
 0 21 * * *    ~/.dotfiles/scripts/claude-summarize/backfill.sh      # 要約の取りこぼし回収
 10 22 * * *   ~/.dotfiles/scripts/daily-review/fire-daily-review.sh # 日報生成の発火
 ```
