@@ -26,10 +26,23 @@ return {
       {
         "<leader>gM",
         function()
-          local base = vim.fn.system("git merge-base HEAD origin/DEV"):gsub("\n", "")
-          vim.cmd("DiffviewOpen " .. base)
+          local actions = require("telescope.actions")
+          local action_state = require("telescope.actions.state")
+          require("telescope.builtin").git_branches({
+            prompt_title = "比較先ブランチ（分岐点との差分）",
+            attach_mappings = function(prompt_bufnr)
+              actions.select_default:replace(function()
+                local entry = action_state.get_selected_entry()
+                actions.close(prompt_bufnr)
+                if entry then
+                  vim.cmd("DiffviewOpen " .. entry.value .. "...HEAD")
+                end
+              end)
+              return true
+            end,
+          })
         end,
-        desc = "Diff with merge-base (DEV)",
+        desc = "Diff with merge-base (ブランチ選択)",
       },
       { "<leader>gh", "<cmd>DiffviewFileHistory %<cr>", desc = "File History (Current)" },
       { "<leader>gH", "<cmd>DiffviewFileHistory<cr>", desc = "File History (All)" },
