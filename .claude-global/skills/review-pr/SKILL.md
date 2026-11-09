@@ -1,8 +1,8 @@
 ---
 name: review-pr
-description: Use when the user wants to review a pull request interactively with Claude, focusing on deep code understanding. Triggers on "/review-pr", "PRレビュー", "コードレビューしたい", "PRを理解したい", "PRを一緒に読みたい".
+description: Use when the user wants to review a pull request interactively with Claude, focusing on deep code understanding, on GitHub or GitBucket. Also use when a review was answered and the fixes need checking. Triggers on "/review-pr", "PRレビュー", "コードレビューしたい", "PRを理解したい", "PRを一緒に読みたい", "レビュー返ってきたので確認して", "再レビュー".
 allowed-tools: Bash, Read, Grep
-version: 1.7.1
+version: 1.8.0
 ---
 
 # PR対話レビュー
@@ -17,6 +17,9 @@ $ARGUMENTS
 - 引数なし: **現在ブランチに紐づくPRを対象にする**（デフォルト）
 - PR番号のみ: `123`
 - PR番号＋リポジトリ: `123 owner/repo`
+- GitBucket の PR の URL（`http://192.168.208.80:8080/gitbucket/<owner>/<repo>/pull/<番号>`）
+
+レビュー済みの PR について「レビュー返ってきた」「修正来た」と言われたら、Step 0〜6 ではなく末尾の「再レビュー」節に従う。
 
 ## Iron Law
 
@@ -53,6 +56,8 @@ AskUserQuestion は使わない。直前の本文が描画されず消える不�
 
 ### Step 1: PR情報取得
 
+先に `git remote -v` でリモートを見る。GitBucket なら `gh` は使えないので、末尾の「GitBucket の場合」の対応表に読み替える。
+
 ```bash
 # 引数なし（現在ブランチのPR）
 gh pr view
@@ -66,6 +71,16 @@ gh pr diff <PR番号>
 gh pr view <PR番号> --repo <owner>/<repo>
 gh pr diff <PR番号> --repo <owner>/<repo>
 ```
+
+続けて、PR の土台が古くないかを確かめる。別の PR の上に積んだ PR や、ベースが先に進んだ PR では、マージ済みの修正を巻き戻すことがある。
+
+```bash
+git -C <repo> fetch origin <base> <head>
+git -C <repo> merge-tree --write-tree --name-only origin/<base> origin/<head>   # 2行目以降にファイル名が出たら衝突
+git -C <repo> diff origin/<base> origin/<head> --stat                            # PR 固有の変更だけになっているか
+```
+
+衝突や、ベース側の最近の修正を消す差分があれば、Step 2 の「PRが自分で認めている未検証の点」の後に事実として書く（所見としての評価は Step 5 で行う）。
 
 ### Step 2: PR全体の解説（質問→納得までのループ）
 
@@ -115,6 +130,7 @@ shifton で会話を1ターン保存したあと、そのターンに「誰が�
 
 - ユーザーの質問には検証ガードに従って裏取りしてから答える。答えた後も同じ一文で促して止まる
 - ユーザーが y 等で満足を示すまで Step 3 に進まない
+- 手順書・skill・プロンプトなど文書の PR では、以降の解説も「追加された文の引用 → 平たく言うと → 由来（PR が挙げる実例）」の順で書く。分析から入らない
 
 ### Step 3: 設計判断・実装意図の解説
 
@@ -213,6 +229,7 @@ shifton で会話を1ターン保存したあと、そのターンに「誰が�
 - エッジケース: null/undefined、空配列、境界値、並行処理
 - テスト: 変更に対するテストの有無、異常系カバレッジ
 - 互換性: 破壊的変更、既存APIへの影響
+- 手順書・skill の PR: 追加したルールが、PR の挙げる失敗の原因に効いているか（症状だけを塞いでいないか）。参照している skill・ファイル・用語が配布先に実在するか（grep で確かめる）
 
 **重要度分類:**
 - Critical: マージすべきでない問題
@@ -244,6 +261,37 @@ shifton で会話を1ターン保存したあと、そのターンに「誰が�
 4. **レビュー判定の推奨**: Approve / Request Changes + 理由
 
 → **[質問で締める]** 「サマリーを整理しました。修正する点はありますか？このままレビューコメントを書く場合は /write-review-comment を使ってください」
+
+## 再レビュー（レビューへの返信・修正コミットの確認）
+
+「レビュー返ってきたので確認して」「修正来た」で入る。分析と報告だけを行い、返信の投稿はしない。
+ebase-portal-chat・ebase-middleware-mcp・eb-api-extended の PR は review-aiebase-pr の再レビューを使う。
+
+1. **返信と新しいコミットを取る。** PR のコメント一覧から、自分のレビュー以降の返信を読む。前回の付録に書いた対象 commit（「対象はブランチ `…`（<sha>）」）から先のコミットを出し、差分を読む
+   ```bash
+   git -C <repo> fetch origin <base> <head>
+   git -C <repo> log --oneline <前回のsha>..origin/<head>
+   git -C <repo> show <新しいsha> -- <関係するパス>
+   ```
+2. **前回の指摘ごとに対応表を作る。** 1行1指摘で「✅ 反映 / △ 一部 / ❌ 未対応 / 見送り（理由付き）」と、確かめた根拠（ファイル:行・テスト名）を書く。作者の返信の要約ではなく、差分で確かめた結果を書く
+3. **片付けの漏れを grep する。** 削除・改名した名前（ファイル名・欄の名前・手順番号・skill 名）が残っていないかを、PR ブランチ全体で検索する
+4. **土台を確かめ直す。** Step 1 の `merge-tree` を、最新のベースに対してもう一度流す
+5. **前回の自分のコメントが崩れていないかを見る。** 投稿したコメントを取得し、制御文字（`\x1b` など）・つながった箇条・誤字がないかを見る。崩れていたら報告する（直すかはユーザーが決める）
+6. **見送りの判断を評価する。** 作者が見送った指摘は、その理由が成り立つかを一次情報で確かめ、妥当なら妥当と書く
+7. 最後に、承認してよいかの所見と、確認できなかったこと（テスト未実行など）を書き、「返信の文面が必要なら案を作ります」で締める。文面は write-review-comment の型D に従う
+
+## GitBucket の場合
+
+`git remote -v` が社内 GitBucket（`192.168.208.80:8080/gitbucket`）を指すとき、`gh` の代わりに次を使う。
+
+| やること | GitHub | GitBucket |
+|---|---|---|
+| PR の概要 | `gh pr view <番号>` | `mcp__gitbucket__gitbucket_get_pr`（owner・repo・number） |
+| コメント・返信 | `gh pr view <番号> --comments` | `mcp__gitbucket__gitbucket_list_comments` |
+| 差分 | `gh pr diff <番号>` | `git -C <repo> fetch origin <base> <head>` → `git -C <repo> diff origin/<base>...origin/<head>` |
+| 変更ファイル | `gh pr diff --name-only` | 上の `git diff` に `--stat` |
+
+MCP のツールは最初は deferred なので、ToolSearch（`select:mcp__gitbucket__gitbucket_get_pr,mcp__gitbucket__gitbucket_list_comments`）で読み込んでから呼ぶ。GitBucket の PR にはレビュー状態（Approve / Request Changes）が無く、コメントだけになる。
 
 ## gh CLI Reference
 
