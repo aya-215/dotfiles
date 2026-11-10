@@ -104,6 +104,7 @@ run_fire "$C" --dry-run --date 2026-11-04
 check "c4 exit 0" 0 "$RC"
 check "c4 payload.txt は作られない" "no" "$([ -e "$C/slices/2026-11-04/payload.txt" ] && echo yes || echo no)"
 has "c4 skip ログ" "$C/fire.log" "skip:"
+check "c4 skipped マーカーが作られる" "yes" "$([ -e "$C/slices/2026-11-04/skipped" ] && echo yes || echo no)"
 
 # ---- ケース7: .failed だけあって切り出し md が0本 → 旧方式 ----
 C="$TMP/c7"; mkdir -p "$C/home" "$C/src/2026-11-04"

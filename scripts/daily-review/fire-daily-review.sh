@@ -232,6 +232,7 @@ $(printf '%s' "${bodies[$j]}" | sort)
 slice_rc=0
 # 出力は pipe ではなくファイルで受ける（孫プロセスが pipe を握ると timeout 後も待たされるため）
 slice_out_file="$(mktemp /tmp/fire-daily-review-slice-XXXX.log)"
+trap 'rm -f "$slice_out_file"' EXIT
 timeout --kill-after=30 "${SLICE_TIMEOUT:-1800}" bash "$SLICE_BIN" "$target_date" > "$slice_out_file" 2>&1 || slice_rc=$?
 while IFS= read -r line; do
   [ -n "$line" ] && log "slice: $line"
@@ -279,6 +280,8 @@ fi
 # 「実行しない」ことは正常だが、それを記録せずエラー終了するのは正常ではない。
 if [ "${#material_files[@]}" -eq 0 ]; then
   log "skip: セッション要約なし（$target_date は作業記録がないため送信しない）"
+  # 自己チェックが「fire が走らなかった」と区別できるようにする
+  { mkdir -p "$SLICES_ROOT/$target_date" && : > "$SLICES_ROOT/$target_date/skipped"; } 2>/dev/null || true
   exit 0
 fi
 
@@ -403,7 +406,7 @@ fi
 # （MAX_ARG_STRLEN）に当たり、日本語を \uXXXX に escape した本文は約2.2万字で溢れていた。
 body_file="$(mktemp /tmp/fire-daily-review-body-XXXX.json)"
 resp_file="$(mktemp /tmp/fire-daily-review-resp-XXXX.json)"
-trap 'rm -f "$body_file" "$resp_file"' EXIT
+trap 'rm -f "$slice_out_file" "$body_file" "$resp_file"' EXIT
 printf '%s' "$payload" | python3 -c '
 import sys, json
 with open(sys.argv[1], "w", encoding="utf-8") as f:

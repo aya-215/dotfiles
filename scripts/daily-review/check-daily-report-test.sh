@@ -123,6 +123,17 @@ check "nopayload: claude 呼ばれない" test "$(calls "$TMP/nopayload")" = 0
 check "nopayload: status=check_failed" jq_has "$TMP/nopayload" '.status == "check_failed"'
 check "nopayload: トースト呼ばれる" test -s "$TMP/nopayload/stub/toast"
 
+# ---- ケース5b: payload 無し + skipped マーカー → skipped（通知なし・claude なし） ----
+setup_case skipped yes no
+: > "$TMP/skipped/slices/$DATE/skipped"
+echo '{}' > "$TMP/skipped/stub/out"
+run_check skipped
+check "skipped: exit 0" test "$(cat "$TMP/skipped/rc")" = 0
+check "skipped: claude 呼ばれない" test "$(calls "$TMP/skipped")" = 0
+check "skipped: トーストなし" test ! -s "$TMP/skipped/stub/toast"
+check "skipped: ログに status=skipped" grep -q "status=skipped" "$TMP/skipped/check.log"
+check "skipped: notify=false" grep -q "notify=false" "$TMP/skipped/check.log"
+
 # ---- ケース6: severity/confidence の typo は不正扱い → check_failed ----
 setup_case typo yes yes
 echo '{"missing":[{"text":"x","severity":"じゅうだい"}],"unsupported":[],"misclassified":[],"format":[]}' > "$TMP/typo/stub/out"

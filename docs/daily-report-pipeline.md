@@ -62,7 +62,7 @@
   それだけを根拠にした「根拠不明」を高確信にせず、区切り前の作業の欠落を取りこぼしに数えない
 - 通知するのは、取りこぼしに「重大」が 1 件以上、または根拠不明に確信度「高」が 1 件以上、`report_missing`、`check_failed`（payload 無し・claude 失敗/タイムアウト・JSON 不正が 2 回）のとき。判定はスクリプトが決定的に行う
 - 通知は Windows トースト（`TOAST_CMD` で差し替え可）。通知の失敗でスクリプトは落ちない（常に exit 0）
-- 結果は `daily-slices/<日付>/check.json`（`notify` と `status: ok|report_missing|check_failed` 付き）と `~/.local/log/daily-review-check.log` に 1 行
+- 結果は `daily-slices/<日付>/check.json`（`notify` と `status: ok|report_missing|check_failed|skipped` 付き。`skipped` は fire が材料なしで見送った日で、`daily-slices/<日付>/skipped` マーカーがあれば通知せず claude も呼ばない）と `~/.local/log/daily-review-check.log` に 1 行
 - 手動実行: `bash scripts/daily-review/check-daily-report.sh --date 2026-11-09 --no-wait`
 
 ---
@@ -83,7 +83,7 @@
 ペイロードの【対象日】の次の行に `【区切り】<since> 〜 <until>` を入れる。Rocket Chat・メールは暦日のまま。
 ファイル名は `.dotfiles-<sid8>.md` のように隠しファイルになるため、列挙は `find -name '*.md'` で行う（glob は使わない）。
 
-切り出しは `SLICE_TIMEOUT`（既定1800秒）で打ち切る。超えたら `slice: timeout` をログに残し、できている分で送信を続ける。
+切り出しは `SLICE_TIMEOUT`（既定1800秒）で打ち切る。超えたら `slice: timeout` をログに残し、できている分で送信を続ける。加えて1セッションごとに `SLICE_ONE_TIMEOUT`（既定600秒）で打ち切り、固まった sid は `.failed` に入れて既存要約で補う（stdout/stderr は失敗理由として `slice:` ログに残る）。
 `sessions/` 由来の要約（失敗 sid の補完・切り出しが無い日）は区切りで切っていない全期間の要約なので、見出しに `（全期間の要約・補完）` が付く。
 git 活動の各行は区切りが日をまたぐため `MM/DD HH:MM` 形式。
 

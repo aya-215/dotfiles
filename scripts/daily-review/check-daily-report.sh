@@ -142,6 +142,11 @@ print(json.dumps(out, ensure_ascii=False))
 '
 }
 
+if [ ! -s "$PAYLOAD_FILE" ] && [ -e "$OUT_DIR/skipped" ]; then
+  # fire が材料なしで送信を見送った日。照合対象が無いので通知しない
+  log_line skipped 0 0 0 0 0 false
+  exit 0
+fi
 if [ ! -s "$PAYLOAD_FILE" ]; then
   finish_simple check_failed "payload.txt が無い（$PAYLOAD_FILE）"
 fi

@@ -365,6 +365,17 @@ CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$TMP/case12h/stub" SESSIONS_ROOT="$TMP/ca
   bash "$SCRIPT_DIR/summarize.sh" "$TMP/case9/transcript.jsonl" "$SID" > /dev/null 2>&1 || hook_rc=$?
 if [ "$hook_rc" -eq 0 ]; then echo "ok: case12: hook モードは生成失敗でも 0"; else echo "NG: case12: hook 終了コード $hook_rc"; fails=$((fails + 1)); fi
 
+# ==== case13: extract 失敗（transcript 不在）→ 切り出しは 3、hook は 0 ====
+ex_rc=0
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$TMP/case12/stub" SESSIONS_ROOT="$TMP/case13/sessions" SLICES_ROOT="$TMP/case13/slices" \
+  bash "$SCRIPT_DIR/summarize.sh" "$TMP/no-such.jsonl" "$SID" \
+    --slice 2026-07-14 --since 2026-07-13T22:10:00+09:00 --until 2026-07-14T22:10:00+09:00 >/dev/null 2>&1 || ex_rc=$?
+if [ "$ex_rc" -eq 3 ]; then echo "ok: case13: 切り出しモードは extract 失敗で 3"; else echo "NG: case13: 終了コード $ex_rc"; fails=$((fails + 1)); fi
+ex_rc=0
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$TMP/case12/stub" SESSIONS_ROOT="$TMP/case13h/sessions" \
+  bash "$SCRIPT_DIR/summarize.sh" "$TMP/no-such.jsonl" "$SID" >/dev/null 2>&1 || ex_rc=$?
+if [ "$ex_rc" -eq 0 ]; then echo "ok: case13: hook モードは extract 失敗でも 0"; else echo "NG: case13: hook 終了コード $ex_rc"; fails=$((fails + 1)); fi
+
 # ==== 結果 ====
 if [ "$fails" -eq 0 ]; then
   echo "ALL OK"

@@ -30,6 +30,7 @@ case "$2" in
   aaaaaaaa*) mkdir -p "$SLICES_ROOT/$4"; echo "# s" > "$SLICES_ROOT/$4/proj-${2:0:8}.md" ;;
   cccccccc*) exit 3 ;;
   ffffffff*) echo "boom" >&2; exit 2 ;;
+  77777777*) sleep 30 ;;
   99999999*) mkdir -p "$SLICES_ROOT/$4"; echo "# h" > "$SLICES_ROOT/$4/.proj-${2:0:8}.md" ;;
 esac
 exit 0
@@ -82,5 +83,13 @@ out2="$(bash "$SCRIPT_DIR/slice-sessions.sh" 2026-11-04 | tail -1)"
 check "再実行の最終行" "slices: written=0 failed=0 candidates=1" "$out2"
 check "再実行で md が残らない" "0" "$(find "$SLICES_ROOT/2026-11-04" -name '*.md' | wc -l)"
 check "再実行で .failed が残らない" "no" "$([ -e "$SLICES_ROOT/2026-11-04/.failed" ] && echo yes || echo no)"
+
+# 3回目: 1件が固まっても SLICE_ONE_TIMEOUT で切られ、その sid だけ .failed に入る
+R3="$TMP/r3/-proj"; mkdir -p "$R3"
+echo '{}' > "$R3/77777777-$U.jsonl"; echo '{}' > "$R3/aaaaaaaa-$U.jsonl"
+touch -d '2026-11-04 12:00' "$R3/77777777-$U.jsonl" "$R3/aaaaaaaa-$U.jsonl"
+out3="$(JSONL_ROOTS="$TMP/r3" SLICE_ONE_TIMEOUT=1 bash "$SCRIPT_DIR/slice-sessions.sh" 2026-11-04 2>/dev/null | tail -1)"
+check "timeout した sid は failed" "slices: written=1 failed=1 candidates=2" "$out3"
+check "timeout した sid が .failed に入る" "77777777" "$(cat "$SLICES_ROOT/2026-11-04/.failed")"
 
 [ "$fails" -eq 0 ] && { echo "ALL OK"; exit 0; } || { echo "$fails 件失敗"; exit 1; }

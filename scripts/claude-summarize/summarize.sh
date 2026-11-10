@@ -73,7 +73,7 @@ if [ -n "$slice_date" ]; then
 fi
 
 # 前処理（失敗したら何もせず終了）
-extracted="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" "${extract_args[@]}" 2>/dev/null)" || exit 0
+extracted="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" "${extract_args[@]}" 2>/dev/null)" || exit "$fail_code"
 # 中身が実質空（ヘッダのみ）なら要約しない
 body_lines="$(printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | grep -c .)" || body_lines=0
 [ "$body_lines" -gt 0 ] || exit 0

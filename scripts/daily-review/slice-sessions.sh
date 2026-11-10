@@ -3,6 +3,7 @@
 #
 # 使用方法: slice-sessions.sh <YYYY-MM-DD>
 # 環境変数: JSONL_ROOTS（コロン区切り）/ SLICES_ROOT / SUMMARIZE_BIN / SLICE_JOBS
+#           SLICE_ONE_TIMEOUT（1セッションあたりの秒数、既定 600）
 # 切り出しが失敗しても送信側を止めないため、終了コードは常に 0。
 # 最後に "slices: written=N failed=M candidates=K" を標準出力に出す。
 set -euo pipefail
@@ -64,27 +65,30 @@ main() {
   list_candidates "$since" > "$cands" || true
 
   export SUMMARIZE_BIN date since until work
+  export SLICE_ONE_TIMEOUT="${SLICE_ONE_TIMEOUT:-600}"
   # 1件ずつ終了コードを $work/rc.<sid> に書く（並列でも混ざらない）
   cut -f1,3 "$cands" | tr '\n' '\0' | xargs -0 -r -n1 -P "$SLICE_JOBS" bash -c '
     sid="${1%%$'"'"'\t'"'"'*}"; path="${1#*$'"'"'\t'"'"'}"
     rc=0
-    "$SUMMARIZE_BIN" "$path" "$sid" --slice "$date" --since "$since" --until "$until" \
-      >/dev/null 2>"$work/err.$sid" || rc=$?
+    # 1件が固まっても全体の timeout で他の sid まで落ちないよう、1件ごとに時間を区切る
+    timeout --kill-after=30 "$SLICE_ONE_TIMEOUT" \
+      "$SUMMARIZE_BIN" "$path" "$sid" --slice "$date" --since "$since" --until "$until" \
+      >"$work/err.$sid" 2>&1 || rc=$?
     echo "$rc" > "$work/rc.$sid"
   ' _
 
-  local rcfile sid rc failed=0 candidates written
+  local sid rc failed=0 candidates written
   candidates="$(wc -l < "$cands")"
-  for rcfile in "$work"/rc.*; do
-    [ -e "$rcfile" ] || continue
-    sid="${rcfile##*/rc.}"
-    rc="$(cat "$rcfile")"
+  while IFS= read -r sid; do
+    [ -n "$sid" ] || continue
+    # rc ファイルが無い（kill 等で書かれなかった）sid も失敗として扱う
+    rc="$(cat "$work/rc.$sid" 2>/dev/null)" || rc="missing"
     if [ "$rc" != "0" ]; then
       echo "${sid:0:8}" >> "$out_dir/.failed"
       failed=$((failed + 1))
-      sed "s/^/[${sid:0:8}] /" "$work/err.$sid" >&2 || true
+      sed "s/^/[${sid:0:8}] /" "$work/err.$sid" >&2 2>/dev/null || true
     fi
-  done
+  done < <(cut -f1 "$cands")
   written="$(find "$out_dir" -maxdepth 1 -name '*.md' | wc -l)"
   echo "slices: written=$written failed=$failed candidates=$candidates"
 }
