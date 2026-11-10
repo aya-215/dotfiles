@@ -44,13 +44,12 @@ mk_md() {
   printf -- '---\nproject: %s\nsession_id: %s\nstart: 2026-11-04T09:00:00+09:00\nend: %s\n---\n%s\n' "$2" "$3" "$4" "$5" > "$1"
 }
 
-# run_case <name> <args...> — ケース別に環境を作り直して fire を --dry-run 以外の引数付きで走らせる
-# 事前に $C（ケースのルート）下へ fixtures を置く。終了コードを RC に入れる。
+# run_fire <ケースのルート> <fire の引数...> — 事前に $C 下へ fixtures を置いておく。終了コードを RC に入れる。
 run_fire() {
   C="$1"; shift
   set +e
   HOME="$C/home" FIRE_ENV_FILE="$TMP/env" ROCKETCHAT_BIN="$TMP/rc.sh" MAIL_ARCHIVE_BIN="$TMP/mail.sh" \
-    SLICE_BIN="$TMP/slice.sh" SESSIONS_ROOT="$C/sessions" SLICES_ROOT="$C/slices" \
+    SLICE_BIN="${SLICE_BIN:-$TMP/slice.sh}" SESSIONS_ROOT="$C/sessions" SLICES_ROOT="$C/slices" \
     FIRE_LOG_FILE="$C/fire.log" STUB_SLICES_SRC="$C/src" \
     bash "$SCRIPT_DIR/fire-daily-review.sh" "$@" > "$C/stdout" 2> "$C/stderr"
   RC=$?
@@ -87,6 +86,8 @@ P="$C/slices/2026-11-04/payload.txt"
 check "c2 exit 0" 0 "$RC"
 has "c2 切り出し" "$P" "SLICE_A_BODY"
 has "c2 失敗sidの既存要約" "$P" "FALLBACK_C_BODY"
+has "c2 補完の印" "$P" "## projC — 01:00（全期間の要約・補完）"
+lacks "c2 切り出しに印は付かない" "$P" "## projA — 10:00（全期間"
 lacks "c2 無関係の既存要約は入らない" "$P" "UNRELATED_D_BODY"
 
 # ---- ケース3: 切り出し0本・sessions あり（今の方式） ----
@@ -95,6 +96,7 @@ mk_md "$C/sessions/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:
 run_fire "$C" --dry-run --date 2026-11-04
 check "c3 exit 0" 0 "$RC"
 has "c3 既存要約が入る" "$C/slices/2026-11-04/payload.txt" "SESSIONS_ONLY_BODY"
+has "c3 旧方式にも補完の印" "$C/slices/2026-11-04/payload.txt" "## projA — 10:00（全期間の要約・補完）"
 
 # ---- ケース4: 両方0本 ----
 C="$TMP/c4"; mkdir -p "$C/home"
@@ -102,6 +104,58 @@ run_fire "$C" --dry-run --date 2026-11-04
 check "c4 exit 0" 0 "$RC"
 check "c4 payload.txt は作られない" "no" "$([ -e "$C/slices/2026-11-04/payload.txt" ] && echo yes || echo no)"
 has "c4 skip ログ" "$C/fire.log" "skip:"
+
+# ---- ケース7: .failed だけあって切り出し md が0本 → 旧方式 ----
+C="$TMP/c7"; mkdir -p "$C/home" "$C/src/2026-11-04"
+printf 'cccccccc\n' > "$C/src/2026-11-04/.failed"
+mk_md "$C/sessions/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "OLDPATH_BODY"
+run_fire "$C" --dry-run --date 2026-11-04
+has "c7 .failed のみでも旧方式で送る" "$C/slices/2026-11-04/payload.txt" "OLDPATH_BODY"
+
+# ---- ケース8: 切り出しがタイムアウト ----
+cp "$TMP/slice.sh" "$TMP/slice-ok.sh"
+printf '#!/bin/bash\nsleep 30\n' > "$TMP/slice-hang.sh"
+C="$TMP/c8"; mkdir -p "$C/home"
+mk_md "$C/sessions/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "TIMEOUT_FALLBACK_BODY"
+SLICE_BIN="$TMP/slice-hang.sh" SLICE_TIMEOUT=2 run_fire "$C" --dry-run --date 2026-11-04
+check "c8 exit 0" 0 "$RC"
+has "c8 payload は作られる" "$C/slices/2026-11-04/payload.txt" "TIMEOUT_FALLBACK_BODY"
+has "c8 timeout ログ" "$C/fire.log" "slice: timeout"
+
+# ---- ケース9: 切り出しが異常終了／存在しない ----
+printf '#!/bin/bash\necho boom >&2\nexit 5\n' > "$TMP/slice-fail.sh"
+C="$TMP/c9"; mkdir -p "$C/home"
+mk_md "$C/sessions/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "FAILSLICE_BODY"
+SLICE_BIN="$TMP/slice-fail.sh" run_fire "$C" --dry-run --date 2026-11-04
+check "c9 exit 0" 0 "$RC"
+has "c9 旧方式で送る" "$C/slices/2026-11-04/payload.txt" "FAILSLICE_BODY"
+C="$TMP/c10"; mkdir -p "$C/home"
+mk_md "$C/sessions/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "NOSLICE_BODY"
+SLICE_BIN="$TMP/does-not-exist.sh" run_fire "$C" --dry-run --date 2026-11-04
+check "c10 exit 0" 0 "$RC"
+has "c10 SLICE_BIN 不在でも旧方式で送る" "$C/slices/2026-11-04/payload.txt" "NOSLICE_BODY"
+
+# ---- ケース11: payload.txt を書けなくても送信は止まらない / fallback なしログ ----
+C="$TMP/c11"; mkdir -p "$C/home" "$C/slices"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
+printf 'dddddddd\n' > "$C/src/2026-11-04/.failed"
+mkdir -p "$C/slices/2026-11-04/payload.txt"   # ディレクトリにして書き込みを失敗させる
+run_fire "$C" --dry-run --date 2026-11-04
+check "c11 保存失敗でも exit 0" 0 "$RC"
+has "c11 保存失敗の警告" "$C/fire.log" "warn: payload.txt 保存失敗"
+has "c11 fallback なしログ" "$C/fire.log" "slice: fallback なし dddddddd"
+has "c11 ペイロードは標準出力へ出る" "$C/stdout" "SLICE_A_BODY"
+
+# ---- ケース12: git 行は月日付き ----
+C="$TMP/c12"; mkdir -p "$C/home/.dotfiles"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
+G="$C/home/.dotfiles"
+git -C "$G" init -q
+GIT_AUTHOR_DATE="2026-11-03T23:00:00+09:00" GIT_COMMITTER_DATE="2026-11-03T23:00:00+09:00" \
+  git -C "$G" -c user.name=t -c user.email=mori.a@ebase.co.jp commit -q --allow-empty -m "GITLINE_X" --author="t <mori.a@ebase.co.jp>"
+run_fire "$C" --dry-run --date 2026-11-04
+has "c12 git 行に月日" "$C/slices/2026-11-04/payload.txt" "11/03 23:00"
+has "c12 git 見出し" "$C/slices/2026-11-04/payload.txt" "【git活動（区切り内のコミット"
 
 # ---- ケース5: --overwrite ----
 C="$TMP/c5"; mkdir -p "$C/home"

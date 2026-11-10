@@ -68,6 +68,10 @@
 ペイロードの【対象日】の次の行に `【区切り】<since> 〜 <until>` を入れる。Rocket Chat・メールは暦日のまま。
 ファイル名は `.dotfiles-<sid8>.md` のように隠しファイルになるため、列挙は `find -name '*.md'` で行う（glob は使わない）。
 
+切り出しは `SLICE_TIMEOUT`（既定1800秒）で打ち切る。超えたら `slice: timeout` をログに残し、できている分で送信を続ける。
+`sessions/` 由来の要約（失敗 sid の補完・切り出しが無い日）は区切りで切っていない全期間の要約なので、見出しに `（全期間の要約・補完）` が付く。
+git 活動の各行は区切りが日をまたぐため `MM/DD HH:MM` 形式。
+
 **予算超過時は古いセッション要約から1本ずつ落とす**ループで収める（`build_sessions` の `keep` を減らす）。
 
 ### git活動をローカル収集する理由
@@ -278,6 +282,7 @@ RemoteTrigger action:"get" trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"
    ```
 
 送ったペイロードは `~/.nb/claude/daily-slices/YYYY-MM-DD/payload.txt` に残る（dry-run でも保存する）。
+**最後に生成したペイロード**が残るだけなので、後から `--dry-run` すると上書きされる。保存に失敗しても送信は止めない（ログに `warn: payload.txt 保存失敗`）。
 dry-run のときは、メール保存の push を避けたければ `MAIL_ARCHIVE_BIN` に何も出力しないスクリプトを指定する。
 
 ルーティンは【対象日】の Issue 本文だけを更新する。Issue が close 済みなら、life の Actions

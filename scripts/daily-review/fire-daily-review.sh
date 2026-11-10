@@ -169,7 +169,7 @@ collect_git_log() {
         --author="$GIT_AUTHOR_RE" \
         --since="$WINDOW_SINCE" \
         --until="$WINDOW_UNTIL" \
-        --date=format-local:'%H:%M' \
+        --date=format-local:'%m/%d %H:%M' \
         --pretty=format:"%H - %ad [${branch}] %s" --shortstat 2>/dev/null \
         | sed -E 's/ Entire-Checkpoint: [0-9a-f]+//' \
         | awk '
@@ -227,10 +227,21 @@ $(printf '%s' "${bodies[$j]}" | sort)
   fi
 }
 
-# 日次の切り出し要約を作る。失敗しても続行する（失敗した sid は既存要約で埋める）
+# 日次の切り出し要約を作る。失敗・タイムアウトでも続行する（失敗した sid は既存要約で埋める）。
+# claude -p が固まっても日報の送信を止めないため時間を区切る
+slice_rc=0
+# 出力は pipe ではなくファイルで受ける（孫プロセスが pipe を握ると timeout 後も待たされるため）
+slice_out_file="$(mktemp /tmp/fire-daily-review-slice-XXXX.log)"
+timeout --kill-after=30 "${SLICE_TIMEOUT:-1800}" bash "$SLICE_BIN" "$target_date" > "$slice_out_file" 2>&1 || slice_rc=$?
 while IFS= read -r line; do
   [ -n "$line" ] && log "slice: $line"
-done < <(bash "$SLICE_BIN" "$target_date" 2>&1 || true)
+done < "$slice_out_file"
+rm -f "$slice_out_file"
+case "$slice_rc" in
+  0) ;;
+  124|137) log "slice: timeout（${SLICE_TIMEOUT:-1800}s。ある分の切り出しだけで続行する）" ;;
+  *) log "slice: 異常終了 rc=$slice_rc（続行する）" ;;
+esac
 
 # md ファイルを列挙する（find -name '*.md'。.dotfiles-<sid8>.md のような隠しファイルを glob は拾えない）
 # list_md <dir>
@@ -248,8 +259,12 @@ if [ "${#material_files[@]}" -gt 0 ]; then
   if [ -f "$slice_dir/.failed" ]; then
     while IFS= read -r sid; do
       [ -n "$sid" ] || continue
-      while IFS= read -r f; do [ -n "$f" ] && material_files+=("$f"); done \
-        < <(find "$SESSIONS_ROOT" -maxdepth 2 -name "*-${sid}.md" 2>/dev/null | sort || true)
+      local_found=0
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        material_files+=("$f"); local_found=1
+      done < <(find "$SESSIONS_ROOT" -maxdepth 2 -name "*-${sid}.md" 2>/dev/null | sort || true)
+      [ "$local_found" -eq 1 ] || log "slice: fallback なし $sid"
     done < "$slice_dir/.failed"
   fi
 else
@@ -294,13 +309,14 @@ fi
 # セッション要約を終了時刻の新しい方から keep 件だけ連結する（古い方を落とす）
 # daily-review-auto.sh の見出し形式（## <project> — <HH:MM>）を踏襲
 build_sessions() {
-  local keep="$1" out="" sf proj end_ts end_hm body
+  local keep="$1" out="" sf proj end_ts end_hm body mark
   local files=()
   # 終了時刻（epoch）で並べる。切り出しと失敗 sid の既存要約が混ざるため、ファイル名順は使えない
   while IFS= read -r sf; do files+=("$sf"); done < <(
     for sf in "${material_files[@]}"; do
       end_ts="$(sed -n 's/^end: //p' "$sf" | head -1)"
-      printf '%s\t%s\n' "$(date -d "$end_ts" +%s 2>/dev/null || echo 0)" "$sf"
+      # date -d "" は今日の 0 時を返し最新扱いになるため、end が無ければ epoch 0 にする
+      printf '%s\t%s\n' "$([ -n "$end_ts" ] && date -d "$end_ts" +%s 2>/dev/null || echo 0)" "$sf"
     done | sort -n -k1,1 | cut -f2-
   )
   local total="${#files[@]}"
@@ -320,7 +336,9 @@ build_sessions() {
     if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
       continue
     fi
-    out="${out}## ${proj} — ${end_hm}
+    # sessions/ 由来は区切りで切っていない全期間の要約。切り出しと見分けられるよう印を付ける
+    case "$sf" in "$SLICES_ROOT"/*) mark="" ;; *) mark="（全期間の要約・補完）" ;; esac
+    out="${out}## ${proj} — ${end_hm}${mark}
 
 ${body}
 
@@ -348,7 +366,7 @@ while :; do
   session_summaries="$(build_sessions "$keep")"
   payload="${header}
 
-【git活動（当日コミット・ローカル収集）】
+【git活動（区切り内のコミット・ローカル収集）】
 ${git_log}
 
 【Rocket Chat 当日履歴（購読ルーム横断・DM除く。[↳HH:MM 発言者] 付きの行は直前の行ではなくその親メッセージへのスレッド返信）】
@@ -371,8 +389,9 @@ done
 payload="$(printf '%s' "$payload" | bash "$REDACT")"
 
 # 送ったペイロードを残す（dry-run でも保存する。後から検証できるように）
-mkdir -p "$SLICES_ROOT/$target_date"
-printf '%s\n' "$payload" > "$SLICES_ROOT/$target_date/payload.txt"
+# 保存の失敗で送信を止めない
+{ mkdir -p "$SLICES_ROOT/$target_date" && printf '%s\n' "$payload" > "$SLICES_ROOT/$target_date/payload.txt"; } 2>/dev/null \
+  || log "warn: payload.txt 保存失敗"
 
 if [ "$dry_run" -eq 1 ]; then
   printf '%s\n' "$payload"
