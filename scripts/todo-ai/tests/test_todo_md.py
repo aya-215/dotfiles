@@ -88,6 +88,19 @@ class TestTodoMd(unittest.TestCase):
         for k in ["foo#1", "epc#", "gb:#1", "rc:", "officeのteams資料修正", "epc#1a", ""]:
             self.assertFalse(is_key(k), k)
 
+    def test_render_rejects_key_without_url(self):
+        d = parse(SAMPLE)
+        d.sections["やる"].append(Item("x", key="wt:foo"))
+        with self.assertRaises(ValueError):
+            render(d)
+
+    def test_render_rejects_newline(self):
+        for kw in ({"title": "a\nb"}, {"title": "a", "next": "b\nc"}):
+            d = parse(SAMPLE)
+            d.sections["やる"].append(Item(**kw))
+            with self.assertRaises(ValueError):
+                render(d)
+
     def test_edit_then_render(self):
         d = parse(SAMPLE)
         d.sections["やる"][0].next = "新"

@@ -6,6 +6,7 @@
   preamble が空なら先頭の空行は出さない。見出し直下に空行は入れない。
   確認待ちの内側の空行は保持するが、前後の空行は落とす。
   非正規形の入力は parse できるが、render すると正規形に整う。
+Item.raw は parse 時の元の行。render は使わない。新しく作った Item では ""。
 """
 import re
 from dataclasses import dataclass, field
@@ -123,6 +124,11 @@ def parse(text: str) -> Doc:
 
 
 def _render_item(it: Item) -> str:
+    if it.key and not it.url:
+        raise ValueError(f"key があるのに url が無い: {it.key}")
+    for v in (it.title, it.next):
+        if v and "\n" in v:
+            raise ValueError(f"title/next に改行は入れられない: {v!r}")
     s = "- [x] " if it.done else "- [ ] "
     parts = []
     if it.title:
