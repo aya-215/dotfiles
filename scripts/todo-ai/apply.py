@@ -104,6 +104,8 @@ def _check_answers(blocks: "list[dict]", answered: list) -> None:
     for a in answered:
         if not isinstance(a, dict) or not isinstance(a.get("answer"), str):
             raise ChangeError(f"answered の要素に answer の文字列が無い: {a!r}")
+        if not all(isinstance(a.get(k), str) and a[k] for k in ("ref", "kind")):
+            raise ChangeError(f"answered の要素の ref/kind が空でない文字列でない: {a!r}")
         pool[a["answer"].strip()] += 1
     for b in blocks:
         ans = b["回答"].strip()
@@ -158,7 +160,7 @@ def _render_confirm(entries: list) -> "list[str]":
 
 
 def apply_changes(
-    doc: Doc, changes: dict, origins: Callable[[str], str], today: str
+    doc: Doc, changes: dict, origins: Callable[[str], str], today: str, pinned=frozenset()
 ) -> "tuple[Doc, list[str]]":
     """変更案を適用した新しい Doc とコミット本文の行を返す（doc は変更しない）。
 
@@ -205,6 +207,9 @@ def apply_changes(
             ref, to = _str(op, "ref"), op.get("to")
             if to not in TASK_SECTIONS:
                 raise ChangeError(f"move: to が不正: {to!r}")
+            if source == "sync" and ref in pinned:
+                body.append(f"skip: pinned {ref}")
+                continue
             loc = locate(ref)
             if loc is None or loc[0] == to:
                 continue
@@ -471,7 +476,8 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
             before = todo_md.parse(text)
             old_records = decisions.load(dpath)
             new_records = decisions.detect_reverts(repo, name, old_records)
-            after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today)
+            pinned = {r["ref"] for r in old_records + new_records if r.get("kind") == "revert_move"}
+            after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today, pinned)
         except ValueError as e:
             print(f"apply: 未適用: {e}", file=sys.stderr)
             return 2

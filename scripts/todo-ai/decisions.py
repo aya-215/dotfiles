@@ -78,32 +78,58 @@ def _sections(text: "str | None") -> "dict[str, str] | None":
     return {r: v[0] for r, v in found.items() if len(v) == 1}
 
 
-def detect_reverts(repo: Path, path: str, records: "list[dict] | None" = None) -> "list[dict]":
-    """最新の todo(ai)/todo(sync) コミット C の変更を、人が HEAD までに戻していれば新しい記録を返す。
+MAX_SCAN = 50
 
-    records を省くと repo/todo-decisions.jsonl を読む。同じ C は記録の commit で判別し二重に記録しない。
+
+def detect_reverts(repo: Path, path: str, records: "list[dict] | None" = None) -> "list[dict]":
+    """記録済みの最後のコミットより後の todo(ai)/todo(sync) コミットを古い順に見て、人の戻しの記録を返す。
+
+    各 C を C^・C・HEAD で比べる。C より後の AI/同期コミットが同じ ref を動かしていれば、その ref は
+    C では判定しない（後の正当な移動を戻しと誤検出しない）。records を省くと repo/todo-decisions.jsonl を読む。
     """
     repo = Path(repo)
     if records is None:
         records = load(repo / DECISIONS_NAME)
-    out = _git(repo, "log", "-1", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", path)
-    c = (out or "").strip()
-    if not c or any(r.get("commit") == c for r in records):
-        return []
-    parent = _sections(_git(repo, "show", f"{c}^:{path}"))
-    after = _sections(_git(repo, "show", f"{c}:{path}"))
+    out = _git(repo, "log", f"-{MAX_SCAN}", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", path)
+    commits = list(reversed((out or "").split()))
+    recorded = {r.get("commit") for r in records if r.get("commit")}
+    last = max((i for i, c in enumerate(commits) if c in recorded), default=-1)
     head = _sections(_git(repo, "show", f"HEAD:{path}"))
-    if parent is None or after is None or head is None:
+    if head is None:
         return []
+    cache: "dict[str, tuple]" = {}
+
+    def pair(c):
+        if c not in cache:
+            cache[c] = (_sections(_git(repo, "show", f"{c}^:{path}")), _sections(_git(repo, "show", f"{c}:{path}")))
+        return cache[c]
+
+    def moved_by(c):
+        p, a = pair(c)
+        if p is None or a is None:
+            return set()
+        return {r for r in set(p) | set(a) if p.get(r) != a.get(r)}
+
     ts = now_iso()
     new = []
-    for ref in sorted(set(parent) | set(after)):
-        p, s, h = parent.get(ref), after.get(ref), head.get(ref)
-        if p is not None and s is not None and p != s and h == p:
-            kind, value = "revert_move", p
-        elif p is None and s is not None and h is None:
-            kind, value = "reject_add", s
-        else:
+    for i, c in enumerate(commits):
+        if i <= last or c in recorded:
             continue
-        new.append({"ts": ts, "ref": ref, "kind": kind, "value": value, "by": "human", "commit": c})
+        parent, after = pair(c)
+        if parent is None or after is None:
+            continue
+        later = set()
+        for l in commits[i + 1:]:
+            later |= moved_by(l)
+        for ref in sorted(set(parent) | set(after)):
+            if ref in later:
+                continue
+            p, s, h = parent.get(ref), after.get(ref), head.get(ref)
+            if p is not None and s is not None and p != s and h == p:
+                kind, value = "revert_move", p
+            elif p is None and s is not None and h is None and not ref.startswith("title:"):
+                kind, value = "reject_add", s
+            else:
+                continue
+            new.append({"ts": ts, "ref": ref, "kind": kind, "value": value, "by": "human", "commit": c})
     return new

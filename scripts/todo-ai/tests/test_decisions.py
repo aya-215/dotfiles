@@ -79,6 +79,27 @@ class DetectReverts(unittest.TestCase):
         self.r.commit("# 古い形式\n- [ ] x\n- [ ] y\n", "todo(ai): 追加")
         self.assertEqual(decisions.detect_reverts(self.r.dir, "todo.md"), [])
 
+    def test_revert_of_c_after_later_ai_commit(self):
+        a = "- [ ] 別 [epc#2](https://g/2)\n"
+        self.r.commit(doc(yaru=L), "todo: base")
+        self.r.commit(doc(matsu=L), "todo(sync): 移動")
+        self.r.commit(doc(matsu=L, yaru=a), "todo(ai): 追加")
+        self.r.commit(doc(yaru=L + a), "todo: 戻した")
+        recs = decisions.detect_reverts(self.r.dir, "todo.md")
+        self.assertEqual([(x["ref"], x["kind"]) for x in recs], [("epc#1", "revert_move")])
+
+    def test_later_commit_moving_same_ref_not_a_revert(self):
+        self.r.commit(doc(yaru=L), "todo: base")
+        self.r.commit(doc(matsu=L), "todo(sync): 待ちへ")
+        self.r.commit(doc(yaru=L), "todo(ai): やるへ")
+        self.assertEqual(decisions.detect_reverts(self.r.dir, "todo.md"), [])
+
+    def test_title_ref_add_removed_not_recorded(self):
+        self.r.commit(doc(), "todo: base")
+        self.r.commit(doc(yaru="- [ ] 手書き\n"), "todo(ai): 追加")
+        self.r.commit(doc(yaru="- [ ] 直した\n"), "todo: 直した")
+        self.assertEqual(decisions.detect_reverts(self.r.dir, "todo.md"), [])
+
     def test_no_ai_commit(self):
         self.r.commit(doc(yaru=L), "todo: base")
         self.assertEqual(decisions.detect_reverts(self.r.dir, "todo.md"), [])
@@ -138,6 +159,21 @@ class ApplyIntegration(unittest.TestCase):
         self.assertEqual(self.r.git("log", "-1", "--format=%s").strip(), "todo(ai): 判断の記録")
         self.assertEqual(self.run_apply({"source": "ai", "ops": []}).returncode, 0)
         self.assertEqual(len(decisions.load(self.r.dir / "todo-decisions.jsonl")), 1)
+
+    def test_sync_move_skipped_when_pinned(self):
+        self.r.commit(doc(yaru=L), "todo: base")
+        self.r.commit(doc(matsu=L), "todo(sync): 移動1")
+        self.r.commit(doc(yaru=L), "todo: 戻した")
+        res = self.run_apply({"source": "sync", "ops": [{"op": "move", "ref": "epc#1", "to": "待ち"}]})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## やる\n- [ ] 調査", self.r.todo.read_text(encoding="utf-8"))
+        self.assertIn("skip: pinned epc#1", self.r.git("log", "-1", "--format=%b"))
+
+    def test_answered_without_ref_kind_rejected(self):
+        self.r.commit(doc(yaru=L, confirm=CONF), "todo(ai): base")
+        res = self.run_apply({"source": "ai", "ops": [], "confirm": [], "answered": [{"answer": "A"}]})
+        self.assertEqual(res.returncode, 2)
+        self.assertFalse((self.r.dir / "todo-decisions.jsonl").exists())
 
     def test_not_recorded_on_validation_failure(self):
         self.r.commit(doc(yaru=L, confirm=CONF), "todo(ai): base")
