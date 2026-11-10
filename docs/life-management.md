@@ -39,7 +39,7 @@
 | 09:00 日曜 | `recurring-tasks.yml` | 週次レビューIssue作成 |
 | 09:00 毎月1日 | `monthly-review.yml` | 月次レビューIssue作成 |
 | 12:00 毎日 | `sync-nb-daily.yml` | 前日のnb日報サマリーをIssueに追加 |
-| 13:00 毎日 | `daily-to-blog.yml` | 前日のIssueを`blog/YYYYMMDD.md`に変換 |
+| 03:00 毎日 | `daily-to-blog.yml` | 前日のIssueを`blog/YYYYMMDD.md`に変換してclose |
 | 30分ごと | `nb-sync.sh` (cron) | ~/.nb の変更をGitHubにpush |
 
 ### ワークフロー詳細
@@ -59,10 +59,12 @@
 - **nbリポジトリ**: `aya-215/nb` を checkout して読み取り
 
 #### daily-to-blog.yml
-前日の日報Issueのコメントを `blog/YYYYMMDD.md` にファイル化。
+前日の日報Issueの本文とコメントを `blog/YYYYMMDD.md` にファイル化し、Issueをcloseする。
 
-- **トリガー**: `cron: '0 4 * * *'` (UTC 4:00 = JST 13:00)
+- **トリガー**: `cron: '0 18 * * *'` (UTC 18:00 = JST 03:00)
 - **出力**: `blog/YYYYMMDD.md`
+- **sync-summary ジョブ**: close 済みの「〜の記録」Issue の本文が編集されたとき（`issues: edited`）、
+  「📝 サマリー」節だけを blog の同じ節へ差し替える。日報の再生成で使う（[daily-report-pipeline.md](daily-report-pipeline.md)）
 
 #### recurring-tasks.yml
 毎週日曜に週次レビューIssueを作成。チェックリスト付き。

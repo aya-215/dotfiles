@@ -43,7 +43,7 @@ grep -E 'fire failed|giving up|skip:' ~/.local/log/fire-daily-review.log | tail 
 ```
 
 - `skip: セッション要約なし` → **正常**（作業していない日）。検証対象から外す
-- `fire giving up` → **配信障害**。その日は生成が一度も走っていない。品質評価の対象外とし、障害として別枠で報告する
+- `fire giving up` → **配信障害**。その日は生成が一度も走っていない。品質評価の対象外とし、障害として別枠で報告する。直前の行で原因も確認し、再生成は [docs/daily-report-pipeline.md](../../../docs/daily-report-pipeline.md) の「生成されなかった日の再生成」に従うと提案する
 - 401が単発で出て次のattemptで成功 → 正常（リトライで復旧）
 
 ### 3. 照合対象日の列挙

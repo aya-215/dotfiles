@@ -27,7 +27,9 @@
                               ↓
               クラウドルーティン daily-review（Opus 5）
                               ↓
-              life の日報Issue body を更新（close済みなら blog/YYYYMMDD.md）
+              life の日報Issue body を更新（MCP の issue_write。git 操作はしない）
+                              ↓（Issue が close 済みのとき）
+              life の Actions（daily-to-blog.yml の sync-summary）が blog/YYYYMMDD.md のサマリー節へ反映
 ```
 
 **3層に分かれている**のがポイント。セッション要約は随時、収集と送信は22:10、生成はクラウド側。
@@ -229,6 +231,60 @@ RemoteTrigger action:"get" trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"
 > ⚠️ この挙動のため、**ルーティン設定に未検証の値を入れると危険**。400で落ちるとその日の日報が
 > 丸ごと落ち、無人実行なので翌朝まで気づけない。モデルIDは検証済みの値を明示指定すること。
 
+### 生成されなかった日の再生成
+
+対象は「セッション要約はあるのに日報のサマリーが空」の日。原因は2通りある。
+
+- 発火が失敗した: ログに `fire giving up` / `fire aborting` が出ている
+- 発火していない: 22:10 にPCが落ちていて、その日のログ行自体が無い
+
+手順:
+
+1. 失敗日を特定する。
+
+   ```bash
+   grep -E 'giving up|aborting' ~/.local/log/fire-daily-review.log
+   ```
+
+   ログが無い日は `/verify-daily-report` の手順3（要約数と日報項目数の突き合わせ）で items=0 の日を探す。
+2. 直前のログ行で原因を確認し、先に直す。原因が残ったまま再発火しても同じように落ちる。
+3. 中身を確かめたいときは dry-run する。dry-run でもメール整理（`claude -p`）と life へのメール保存 push は走る。
+
+   ```bash
+   bash ~/.dotfiles/scripts/daily-review/fire-daily-review.sh --dry-run --date YYYY-MM-DD
+   ```
+
+4. 発火する。
+
+   ```bash
+   bash ~/.dotfiles/scripts/daily-review/fire-daily-review.sh --date YYYY-MM-DD
+   ```
+
+5. 結果を確認する。`RemoteTrigger list_runs` で該当 run が成功しているかを見てから、
+   `git -C ~/src/github.com/aya-215/life pull` してサマリーが埋まったことを確かめる。
+
+ルーティンは【対象日】の Issue 本文だけを更新する。Issue が close 済みなら、life の Actions
+（`daily-to-blog.yml` の `sync-summary` ジョブ）が本文の「📝 サマリー」節を `blog/YYYYMMDD.md` の同じ節へ差し替えて push する。
+blog の他の節は触らない。push は `concurrency` で直列化しているので、複数日を続けて発火してよい。
+既存のサマリーは入力として引き継ぐよう指示しているので、埋まっている日に再発火しても内容は消えない想定。
+
+> 以前はルーティンが close 済みの日に `blog/` を直接編集して git push していたが、無人実行では
+> `git reset --hard` や heredoc 付きの `git commit` が許可プロンプトで止まり、完了しなかった（2026-11-10 に判明）。
+> Issue が open の日は MCP の `issue_write` だけで済むため、毎晩の定時実行では表面化していなかった。
+
+**再生成の精度には限界がある。** セッションを再開すると、`summarize.sh` が古い要約を消して終わった日のフォルダに書き直す。
+このため後日に再生成すると、元の日の作業が欠けたり、後の日の作業が混ざったりする。
+
+**日付が変わってから手動で発火するときは必ず `--date` を付ける。** 付けないと実行した日が対象日になる
+（10/8 分を 10/9 00:31 に手動発火した結果、10/9 が対象日になった）。
+
+### `Argument list too long` で送信できない（2026-11-10 解消）
+
+旧実装は JSON 本文を `curl -d "$body_json"` で argv に載せていた。Linux の1引数あたりの上限は 128KiB で、
+`json.dumps` が日本語を `\uXXXX`（6バイト）に escape するため、日本語の多い日は約2.2万字で溢れていた。
+同じ本文を何度送っても通らないため、5回リトライして `fire giving up` になる。
+現在は本文をファイルに書き出して `--data-binary @file` で渡している。
+
 ### ルーティンの実行履歴を読む
 
 ```
@@ -308,6 +364,13 @@ Web UI（<https://claude.ai/code/routines>）よりこちらのほうが速い�
 
 ## 変更履歴
 
+- **2026-11-10**: 送信が `Argument list too long` で落ちる不具合を修正（本文を argv ではなくファイル経由で渡す）。
+  8/25・10/9・10/13・10/16・10/20・11/4 の6回発生しており、予算の 60,000 より手前に argv の上限
+  （128KiB）があった。cron は LANG 未設定のため `${#payload}` はバイト数を数えている点にも注意。
+  あわせて過去日を再生成する `--date YYYY-MM-DD` オプションを追加し、発火ログに対象日を出すようにした。
+  ルーティンの手順7を「close 済みでも Issue 本文を issue_write で更新し、git 操作はしない」に変更し、
+  blog への反映は life の `daily-to-blog.yml` に `issues: edited` トリガーで移した。
+  手順2・4もクラウドで GraphQL が 403 になる `gh issue list` をやめ、REST の search API に変更。
 - **2026-08-19**: サマリーの肥大化を是正。8/17改訂で入れた「1項目が数行になってよい」に上限が無く、
   8/17-18の実績が平常の約3.5倍（1,300字→4,866字）になっていた。入力量ではなく圧縮率の変化
   （7%→17〜20%）が原因。「結論1〜2文・経過を書かない」「1階層のみ」「網羅を字数より優先」に変更。

@@ -14,6 +14,7 @@
 # 使用方法:
 #   cron から: 10 22 * * * /home/aya/.dotfiles/scripts/daily-review/fire-daily-review.sh
 #   手動テスト: bash fire-daily-review.sh --dry-run   # POST せずペイロードを標準出力へ
+#   再生成:     bash fire-daily-review.sh --date 2026-11-04   # 過去日を対象に発火（--dry-run と併用可）
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,7 +37,31 @@ readonly MAX_ATTEMPTS="${MAX_ATTEMPTS:-5}"
 readonly INITIAL_BACKOFF="${INITIAL_BACKOFF:-60}"
 
 dry_run=0
-[ "${1:-}" = "--dry-run" ] && dry_run=1
+target_date=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry_run=1 ;;
+    --date)
+      target_date="${2:?--date には YYYY-MM-DD を指定する}"
+      shift
+      ;;
+    *) echo "unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+today="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
+if [ -z "$target_date" ]; then
+  target_date="$today"
+elif ! [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
+  || [ "$(date -d "$target_date" +%Y-%m-%d 2>/dev/null)" != "$target_date" ]; then
+  echo "--date が不正: $target_date（YYYY-MM-DD の実在日を指定する）" >&2
+  exit 2
+elif [[ "$target_date" > "$today" ]]; then
+  echo "--date に未来の日付は指定できない: $target_date" >&2
+  exit 2
+fi
+readonly target_date
 
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -71,7 +96,6 @@ if [ "$dry_run" -eq 0 ]; then
   : "${ROUTINE_FIRE_TOKEN:?ROUTINE_FIRE_TOKEN が .env.local に設定されていません}"
 fi
 
-target_date="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
 
 # Rocket Chat 当日履歴（失敗してもプレースホルダで続行）
 # 購読ルーム全体から自分の発言・メンションに関係するものを収集する。
@@ -319,11 +343,11 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     -H "Content-Type: application/json" \
     --data-binary @"$body_file" 2>>"$LOG_FILE" || echo "000")"
   if [ "$http_code" = "200" ]; then
-    log "fired (attempt=$attempt, payload=${#payload}chars): $(cat "$resp_file")"
+    log "fired (target=$target_date, attempt=$attempt, payload=${#payload}chars): $(cat "$resp_file")"
     exit 0
   fi
   resp_body="$(cat "$resp_file" 2>/dev/null || true)"
-  log "fire failed (attempt=$attempt/$MAX_ATTEMPTS, http=$http_code): $resp_body"
+  log "fire failed (target=$target_date, attempt=$attempt/$MAX_ATTEMPTS, http=$http_code): $resp_body"
 
   # 恒久エラーは即中断する。再認可・権限系はリトライしても永久に成功しないため
   # （実データ: 2026-06-11 に github_repo_access_denied で 3回×2セット=6回を無駄打ち）。
@@ -342,5 +366,5 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     backoff=$((backoff * 2))
   fi
 done
-log "fire giving up after $MAX_ATTEMPTS attempts"
+log "fire giving up (target=$target_date) after $MAX_ATTEMPTS attempts"
 exit 1
