@@ -539,4 +539,4 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 
 ### 出力後の確認
 
-書いた JSON は `scripts/todo-ai/my_tasks_schema.py` の `validate_candidates` で検証できる（`/todo` が適用前に呼ぶ）。
+書いた JSON は `python3 -I ~/.dotfiles/scripts/todo-ai/my_tasks_schema.py <path>` で検証できる（問題があれば1行1件で出して exit 1。`/todo` が適用前に呼ぶ）。

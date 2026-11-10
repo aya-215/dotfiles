@@ -1,7 +1,15 @@
-"""/my-tasks --json の出力を検証する。"""
+#!/usr/bin/env python3
+"""/my-tasks --json の出力を検証する。
 
+使い方: my_tasks_schema.py <path>  （問題があれば1行1件で標準出力に出して終了コード 1）
+"""
+
+import json
 import re
+import sys
+from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import todo_md
 
 BALLS = ("mine", "theirs", "maybe_done")
@@ -54,3 +62,22 @@ def validate_candidates(data) -> "list[str]":
         if "blocks" in c and not (isinstance(b, list) and all(isinstance(x, str) for x in b)):
             errs.append(f"{p}: blocks must be a list of strings")
     return errs
+
+
+def main(argv) -> int:
+    if len(argv) != 2:
+        print("usage: my_tasks_schema.py <path>", file=sys.stderr)
+        return 2
+    try:
+        data = json.loads(Path(argv[1]).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"my_tasks_schema: 読めない: {e}")
+        return 1
+    errs = validate_candidates(data)
+    for e in errs:
+        print(e)
+    return 1 if errs else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

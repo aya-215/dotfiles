@@ -64,5 +64,30 @@ class ValidateCandidatesTest(unittest.TestCase):
         self.assertTrue(self.bad(lambda c: c.update(waiting_person=3)))
 
 
+class CliTest(unittest.TestCase):
+    def run_cli(self, path):
+        import subprocess
+        script = Path(__file__).resolve().parent.parent / "my_tasks_schema.py"
+        return subprocess.run([sys.executable, "-I", str(script), str(path)], capture_output=True, text=True)
+
+    def test_valid_fixture_exits_0(self):
+        res = self.run_cli(FIXTURE)
+        self.assertEqual((res.returncode, res.stdout), (0, ""), res.stderr)
+
+    def test_invalid_exits_1_with_errors(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            p = Path(t) / "x.json"
+            p.write_text(json.dumps({"candidates": "x"}), encoding="utf-8")
+            res = self.run_cli(p)
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("candidates must be a list", res.stdout)
+
+    def test_unreadable_exits_1(self):
+        res = self.run_cli("/nonexistent/my-tasks.json")
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("my_tasks_schema:", res.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
