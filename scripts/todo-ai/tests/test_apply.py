@@ -338,6 +338,28 @@ class CliTest(unittest.TestCase):
         self.assertEqual(self.head("%H"), before)
         self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
 
+    def test_noncanonical_noop_not_rewritten(self):
+        text = BASE.replace("- [ ] 坂西さんの対応", "\n- [ ] 坂西さんの対応")
+        self.commit(text)
+        before = self.head("%H")
+        r = self.run_apply({"source": "sync", "ops": []})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.head("%H"), before)
+        self.assertEqual(self.todo.read_text(encoding="utf-8"), text)
+
+    def test_bad_confirm_options_exit2(self):
+        r = self.run_apply({"source": "ai", "ops": [], "confirm": [
+            {"ref": "epc#1202", "kind": "policy", "question": "q", "facts": "f", "options": ["A"]}]})
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+
+    def test_missing_todo_exit1_without_commit(self):
+        before = self.head("%H")
+        self.todo.unlink()
+        r = self.run_apply(self.move_1202())
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(self.head("%H"), before)
+
     def test_dirty_human_edit_committed_as_human_first(self):
         self.todo.write_text(BASE.replace("- [ ] 坂西さんの対応", "- [ ] 坂西さんの対応\n- [ ] 手で足した"), encoding="utf-8")
         r = self.run_apply(self.move_1202())

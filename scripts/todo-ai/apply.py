@@ -95,7 +95,10 @@ def _render_confirm(entries: list) -> "list[str]":
         q = _str(e, "question")
         facts = _str(e, "facts", required=False) or ""
         opts = []
-        for o in e.get("options") or []:
+        options = e.get("options") or []
+        if not isinstance(options, list) or not all(isinstance(o, dict) for o in options):
+            raise ChangeError(f"confirm の options が object の配列でない: {options!r}")
+        for o in options:
             label = _str(o, "label")
             text = _str(o, "text")
             opts.append(f"{label} {text}" + ("（おすすめ）" if o.get("recommended") else ""))
@@ -344,7 +347,7 @@ def _write_atomic(path: Path, text: str) -> None:
 def summarize(body: "list[str]") -> str:
     counts = Counter(l.split(" ", 1)[0].rstrip(":") for l in body)
     parts = [f"{label}{counts[k]}" for k, label in OP_LABELS.items() if counts[k]]
-    return " ".join(parts) or "整形"
+    return " ".join(parts)
 
 
 def run(changes_path: Path, todo: Path, today: str) -> int:
@@ -355,6 +358,9 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
         return 2
     source = changes.get("source") if isinstance(changes, dict) else None
     repo, name = todo.parent, todo.name
+    if not todo.is_file():
+        print(f"apply: todo.md が無い: {todo}", file=sys.stderr)
+        return 1
     _git(repo, "rev-parse", "--is-inside-work-tree")
 
     with open(repo / ".todo.write.lock", "w") as wl:
@@ -376,7 +382,7 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
             return 2
         kept, archived = split_archive(after, today)
         new_text = todo_md.render(kept)
-        if new_text == text and not archived:
+        if new_text == todo_md.render(before) and not archived:
             return 0
         if nvim_editing(repo):
             print("apply: todo.md を編集中のためスキップ", file=sys.stderr)
