@@ -6,7 +6,10 @@ Claude Code の画面や挙動を変える自作 mod（function hooks plugin）�
 | mod | 何をするか | README |
 |---|---|---|
 | `session-autoname` | 対話セッションに色と、会話内容から作った名前を自動で付ける | [session-autoname/README.md](session-autoname/README.md) |
-| `session-memo` | 会話ごとの作業メモを、プロンプト上の帯と `/note` のパネルで扱う | [session-memo/README.md](session-memo/README.md) |
+| `session-memo` | （無効化中。`CLAUDE_CODE_PLUGIN_DIRS` から外してある）会話ごとの作業メモを、プロンプト上の帯と `/note` のパネルで扱う | [session-memo/README.md](session-memo/README.md) |
+| `prompt-cache-control` | （外部製）プロンプトキャッシュの hit 率と期限切れまでの残り時間を、プロンプト上の帯と `/cache` のパネルに出す。取得元は [davila7/claude-code-templates](https://github.com/davila7/claude-code-templates) の `cli-tool/components/mods/observability/prompt-cache-control`（commit `a6e6f93`、MIT）。`tsconfig.json` と `.gitignore` だけこちらで足した。更新は取得元から丸ごと差し替える | [prompt-cache-control/README.md](prompt-cache-control/README.md) |
+
+`prompt-rail`（プロンプトの一覧をレールで出す外部製 mod）はここに置かず、`claude plugin install prompt-rail@oikon48` でマーケットプレイスから入れている。
 
 ## 読み込みの仕組み
 

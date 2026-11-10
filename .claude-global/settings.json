@@ -3,7 +3,7 @@
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_AFK_TIMEOUT_MS": "604800000",
-    "CLAUDE_CODE_PLUGIN_DIRS": "/home/aya/.dotfiles/.claude-global/mods/session-autoname:/home/aya/.dotfiles/.claude-global/mods/session-memo"
+    "CLAUDE_CODE_PLUGIN_DIRS": "/home/aya/.dotfiles/.claude-global/mods/session-autoname:/home/aya/.dotfiles/.claude-global/mods/prompt-cache-control"
   },
   "attribution": {
     "commit": "",
@@ -272,7 +272,8 @@
     "ebase-infra@ebase-claude-marketplace": true,
     "aiebase-infra@ebase-claude-marketplace": true,
     "yomiyasu@yomiyasu": true,
-    "aiebase-devkit@ebase-claude-marketplace": true
+    "aiebase-devkit@ebase-claude-marketplace": true,
+    "prompt-rail@oikon48": true
   },
   "extraKnownMarketplaces": {
     "superpowers-marketplace": {
@@ -291,6 +292,12 @@
       "source": {
         "source": "github",
         "repo": "nanaism/yomiyasu"
+      }
+    },
+    "oikon48": {
+      "source": {
+        "source": "github",
+        "repo": "oikon48/prompt-rail"
       }
     }
   },
@@ -398,6 +405,13 @@
         "run",
         "server.py"
       ]
+    }
+  },
+  "pluginConfigs": {
+    "prompt-rail@oikon48": {
+      "options": {
+        "classicHooks": false
+      }
     }
   }
 }
