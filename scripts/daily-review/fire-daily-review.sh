@@ -296,12 +296,19 @@ if [ "$dry_run" -eq 1 ]; then
   exit 0
 fi
 
-body_json="$(printf '%s' "$payload" | python3 -c 'import sys,json; print(json.dumps({"text": sys.stdin.read()}))')"
+# 本文は argv ではなくファイル経由で渡す。curl -d "$body" だと1引数128KiBの上限
+# （MAX_ARG_STRLEN）に当たり、日本語を \uXXXX に escape した本文は約2.2万字で溢れていた。
+body_file="$(mktemp /tmp/fire-daily-review-body-XXXX.json)"
+resp_file="$(mktemp /tmp/fire-daily-review-resp-XXXX.json)"
+trap 'rm -f "$body_file" "$resp_file"' EXIT
+printf '%s' "$payload" | python3 -c '
+import sys, json
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump({"text": sys.stdin.buffer.read().decode("utf-8")}, f, ensure_ascii=False)
+' "$body_file"
 
 # POST（429/503/一時的な401 等に備えて指数バックオフで最大 MAX_ATTEMPTS 回）
 # 恒久エラー（再認可待ち等）と判定できた場合は待たずに中断する
-resp_file="$(mktemp /tmp/fire-daily-review-resp-XXXX.json)"
-trap 'rm -f "$resp_file"' EXIT
 backoff="$INITIAL_BACKOFF"
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   http_code="$(curl -sS -m 60 -o "$resp_file" -w '%{http_code}' \
@@ -310,7 +317,7 @@ for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
     -H "anthropic-version: 2023-06-01" \
     -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
     -H "Content-Type: application/json" \
-    -d "$body_json" 2>>"$LOG_FILE" || echo "000")"
+    --data-binary @"$body_file" 2>>"$LOG_FILE" || echo "000")"
   if [ "$http_code" = "200" ]; then
     log "fired (attempt=$attempt, payload=${#payload}chars): $(cat "$resp_file")"
     exit 0
