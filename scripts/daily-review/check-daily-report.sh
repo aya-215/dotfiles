@@ -13,10 +13,13 @@
 # 差し替え口（主にテスト用）:
 #   CLAUDE_BIN / CHECK_MODEL / TOAST_CMD / SLICES_ROOT / CHECK_LOG_FILE
 #   ISSUE_BODY_FILE（指定時は GitHub の代わりにこのファイルを Issue 本文として読む）
+#   NIX_PROFILE_BIN（jq / gh の置き場）
 #   CHECK_WAIT_SEC / CHECK_WAIT_MAX / CHECK_TIMEOUT_SEC
 set -euo pipefail
 
 export LANG=C.UTF-8
+# cron の PATH には jq / gh が無い（Nix profile にだけある）。テストでは NIX_PROFILE_BIN で差し替える
+export PATH="${NIX_PROFILE_BIN:-$HOME/.nix-profile/bin}:/nix/var/nix/profiles/default/bin:$PATH"
 
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
 readonly CHECK_MODEL="${CHECK_MODEL:-claude-opus-5}"
@@ -41,9 +44,27 @@ done
 [ -n "$DATE" ] || DATE="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
 [[ "$DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "invalid date: $DATE" >&2; exit 2; }
 
+LOGGED=0
+# 想定外の失敗（set -e 死）でも、ログと check.json を残して通知し exit 0 にする
+on_exit() {
+  local rc=$?
+  [ "$LOGGED" -eq 1 ] && return 0
+  LOGGED=1
+  trap - EXIT
+  set +e
+  mkdir -p "$(dirname "$LOG_FILE")" 2>/dev/null
+  printf '[%s] %s status=check_failed missing=0(重大0) unsupported=0(高0) misclassified=0 notify=true\n' \
+    "$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S')" "$DATE" >> "$LOG_FILE" 2>/dev/null
+  if [ -d "$OUT_DIR" ]; then
+    printf '{"missing":[],"unsupported":[],"misclassified":[],"format":[],"notify":true,"status":"check_failed","message":"想定外の失敗(rc=%s)"}\n' "$rc" > "$CHECK_JSON" 2>/dev/null
+  fi
+  toast "日報チェック $DATE: check_failed" "想定外の失敗(rc=$rc)。$LOG_FILE を確認"
+  exit 0
+}
 readonly OUT_DIR="$SLICES_ROOT/$DATE"
 readonly PAYLOAD_FILE="$OUT_DIR/payload.txt"
 readonly CHECK_JSON="$OUT_DIR/check.json"
+trap on_exit EXIT
 
 # 日報の判定の注意点。verify-daily-report スキルの「判定の注意点」と揃える（根拠の範囲だけ payload 基準）
 read -r -d '' NOTES <<'EON' || true
@@ -57,6 +78,7 @@ EON
 
 # log_line <status> <missing> <missing_major> <unsup> <unsup_high> <misc> <notify>
 log_line() {
+  LOGGED=1
   mkdir -p "$(dirname "$LOG_FILE")"
   printf '[%s] %s status=%s missing=%s(重大%s) unsupported=%s(高%s) misclassified=%s notify=%s\n' \
     "$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S')" "$DATE" "$@" >> "$LOG_FILE"
@@ -87,7 +109,7 @@ fetch_issue_body() {
   if [ -n "${ISSUE_BODY_FILE:-}" ]; then cat "$ISSUE_BODY_FILE" 2>/dev/null || true; return 0; fi
   local token num
   token="$(gh auth token --user aya-215 2>/dev/null)" || return 0
-  num="$(GH_TOKEN="$token" gh api -X GET search/issues -f q="repo:$REPO is:issue \"$DATE\" in:title" --jq '.items[0].number // empty' 2>/dev/null)" || return 0
+  num="$(GH_TOKEN="$token" gh api -X GET search/issues -f q="repo:$REPO is:issue \"$DATE\" \"の記録\" in:title" --jq "[.items[] | select(.title | startswith(\"$DATE\"))][0].number // empty" 2>/dev/null)" || return 0
   [ -n "$num" ] || return 0
   GH_TOKEN="$token" gh api "repos/$REPO/issues/$num" --jq .body 2>/dev/null || true
 }
@@ -114,6 +136,8 @@ for k in ("missing", "unsupported", "misclassified", "format"):
     out[k] = v
 for k in ("missing", "unsupported", "misclassified"):
     if not all(isinstance(x, dict) for x in out[k]): sys.exit(1)
+if not all(x.get("severity") in ("重大", "軽微") for x in out["missing"]): sys.exit(1)
+if not all(x.get("confidence") in ("高", "中", "低") for x in out["unsupported"]): sys.exit(1)
 print(json.dumps(out, ensure_ascii=False))
 '
 }
@@ -163,7 +187,7 @@ EOP
 result=""
 for try in 1 2; do
   raw=""
-  if raw="$(printf '%s' "$prompt" | timeout "$CHECK_TIMEOUT_SEC" "$CLAUDE_BIN" -p --model "$CHECK_MODEL" --no-session-persistence --setting-sources '' --settings '{"disableAllHooks":true}' 2>/dev/null)"; then
+  if raw="$(printf '%s' "$prompt" | timeout "$CHECK_TIMEOUT_SEC" "$CLAUDE_BIN" -p --model "$CHECK_MODEL" --no-session-persistence --tools '' --setting-sources '' --settings '{"disableAllHooks":true}' 2>/dev/null)"; then
     if result="$(printf '%s' "$raw" | validate_json)"; then break; fi
   fi
   result=""

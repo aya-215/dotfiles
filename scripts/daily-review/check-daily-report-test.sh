@@ -70,6 +70,7 @@ check "minor: notify=false" jq_has "$TMP/minor" '.notify == false and .status ==
 check "minor: トースト呼ばれない" test ! -e "$TMP/minor/stub/toast"
 check "minor: ログ1行の形" grep -qE "^\[[^]]+\] $DATE status=ok missing=1\(重大0\) unsupported=1\(高0\) misclassified=0 notify=false$" "$TMP/minor/check.log"
 check "minor: モデル指定" grep -qx 'claude-opus-5' "$TMP/minor/stub/args.1"
+check "minor: ツール無効化" grep -qx -- '--tools' "$TMP/minor/stub/args.1"
 check "minor: プロンプトにpayloadとサマリーが入る" grep -q '何かをした' "$TMP/minor/stub/prompt.1"
 check "minor: 次の節は入らない" bash -c "! grep -q '無関係' '$TMP/minor/stub/prompt.1'"
 
@@ -121,5 +122,44 @@ run_check nopayload
 check "nopayload: claude 呼ばれない" test "$(calls "$TMP/nopayload")" = 0
 check "nopayload: status=check_failed" jq_has "$TMP/nopayload" '.status == "check_failed"'
 check "nopayload: トースト呼ばれる" test -s "$TMP/nopayload/stub/toast"
+
+# ---- ケース6: severity/confidence の typo は不正扱い → check_failed ----
+setup_case typo yes yes
+echo '{"missing":[{"text":"x","severity":"じゅうだい"}],"unsupported":[],"misclassified":[],"format":[]}' > "$TMP/typo/stub/out"
+run_check typo
+check "typo: claude 2回(やり直し)" test "$(calls "$TMP/typo")" = 2
+check "typo: status=check_failed" jq_has "$TMP/typo" '.status == "check_failed"'
+setup_case typo2 yes yes
+echo '{"missing":[],"unsupported":[{"text":"x","confidence":"高い"}],"misclassified":[],"format":[]}' > "$TMP/typo2/stub/out"
+run_check typo2
+check "typo2: status=check_failed" jq_has "$TMP/typo2" '.status == "check_failed"'
+
+# ---- ケース7: 待ちループ（空のまま規定回数で report_missing） ----
+setup_case wait no yes
+echo '{}' > "$TMP/wait/stub/out"
+c="$TMP/wait"
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$c/stub" TOAST_CMD="$TMP/bin/toast" SLICES_ROOT="$c/slices" CHECK_LOG_FILE="$c/check.log" ISSUE_BODY_FILE="$c/body.md" CHECK_WAIT_SEC=0 CHECK_WAIT_MAX=3   bash "$SCRIPT_DIR/check-daily-report.sh" --date "$DATE" >/dev/null 2>&1
+check "wait: report_missing（3回確認）" jq_has "$c" '.status == "report_missing" and (.message | contains("3回"))'
+
+# ---- ケース8: 想定外の失敗（check.json が書けない）でも exit 0 + check_failed ログ ----
+setup_case crash yes yes
+echo '{"missing":[],"unsupported":[],"misclassified":[],"format":[]}' > "$TMP/crash/stub/out"
+chmod a-w "$TMP/crash/slices/$DATE"
+run_check crash
+chmod u+w "$TMP/crash/slices/$DATE"
+check "crash: exit 0" test "$(cat "$TMP/crash/rc")" = 0
+check "crash: status=check_failed がログに残る" grep -q "status=check_failed" "$TMP/crash/check.log"
+check "crash: トースト呼ばれる" test -s "$TMP/crash/stub/toast"
+
+# ---- ケース9: cron 相当の最小環境（PATH に jq/gh が無い）でも完走する ----
+setup_case cron yes yes
+echo '{"missing":[],"unsupported":[],"misclassified":[],"format":[]}' > "$TMP/cron/stub/out"
+c="$TMP/cron"
+mkdir -p "$c/home"
+env -i HOME="$c/home" PATH=/usr/bin:/bin NIX_PROFILE_BIN="$(dirname "$(command -v jq)")" \
+  CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$c/stub" TOAST_CMD="$TMP/bin/toast" SLICES_ROOT="$c/slices" \
+  CHECK_LOG_FILE="$c/check.log" ISSUE_BODY_FILE="$c/body.md" \
+  bash "$SCRIPT_DIR/check-daily-report.sh" --date "$DATE" --no-wait >/dev/null 2>&1
+check "cron: ログ1行が残る status=ok" grep -q "status=ok" "$c/check.log"
 
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "$fails 件失敗"; exit 1; fi
