@@ -39,16 +39,31 @@
 
 ---
 
-## cron（4本）
+## cron（5本）
 
 ```cron
 */30 * * * *  ~/.dotfiles/scripts/nb-sync.sh                       # 日報とは無関係（nb同期）
 30 12 * * *   ~/.dotfiles/scripts/temp-wsl-cleanup.sh              # 日報とは無関係（D:\temp_wsl の掃除）
 0 21 * * *    ~/.dotfiles/scripts/claude-summarize/backfill.sh      # 要約の取りこぼし回収
 10 22 * * *   ~/.dotfiles/scripts/daily-review/fire-daily-review.sh # 日報生成の発火
+40 22 * * *   ~/.dotfiles/scripts/daily-review/check-daily-report.sh >> ~/.local/log/daily-review-check-cron.log 2>&1 # 生成された日報の自己チェック
 ```
 
 `systemd --user` はWSLで動いていないため、実体はこのcrontabのみ。
+
+### 自己チェック（22:40）
+
+`check-daily-report.sh` が、22:10 に送ったペイロード（`daily-slices/<日付>/payload.txt`）と、
+生成された日報（life リポジトリの日次 Issue「YYYY-MM-DD (曜) の記録」の「## 📝 サマリー」）を
+`claude -p --model claude-opus-5`（`CHECK_MODEL` で変更可）に照合させる。
+
+- サマリーに箇条書きが出るまで 60 秒おきに最大 20 回取り直す（`--no-wait` なら 1 回）。最後まで空なら `report_missing`
+- 判定の注意点は `verify-daily-report` スキルと同じ。全期間要約（補完）の見出しは区切り前の作業を含みうるので、
+  それだけを根拠にした「根拠不明」を高確信にせず、区切り前の作業の欠落を取りこぼしに数えない
+- 通知するのは、取りこぼしに「重大」が 1 件以上、または根拠不明に確信度「高」が 1 件以上、`report_missing`、`check_failed`（payload 無し・claude 失敗/タイムアウト・JSON 不正が 2 回）のとき。判定はスクリプトが決定的に行う
+- 通知は Windows トースト（`TOAST_CMD` で差し替え可）。通知の失敗でスクリプトは落ちない（常に exit 0）
+- 結果は `daily-slices/<日付>/check.json`（`notify` と `status: ok|report_missing|check_failed` 付き）と `~/.local/log/daily-review-check.log` に 1 行
+- 手動実行: `bash scripts/daily-review/check-daily-report.sh --date 2026-11-09 --no-wait`
 
 ---
 
@@ -333,6 +348,7 @@ Web UI（<https://claude.ai/code/routines>）よりこちらのほうが速い�
 | パス | 役割 |
 |---|---|
 | `scripts/daily-review/fire-daily-review.sh` | 収集・整形・POST（cron 22:10）。`--dry-run` / `--date` / `--overwrite` |
+| `scripts/daily-review/check-daily-report.sh` | 生成された日報の自己チェック（cron 22:40）。`--date` / `--no-wait` |
 | `scripts/daily-review/slice-sessions.sh` | 日次の切り出し要約を作る |
 | `scripts/daily-review/day-window.sh` | 1日の区切り（前日22:10〜当日22:10）の計算 |
 | `scripts/daily-review/.env.local` | `ROUTINE_FIRE_URL` / `ROUTINE_FIRE_TOKEN` / RC認証 |
@@ -389,6 +405,7 @@ Web UI（<https://claude.ai/code/routines>）よりこちらのほうが速い�
 
 ## 変更履歴
 
+- **2026-11-10（自己チェック）**: 毎晩 22:40 に、ペイロードと生成済みサマリーを照合して重大な問題だけ通知する `check-daily-report.sh` を追加した。
 - **2026-11-10（切り出し要約）**: 送信の入力を、日次の切り出し要約（`slice-sessions.sh`）に切り替えた。
   git 収集も同じ区切りで絞る。`--overwrite`（既存サマリーを引き継がず作り直す）とペイロード保存
   （`daily-slices/<日付>/payload.txt`）を追加。`LANG=C.UTF-8` を固定し、予算を cron でも文字数で数える。
