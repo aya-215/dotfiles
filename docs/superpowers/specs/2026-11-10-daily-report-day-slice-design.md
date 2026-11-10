@@ -137,6 +137,11 @@ jsonl が残っている 10-13〜11-09 を使い、`--date` に `--dry-run` を�
 余裕があれば、数日分を実際に発火して、生成された日報を verify-daily-report（RC 照合あり）で照合する。
 基準は 2026-11-10 の実測値（12日で取りこぼし2件・誤分類2件）。
 
+## 後続（今回の範囲外）
+
+既存の `sessions/` を使うスキル群（work-report・effort-estimate・retrospective など）も、同じ欠陥を抱えている可能性がある。
+日報の改善が終わったら検討する（agent-memory: `work-in-progress/session-summary-consumers-improvement.md`）。
+
 ## 関連
 
 - 現行仕様: [docs/daily-report-pipeline.md](../../daily-report-pipeline.md)
