@@ -18,11 +18,14 @@
 [21:00 cron] backfill.sh ──────┘（hook取りこぼしの回収）
 
 [22:10 cron] fire-daily-review.sh
-               ├─ セッション要約を読む
+               ├─ slice-sessions.sh で、その日の区切り（前日22:10〜当日22:10）に
+               │    切り出した要約を作る → ~/.nb/claude/daily-slices/YYYY-MM-DD/*.md
+               │    （失敗した sid は sessions/ の既存要約で埋める。切り出しが無い日は sessions/ のまま）
                ├─ git活動をローカル収集
                ├─ Rocket Chat 履歴を取得
                ├─ Thunderbird メールを整理
                ├─ redaction（redact.sh）
+               ├─ 送ったペイロードを daily-slices/YYYY-MM-DD/payload.txt に保存（dry-run でも）
                └─ /fire へ POST（60,000字以内）
                               ↓
               クラウドルーティン daily-review（Opus 5）
@@ -55,11 +58,15 @@
 
 | ソース | 収集元 | 予算 |
 |---|---|---|
-| セッション要約 | `~/.nb/claude/sessions/<日付>/*.md` | 残り全部 |
-| git活動 | **ローカル**の git log | 8,000字 |
+| セッション要約 | `~/.nb/claude/daily-slices/<日付>/*.md`（日次の切り出し）。失敗した sid（`.failed`）は `sessions/` 全体から `*-<sid8>.md` で補う。切り出しが1本も無い日は `sessions/<日付>/*.md` | 残り全部 |
+| git活動 | **ローカル**の git log（区切り内。`--since`/`--until` に区切りを使う） | 8,000字 |
 | Rocket Chat | 購読ルーム横断・**DM除く** | 15,000字 |
 | メール | Thunderbird（life リポジトリにも保存） | 6,000字 |
 | GitHubのIssue | クラウド側で `gh` 経由（当日closeのtask Issue等） | — |
+
+区切りは JST の前日22:10（含む）〜当日22:10（含まない）で、送信時刻ではなく対象日から決める（`day-window.sh`）。
+ペイロードの【対象日】の次の行に `【区切り】<since> 〜 <until>` を入れる。Rocket Chat・メールは暦日のまま。
+ファイル名は `.dotfiles-<sid8>.md` のように隠しファイルになるため、列挙は `find -name '*.md'` で行う（glob は使わない）。
 
 **予算超過時は古いセッション要約から1本ずつ落とす**ループで収める（`build_sessions` の `keep` を減らす）。
 
@@ -208,7 +215,7 @@ RemoteTrigger action:"get" trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"
 
 | ファイル | 内容 |
 |---|---|
-| `~/.local/log/fire-daily-review.log` | 発火の成否・ペイロード字数・リトライ |
+| `~/.local/log/fire-daily-review.log` | 発火の成否・ペイロード字数・リトライ・切り出し結果（`slice:` 行） |
 | `~/.local/log/claude-summarize.log` | セッション要約の生成状況 |
 | `~/.local/log/thunderbird-archive.log` | メール保存の状況 |
 
@@ -263,17 +270,28 @@ RemoteTrigger action:"get" trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"
 5. 結果を確認する。`RemoteTrigger list_runs` で該当 run が成功しているかを見てから、
    `git -C ~/src/github.com/aya-215/life pull` してサマリーが埋まったことを確かめる。
 
+既存のサマリーを引き継がせず、このペイロードだけで作り直させたいときは `--overwrite` を付ける（`--date` 必須。単独だと exit 2）。
+ペイロードに `【再生成モード】上書き` が入る。切り出しの区切りが変わった日など、既存サマリーが古い前提で書かれているときに使う。
+
+   ```bash
+   bash ~/.dotfiles/scripts/daily-review/fire-daily-review.sh --date YYYY-MM-DD --overwrite
+   ```
+
+送ったペイロードは `~/.nb/claude/daily-slices/YYYY-MM-DD/payload.txt` に残る（dry-run でも保存する）。
+dry-run のときは、メール保存の push を避けたければ `MAIL_ARCHIVE_BIN` に何も出力しないスクリプトを指定する。
+
 ルーティンは【対象日】の Issue 本文だけを更新する。Issue が close 済みなら、life の Actions
 （`daily-to-blog.yml` の `sync-summary` ジョブ）が本文の「📝 サマリー」節を `blog/YYYYMMDD.md` の同じ節へ差し替えて push する。
 blog の他の節は触らない。push は `concurrency` で直列化しているので、複数日を続けて発火してよい。
-既存のサマリーは入力として引き継ぐよう指示しているので、埋まっている日に再発火しても内容は消えない想定。
+既存のサマリーは通常は入力として引き継ぐよう指示しているので、埋まっている日に再発火しても内容は消えない想定（`--overwrite` を除く）。
 
 > 以前はルーティンが close 済みの日に `blog/` を直接編集して git push していたが、無人実行では
 > `git reset --hard` や heredoc 付きの `git commit` が許可プロンプトで止まり、完了しなかった（2026-11-10 に判明）。
 > Issue が open の日は MCP の `issue_write` だけで済むため、毎晩の定時実行では表面化していなかった。
 
-**再生成の精度には限界がある。** セッションを再開すると、`summarize.sh` が古い要約を消して終わった日のフォルダに書き直す。
-このため後日に再生成すると、元の日の作業が欠けたり、後の日の作業が混ざったりする。
+**切り出し要約により、後日の再生成でも元の日の作業だけを拾える。** 以前は、セッションを再開すると
+`summarize.sh` が古い要約を消して終わった日のフォルダに書き直すため、元の日の作業が欠けたり後の日の作業が混ざったりした。
+現在は jsonl からその日の区切りで切り出し直す（jsonl は180日保持）。切り出しに失敗した sid だけ `sessions/` の既存要約で埋めるため、その分は従来の限界が残る。
 
 **日付が変わってから手動で発火するときは必ず `--date` を付ける。** 付けないと実行した日が対象日になる
 （10/8 分を 10/9 00:31 に手動発火した結果、10/9 が対象日になった）。
@@ -309,7 +327,9 @@ Web UI（<https://claude.ai/code/routines>）よりこちらのほうが速い�
 
 | パス | 役割 |
 |---|---|
-| `scripts/daily-review/fire-daily-review.sh` | 収集・整形・POST（cron 22:10） |
+| `scripts/daily-review/fire-daily-review.sh` | 収集・整形・POST（cron 22:10）。`--dry-run` / `--date` / `--overwrite` |
+| `scripts/daily-review/slice-sessions.sh` | 日次の切り出し要約を作る |
+| `scripts/daily-review/day-window.sh` | 1日の区切り（前日22:10〜当日22:10）の計算 |
 | `scripts/daily-review/.env.local` | `ROUTINE_FIRE_URL` / `ROUTINE_FIRE_TOKEN` / RC認証 |
 | `scripts/claude-summarize/summarize-session.sh` | SessionEnd hook の入口 |
 | `scripts/claude-summarize/summarize.sh` | セッション要約の本体 |
@@ -364,6 +384,9 @@ Web UI（<https://claude.ai/code/routines>）よりこちらのほうが速い�
 
 ## 変更履歴
 
+- **2026-11-10（切り出し要約）**: 送信の入力を、日次の切り出し要約（`slice-sessions.sh`）に切り替えた。
+  git 収集も同じ区切りで絞る。`--overwrite`（既存サマリーを引き継がず作り直す）とペイロード保存
+  （`daily-slices/<日付>/payload.txt`）を追加。`LANG=C.UTF-8` を固定し、予算を cron でも文字数で数える。
 - **2026-11-10**: 送信が `Argument list too long` で落ちる不具合を修正（本文を argv ではなくファイル経由で渡す）。
   8/25・10/9・10/13・10/16・10/20・11/4 の6回発生しており、予算の 60,000 より手前に argv の上限
   （128KiB）があった。cron は LANG 未設定のため `${#payload}` はバイト数を数えている点にも注意。

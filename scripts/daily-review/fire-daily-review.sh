@@ -15,13 +15,23 @@
 #   cron から: 10 22 * * * /home/aya/.dotfiles/scripts/daily-review/fire-daily-review.sh
 #   手動テスト: bash fire-daily-review.sh --dry-run   # POST せずペイロードを標準出力へ
 #   再生成:     bash fire-daily-review.sh --date 2026-11-04   # 過去日を対象に発火（--dry-run と併用可）
+#   上書き再生成: bash fire-daily-review.sh --date 2026-11-04 --overwrite
+#               # 既存の「📝 サマリー」を引き継がせず、このペイロードだけで作り直させる（--date 必須）
 set -euo pipefail
+
+# cron は LANG 未設定のため、予算判定の ${#var} がバイト数になる。文字数で数えるために固定する
+export LANG=C.UTF-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
-readonly ENV_FILE="$SCRIPT_DIR/.env.local"
-readonly LOG_FILE="$HOME/.local/log/fire-daily-review.log"
-readonly SESSIONS_ROOT="$HOME/.nb/claude/sessions"
+# 以下の差し替え口はテスト用（既定は本番の値）
+readonly ENV_FILE="${FIRE_ENV_FILE:-$SCRIPT_DIR/.env.local}"
+readonly LOG_FILE="${FIRE_LOG_FILE:-$HOME/.local/log/fire-daily-review.log}"
+readonly SESSIONS_ROOT="${SESSIONS_ROOT:-$HOME/.nb/claude/sessions}"
+readonly SLICES_ROOT="${SLICES_ROOT:-$HOME/.nb/claude/daily-slices}"
+readonly ROCKETCHAT_BIN="${ROCKETCHAT_BIN:-$SCRIPT_DIR/../lib/rocketchat.sh}"
+readonly MAIL_ARCHIVE_BIN="${MAIL_ARCHIVE_BIN:-$SCRIPT_DIR/../lib/thunderbird-archive.sh}"
+readonly SLICE_BIN="${SLICE_BIN:-$SCRIPT_DIR/slice-sessions.sh}"
 readonly REDACT="$SCRIPT_DIR/../lib/redact.sh"
 # /fire の text 上限は 65,536 文字。余裕を見て 60,000 に抑える
 readonly MAX_PAYLOAD_CHARS=60000
@@ -37,6 +47,7 @@ readonly MAX_ATTEMPTS="${MAX_ATTEMPTS:-5}"
 readonly INITIAL_BACKOFF="${INITIAL_BACKOFF:-60}"
 
 dry_run=0
+overwrite=0
 target_date=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -45,6 +56,7 @@ while [ $# -gt 0 ]; do
       target_date="${2:?--date には YYYY-MM-DD を指定する}"
       shift
       ;;
+    --overwrite) overwrite=1 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -52,6 +64,10 @@ done
 
 today="$(TZ=Asia/Tokyo date +%Y-%m-%d)"
 if [ -z "$target_date" ]; then
+  if [ "$overwrite" -eq 1 ]; then
+    echo "--overwrite は --date と一緒に指定する" >&2
+    exit 2
+  fi
   target_date="$today"
 elif ! [[ "$target_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] \
   || [ "$(date -d "$target_date" +%Y-%m-%d 2>/dev/null)" != "$target_date" ]; then
@@ -62,6 +78,11 @@ elif [[ "$target_date" > "$today" ]]; then
   exit 2
 fi
 readonly target_date
+
+# shellcheck source=day-window.sh
+source "$SCRIPT_DIR/day-window.sh"
+IFS=$'\t' read -r WINDOW_SINCE WINDOW_UNTIL < <(day_window "$target_date")
+readonly WINDOW_SINCE WINDOW_UNTIL
 
 mkdir -p "$(dirname "$LOG_FILE")"
 
@@ -102,7 +123,7 @@ fi
 # DM は外部送信のため含めない（設計: docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md）。
 # 文字数制御は rocketchat.sh 側の --budget（ルーム単位ドロップ）に委ねるため、
 # ここでのバイト位置切り詰めは行わない。
-rocketchat_log="$(bash "$SCRIPT_DIR/../lib/rocketchat.sh" \
+rocketchat_log="$(bash "$ROCKETCHAT_BIN" \
   --from "$target_date" --to "$target_date" \
   --budget "$MAX_RC_CHARS" 2>/dev/null || echo "(Rocket Chat: 取得失敗)")"
 
@@ -146,8 +167,8 @@ collect_git_log() {
       # 落ちる環境のため、システムローカル時刻（JST）に任せる
       lines="$(git -C "$repo" log \
         --author="$GIT_AUTHOR_RE" \
-        --since="${target_date}T00:00:00+09:00" \
-        --until="${target_date}T23:59:59+09:00" \
+        --since="$WINDOW_SINCE" \
+        --until="$WINDOW_UNTIL" \
         --date=format-local:'%H:%M' \
         --pretty=format:"%H - %ad [${branch}] %s" --shortstat 2>/dev/null \
         | sed -E 's/ Entire-Checkpoint: [0-9a-f]+//' \
@@ -206,14 +227,42 @@ $(printf '%s' "${bodies[$j]}" | sort)
   fi
 }
 
-# セッション要約が1件も無い日は送信しない（PCを使わない日＝作業していない日）。
+# 日次の切り出し要約を作る。失敗しても続行する（失敗した sid は既存要約で埋める）
+while IFS= read -r line; do
+  [ -n "$line" ] && log "slice: $line"
+done < <(bash "$SLICE_BIN" "$target_date" 2>&1 || true)
+
+# md ファイルを列挙する（find -name '*.md'。.dotfiles-<sid8>.md のような隠しファイルを glob は拾えない）
+# list_md <dir>
+list_md() {
+  [ -d "$1" ] || return 0
+  find "$1" -maxdepth 1 -name '*.md' 2>/dev/null | sort || true
+}
+
+# 要約の材料を決める。切り出しがあれば切り出し＋.failed の sid の既存要約、
+# 無ければ今どおり sessions/<date>/。
+material_files=()
+slice_dir="$SLICES_ROOT/$target_date"
+while IFS= read -r f; do [ -n "$f" ] && material_files+=("$f"); done < <(list_md "$slice_dir")
+if [ "${#material_files[@]}" -gt 0 ]; then
+  if [ -f "$slice_dir/.failed" ]; then
+    while IFS= read -r sid; do
+      [ -n "$sid" ] || continue
+      while IFS= read -r f; do [ -n "$f" ] && material_files+=("$f"); done \
+        < <(find "$SESSIONS_ROOT" -maxdepth 2 -name "*-${sid}.md" 2>/dev/null | sort || true)
+    done < "$slice_dir/.failed"
+  fi
+else
+  while IFS= read -r f; do [ -n "$f" ] && material_files+=("$f"); done < <(list_md "$SESSIONS_ROOT/$target_date")
+fi
+
+# 材料が1件も無い日は送信しない（PCを使わない日＝作業していない日）。
 #
-# ここで明示的に判定するのは、この先の find がディレクトリ不在で終了コード1を返し、
+# ここで明示的に判定するのは、find がディレクトリ不在で終了コード1を返し、
 # pipefail + set -e でスクリプトが黙って即死していたため（2026-08-11 に発生。
 # ログに成功も失敗も残らず、休日なのかバグなのか区別できなかった）。
 # 「実行しない」ことは正常だが、それを記録せずエラー終了するのは正常ではない。
-if [ ! -d "$SESSIONS_ROOT/$target_date" ] \
-   || [ -z "$(find "$SESSIONS_ROOT/$target_date" -maxdepth 1 -name '*.md' -print -quit 2>/dev/null)" ]; then
+if [ "${#material_files[@]}" -eq 0 ]; then
   log "skip: セッション要約なし（$target_date は作業記録がないため送信しない）"
   exit 0
 fi
@@ -224,7 +273,7 @@ fi
 # 整理済みメールは life リポジトリにも保存し、業務履歴そのものを資産として残す。
 # archive 側が要約を生成するので、その出力をそのままペイロードにも使う
 # （同じ内容を二度生成しない）。archive が失敗しても日報は続行する。
-mail_file="$(bash "$SCRIPT_DIR/../lib/thunderbird-archive.sh" "$target_date" 2>/dev/null || true)"
+mail_file="$(bash "$MAIL_ARCHIVE_BIN" "$target_date" 2>/dev/null || true)"
 if [ -n "$mail_file" ] && [ -f "$mail_file" ]; then
   # 見出し行（"# YYYY-MM-DD のメール"）を除いた本文を使う
   mail_log="$(tail -n +2 "$mail_file" | sed '/^[[:space:]]*$/d')"
@@ -242,18 +291,19 @@ if [ "${#git_log}" -gt "$MAX_GIT_CHARS" ]; then
 （※ git活動が長いため切り詰め）"
 fi
 
-# 当日のセッション要約を新しい方から keep 件だけ連結する（古い方を落とす）
+# セッション要約を終了時刻の新しい方から keep 件だけ連結する（古い方を落とす）
 # daily-review-auto.sh の見出し形式（## <project> — <HH:MM>）を踏襲
 build_sessions() {
   local keep="$1" out="" sf proj end_ts end_hm body
   local files=()
-  while IFS= read -r sf; do files+=("$sf"); done \
-    < <(find "$SESSIONS_ROOT/$target_date" -maxdepth 1 -name '*.md' 2>/dev/null | sort)
+  # 終了時刻（epoch）で並べる。切り出しと失敗 sid の既存要約が混ざるため、ファイル名順は使えない
+  while IFS= read -r sf; do files+=("$sf"); done < <(
+    for sf in "${material_files[@]}"; do
+      end_ts="$(sed -n 's/^end: //p' "$sf" | head -1)"
+      printf '%s\t%s\n' "$(date -d "$end_ts" +%s 2>/dev/null || echo 0)" "$sf"
+    done | sort -n -k1,1 | cut -f2-
+  )
   local total="${#files[@]}"
-  if [ "$total" -eq 0 ]; then
-    echo "(本日のセッション要約なし)"
-    return
-  fi
   local start=$((total - keep))
   [ "$start" -lt 0 ] && start=0
   [ "$start" -gt 0 ] && out="（※ 容量制限のため古い ${start} セッションを省略）
@@ -278,19 +328,25 @@ ${body}
 
 "
   done
+  if [ -z "$out" ]; then
+    echo "(本日のセッション要約なし)"
+    return
+  fi
   printf '%s' "$out"
 }
 
+header="【対象日】${target_date}
+【区切り】${WINDOW_SINCE} 〜 ${WINDOW_UNTIL}（セッション要約はこの範囲のやりとりだけを要約済み）"
+if [ "$overwrite" -eq 1 ]; then
+  header="${header}
+【再生成モード】上書き（既存の「📝 サマリー」は引き継がず、このペイロードだけで作り直す）"
+fi
+
 # 予算に収まるまで古いセッションから落とす
-# find はディレクトリ不在時に終了コード1を返し、pipefail 下ではパイプ全体が
-# 失敗する（2>/dev/null はメッセージを消すだけで終了コードは消せない）。
-# 上のガードで到達しないはずだが、二重に守る。
-session_count="$(find "$SESSIONS_ROOT/$target_date" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l || true)"
-keep="$session_count"
-[ "$keep" -eq 0 ] && keep=1
+keep="${#material_files[@]}"
 while :; do
   session_summaries="$(build_sessions "$keep")"
-  payload="【対象日】${target_date}
+  payload="${header}
 
 【git活動（当日コミット・ローカル収集）】
 ${git_log}
@@ -313,6 +369,10 @@ done
 
 # redaction（送信前の最終ガード）
 payload="$(printf '%s' "$payload" | bash "$REDACT")"
+
+# 送ったペイロードを残す（dry-run でも保存する。後から検証できるように）
+mkdir -p "$SLICES_ROOT/$target_date"
+printf '%s\n' "$payload" > "$SLICES_ROOT/$target_date/payload.txt"
 
 if [ "$dry_run" -eq 1 ]; then
   printf '%s\n' "$payload"
