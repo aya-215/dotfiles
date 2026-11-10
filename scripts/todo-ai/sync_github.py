@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """GitHub の PR/Issue の状態から、マージ・クローズ済みの行を完了へ移す変更案を作る（AI なし）。"""
 import argparse
+import getpass
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -27,6 +29,22 @@ _token = None
 
 def warn(msg: str) -> None:
     print(f"warn: {msg}", file=sys.stderr)
+
+
+def ensure_gh_path(env=os.environ) -> None:
+    """cron の PATH には Nix の gh が無いので、見つからなければ Home Manager の bin を前に足す。"""
+    if shutil.which("gh", path=env.get("PATH")):
+        return
+    home = env.get("HOME") or str(Path.home())
+    user = env.get("USER") or getpass.getuser()
+    dirs = [f"{home}/.nix-profile/bin", f"/etc/profiles/per-user/{user}/bin"]
+    env["PATH"] = ":".join(dirs + ([env["PATH"]] if env.get("PATH") else []))
+
+
+def load_records(todo: Path) -> "list[dict]":
+    """判断記録に、まだ記録していない人の戻しを足したもの（書かない。記録は次の apply が行う）。"""
+    records = decisions.load(todo.parent / decisions.DECISIONS_NAME)
+    return records + decisions.detect_reverts(todo.parent, todo.name, records)
 
 
 def get_token() -> "str | None":
@@ -86,7 +104,7 @@ def build_ops(doc: todo_md.Doc, records: "list[dict]", fetch) -> "list[dict]":
                     continue
                 warn(f"未知のリポジトリ略称: {it.key}")
                 continue
-            if decisions.is_pinned(records, it.ref):
+            if decisions.is_pinned(records, it.ref, "完了"):
                 continue
             st = fetch(repo, int(num))
             if st not in ("merged", "closed"):
@@ -103,8 +121,10 @@ def main(argv=None) -> int:
     p.add_argument("--todo", type=Path)
     p.add_argument("--dry-run", action="store_true")
     a = p.parse_args(argv)
-    todo = a.todo or Path(os.environ.get("TODO_MD_PATH") or Path.home() / "memo" / "todo.md")
+    todo = (a.todo or Path(os.environ.get("TODO_MD_PATH") or Path.home() / "memo" / "todo.md")).expanduser().absolute()
 
+    os.environ.setdefault("LANG", "C.UTF-8")
+    ensure_gh_path()
     _token = get_token()
     if not _token:
         print(f"error: gh auth token --user {ACCOUNT} に失敗", file=sys.stderr)
@@ -114,7 +134,7 @@ def main(argv=None) -> int:
     except (OSError, todo_md.ParseError) as e:
         print(f"error: {todo}: {e}", file=sys.stderr)
         return 1
-    records = decisions.load(todo.parent / decisions.DECISIONS_NAME)
+    records = load_records(todo)
 
     ops = build_ops(doc, records, fetch_state)
     changes = {"source": "sync", "ops": ops}

@@ -61,6 +61,14 @@ class Doc:
     )
 
 
+def split_lines(text: str) -> "list[str]":
+    """LF と CRLF だけで行に分ける。str.splitlines は U+2028 や \\x0c でも割り、タイトルが別の行になる。"""
+    lines = text.split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return [l[:-1] if l.endswith("\r") else l for l in lines]
+
+
 def _parse_item(line: str, lineno: int) -> Item:
     m = _TASK.match(line)
     if not m:
@@ -90,7 +98,7 @@ def parse(text: str) -> Doc:
     current = None
     seen = []
     confirm = []
-    for n, line in enumerate(text.splitlines(), 1):
+    for n, line in enumerate(split_lines(text), 1):
         if line.startswith("## "):
             name = line[3:].strip()
             if name not in HEADINGS:

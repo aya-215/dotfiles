@@ -26,7 +26,7 @@ def origin_of(repo: Path, path: str, title: str) -> str:
             current = _git(repo, "show", f"HEAD:{path}")
         except ValueError:
             return "human"
-    if sum(1 for line in current.splitlines() if title in line) > 1:
+    if sum(1 for line in current.split("\n") if title in line) > 1:
         return "human"
     try:
         out = _git(repo, "log", "-S" + title, "--reverse", "--format=%s", "--", path)

@@ -241,6 +241,74 @@ class ApplyChangesTest(unittest.TestCase):
                 {"op": "move", "ref": "epc#1", "to": "やる"},
                 {"op": "move", "ref": "epc#2", "to": "完了"}]}, human, TODAY)
 
+    def test_keyless_add_not_blocked_by_done_row_with_same_title(self):
+        doc = todo_md.parse(BASE.replace("## 完了\n", "## 完了\n- [x] 見積もり送付 (done: 2026-11-01)\n"))
+        new, body = apply_changes(doc, {"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "title": "見積もり送付", "reason": "is_task 回答 A"}]}, human, TODAY)
+        self.assertEqual(titles(new, "やる")[-1], "見積もり送付")
+        self.assertEqual(titles(new, "完了")[0], "見積もり送付")
+        self.assertEqual(validate(doc, new, human, "ai") + apply.roundtrip_errors(new), [])
+        self.assertNotIn("skip: duplicate title:見積もり送付", body)
+
+    def test_keyless_add_duplicate_in_open_sections_skipped(self):
+        new, body = self.run_ops([{"op": "add", "section": "待ち", "title": "インターン資料修正"}])
+        self.assertEqual(titles(new, "待ち"), ["坂西さんの対応"])
+        self.assertIn("skip: duplicate title:インターン資料修正", body)
+
+    def test_keyed_add_duplicate_in_done_still_skipped(self):
+        new, body = self.run_ops([{"op": "add", "section": "やる", "key": "epc#1100",
+                                   "url": "https://github.com/x/epc/pull/1100", "title": "済んだ"}])
+        self.assertIn("skip: duplicate epc#1100", body)
+
+    def test_rejected_key_not_added_or_attached(self):
+        recs = [{"ref": "epc#1300", "kind": "reject_add", "value": "やる", "by": "human"}]
+        new, body = apply_changes(self.doc, {"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "key": "epc#1300", "url": "https://g/1300", "title": "x"},
+            {"op": "attach", "ref": "title:インターン資料修正", "key": "epc#1300", "url": "https://g/1300"},
+        ]}, human, TODAY, recs)
+        self.assertEqual(new.sections, self.doc.sections)
+        self.assertEqual(body.count("skip: rejected epc#1300"), 2)
+
+    def test_pin_applies_to_ai_and_only_to_the_undone_destination(self):
+        recs = [{"ref": "epc#1202", "kind": "revert_move", "value": "やる", "from": "やる", "to": "待ち"}]
+        new, body = apply_changes(self.doc, {"source": "ai", "ops": [
+            {"op": "move", "ref": "epc#1202", "to": "待ち"}]}, human, TODAY, recs)
+        self.assertIn("epc#1202", [it.key for it in new.sections["やる"]])
+        self.assertIn("skip: pinned epc#1202", body)
+        new, body = apply_changes(self.doc, {"source": "sync", "ops": [
+            {"op": "move", "ref": "epc#1202", "to": "完了"}]}, human, TODAY, recs)
+        self.assertEqual(new.sections["完了"][0].key, "epc#1202")
+
+    def answered_doc(self):
+        self.doc.confirm = ["1. これはタスク？ [is_task title:見積もり]", "   事実: f", "   選択: A 追加 / B 不要",
+                            "   回答: B"]
+        return [{"ref": "title:見積もり", "kind": "is_task", "question": "これはタスク？", "facts": "f",
+                 "options": [{"label": "A", "text": "追加"}, {"label": "B", "text": "不要"}]},
+                {"ref": "epc#1202", "kind": "policy", "question": "方針？", "facts": "g",
+                 "options": [{"label": "A", "text": "x", "recommended": True}]}]
+
+    def test_confirm_entry_answered_in_this_run_is_dropped(self):
+        entries = self.answered_doc()
+        new, body = self.run_ops([], confirm=entries)
+        self.assertEqual(new.confirm, ["1. 方針？ [policy epc#1202]", "   事実: g", "   選択: A x（おすすめ）", "   回答:"])
+        self.assertIn("skip: answered is_task title:見積もり", body)
+        self.assertIn("confirm: 1 件", body)
+
+    def test_confirm_entry_already_recorded_is_dropped(self):
+        entries = self.answered_doc()[1:]
+        recs = [{"ref": "epc#1202", "kind": "policy", "value": "A", "by": "human"},
+                {"ref": "epc#1163", "kind": "revert_move", "value": "やる", "by": "human"}]
+        new, body = apply_changes(self.doc, {"source": "ai", "ops": [], "confirm": entries + [
+            {"ref": "epc#1163", "kind": "policy", "question": "別？", "options": [{"label": "A", "text": "y"}]}]},
+            human, TODAY, recs)
+        self.assertEqual(new.confirm[0], "1. 別？ [policy epc#1163]")
+        self.assertEqual(len(new.confirm), 4)
+        self.assertIn("skip: answered policy epc#1202", body)
+
+    def test_title_with_unicode_line_separator_roundtrips(self):
+        new, _ = self.run_ops([{"op": "add", "section": "やる", "title": "a\u2028b\x0cc"}])
+        self.assertEqual(apply.roundtrip_errors(new), [])
+
     def test_confirm_absent_keeps_section(self):
         self.doc.confirm = ["1. 問い", "   回答: A"]
         new, _ = self.run_ops([], source="sync")

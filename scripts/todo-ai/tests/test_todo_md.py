@@ -54,6 +54,17 @@ class TestTodoMd(unittest.TestCase):
         it = parse(t).sections["やる"][0]
         self.assertEqual((it.title, it.next), ("a — next: b", "c"))
 
+    def test_unicode_line_separators_in_title_roundtrip(self):
+        for ch in ("\u2028", "\u2029", "\x0c", "\x0b", "\x1c", "\x85"):
+            t = mk().replace("## やる\n", f"## やる\n- [ ] a{ch}b [epc#1](https://g/1)\n")
+            d = parse(t)
+            self.assertEqual([it.title for it in d.sections["やる"]], [f"a{ch}b"], repr(ch))
+            self.assertEqual(render(d), t, repr(ch))
+
+    def test_crlf_lines_still_parse(self):
+        d = parse(SAMPLE.replace("\n", "\r\n"))
+        self.assertEqual(render(d), SAMPLE)
+
     def test_done_date(self):
         it = parse(SAMPLE).sections["完了"][0]
         self.assertTrue(it.done)

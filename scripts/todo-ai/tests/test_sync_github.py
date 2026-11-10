@@ -41,6 +41,15 @@ class BuildOps(unittest.TestCase):
         ops = self.ops(doc(yaru=line("epc#1")), {("ebase-portal-chat", 1): "merged"}, pinned=["epc#1"])
         self.assertEqual(ops, [])
 
+    def test_pin_on_wait_does_not_block_done(self):
+        recs = [{"ref": "epc#1", "kind": "revert_move", "value": "やる", "from": "やる", "to": "待ち"}]
+        ops = sync_github.build_ops(doc(yaru=line("epc#1")), recs, lambda r, n: "merged")
+        self.assertEqual([(o["ref"], o["to"]) for o in ops], [("epc#1", "完了")])
+
+    def test_pin_on_done_blocks(self):
+        recs = [{"ref": "epc#1", "kind": "revert_move", "value": "やる", "from": "やる", "to": "完了"}]
+        self.assertEqual(sync_github.build_ops(doc(yaru=line("epc#1")), recs, lambda r, n: "merged"), [])
+
     def test_gitbucket_keys_ignored(self):
         calls = []
         d = doc(yaru=line("gb:repo#3"))
@@ -57,6 +66,65 @@ class BuildOps(unittest.TestCase):
         self.assertEqual(sync_github.REPOS, {
             "epc": "ebase-portal-chat", "emm": "ebase-middleware-mcp",
             "eae": "eb-api-extended", "eas": "ebase-agent-specs"})
+
+
+class GhPath(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self._t = tempfile.TemporaryDirectory()
+        self.addCleanup(self._t.cleanup)
+        self.home = Path(self._t.name)
+
+    def fake_gh(self, d):
+        d.mkdir(parents=True)
+        gh = d / "gh"
+        gh.write_text("#!/bin/sh\n")
+        gh.chmod(0o755)
+        return gh
+
+    def test_nix_profile_prepended_when_gh_not_on_path(self):
+        import shutil
+        gh = self.fake_gh(self.home / ".nix-profile" / "bin")
+        env = {"PATH": "/nonexistent", "HOME": str(self.home), "USER": "nobody"}
+        sync_github.ensure_gh_path(env)
+        self.assertEqual(env["PATH"].split(":"),
+                         [str(self.home / ".nix-profile" / "bin"), "/etc/profiles/per-user/nobody/bin", "/nonexistent"])
+        self.assertEqual(shutil.which("gh", path=env["PATH"]), str(gh))
+
+    def test_user_falls_back_when_unset(self):
+        import getpass
+        env = {"PATH": "/nonexistent", "HOME": str(self.home)}
+        sync_github.ensure_gh_path(env)
+        self.assertIn(f"/etc/profiles/per-user/{getpass.getuser()}/bin", env["PATH"].split(":"))
+
+    def test_path_untouched_when_gh_found(self):
+        self.fake_gh(self.home / "bin")
+        env = {"PATH": str(self.home / "bin"), "HOME": str(self.home)}
+        sync_github.ensure_gh_path(env)
+        self.assertEqual(env["PATH"], str(self.home / "bin"))
+
+
+class LoadRecords(unittest.TestCase):
+    def test_unrecorded_revert_is_merged(self):
+        import subprocess, tempfile
+        with tempfile.TemporaryDirectory() as t:
+            repo = Path(t)
+            todo = repo / "todo.md"
+
+            def commit(text, msg):
+                todo.write_text(text, encoding="utf-8")
+                subprocess.run(["git", "-C", t, "-c", "user.name=t", "-c", "user.email=t@t", "add", "todo.md"], check=True)
+                subprocess.run(["git", "-C", t, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", msg],
+                               check=True)
+
+            subprocess.run(["git", "-C", t, "init", "-q"], check=True)
+            base = f"## 確認待ち\n\n## やる\n{line('epc#1')}\n## 待ち\n\n## 完了\n"
+            commit(base, "todo: base")
+            commit(f"## 確認待ち\n\n## やる\n\n## 待ち\n{line('epc#1')}\n## 完了\n", "todo(sync): 移動")
+            commit(base, "todo: 戻した")
+            recs = sync_github.load_records(todo)
+            self.assertTrue(sync_github.decisions.is_pinned(recs, "epc#1", "待ち"))
+            self.assertFalse((repo / "todo-decisions.jsonl").exists())
 
 
 class StateOf(unittest.TestCase):
@@ -82,6 +150,7 @@ class Main(unittest.TestCase):
         from unittest import mock
         with mock.patch.object(sync_github, "get_token", return_value=token), \
              mock.patch.object(sync_github, "fetch_state", return_value=state), \
+             mock.patch.object(sync_github, "load_records", return_value=[]), \
              mock.patch.object(sync_github.subprocess, "run") as run:
             run.return_value.returncode = 3
             rc = sync_github.main(["--todo", str(self.todo), *extra])

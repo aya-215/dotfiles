@@ -189,11 +189,13 @@ def _render_confirm(entries: list) -> "list[str]":
 
 
 def apply_changes(
-    doc: Doc, changes: dict, origins: Callable[[str], str], today: str, pinned=frozenset()
+    doc: Doc, changes: dict, origins: Callable[[str], str], today: str, records: "list[dict]" = ()
 ) -> "tuple[Doc, list[str]]":
     """変更案を適用した新しい Doc とコミット本文の行を返す（doc は変更しない）。
 
     存在しない・複数に当たる ref への op はその op だけ飛ばし `skip: ...` を本文に残す。
+    records（判断記録。未記録の戻しも含めて渡す）に従い、人が消した key の add/attach、
+    人が戻した移動先への move、回答済みの (ref, kind) の確認待ちも飛ばす。source を問わない。
     変更案の形が不正なら ChangeError。人のタイトル保護などの結果の検証は validate が行う。
     origins は現状の op では使わない（タイトルを書き換える op が無いため）。
     """
@@ -227,7 +229,11 @@ def apply_changes(
             key = _key(op) if op.get("key") is not None else None
             nxt = _str(op, "next", required=False)
             it = Item(title, key, op.get("url") if key else None, nxt or None)
-            if _find(doc, it.ref):
+            if key and decisions.is_rejected(records, key):
+                body.append(f"skip: rejected {key}")
+                continue
+            # key の無い行は is_task の「追加」の回答で足すので、同じ題の完了行があっても新しい作業として足す
+            if any(s in (TASK_SECTIONS if key else OPEN_SECTIONS) for s, _ in _find(doc, it.ref)):
                 body.append(f"skip: duplicate {it.ref}")
                 continue
             doc.sections[section].append(it)
@@ -236,11 +242,11 @@ def apply_changes(
             ref, to = _str(op, "ref"), op.get("to")
             if to not in TASK_SECTIONS:
                 raise ChangeError(f"move: to が不正: {to!r}")
-            if source == "sync" and ref in pinned:
-                body.append(f"skip: pinned {ref}")
-                continue
             loc = locate(ref)
             if loc is None or loc[0] == to:
+                continue
+            if decisions.is_pinned(records, ref, to):
+                body.append(f"skip: pinned {ref}")
                 continue
             if loc[0] == "完了":
                 raise ChangeError(f"{source} は完了から戻せない: {ref}")
@@ -270,6 +276,9 @@ def apply_changes(
             it = doc.sections[loc[0]][loc[1]]
             if it.key:
                 body.append(f"skip: already linked {ref}")
+                continue
+            if decisions.is_rejected(records, key):
+                body.append(f"skip: rejected {key}")
                 continue
             if _find(doc, key):
                 body.append(f"skip: duplicate {key}")
@@ -307,13 +316,21 @@ def apply_changes(
         if not isinstance(entries, list) or not isinstance(answered, (list, type(None))):
             raise ChangeError("confirm/answered が配列でない")
         old_blocks = parse_confirm(doc.confirm)
-        answer_records(old_blocks)
+        done = {(ref, kind) for ref, kind, _ in answer_records(old_blocks)}
+        done |= {(r.get("ref"), r.get("kind")) for r in records
+                 if r.get("kind") in KINDS and r.get("by", "human") == "human"}
         if answered is not None:
             _check_answers(old_blocks, answered)
-        new_confirm = _render_confirm(entries)
+        kept = []
+        for e in entries:
+            if isinstance(e, dict) and (e.get("ref"), e.get("kind")) in done:
+                body.append(f"skip: answered {e['kind']} {e['ref']}")
+            else:
+                kept.append(e)
+        new_confirm = _render_confirm(kept)
         if new_confirm != doc.confirm:
             doc.confirm = new_confirm
-            body.append(f"confirm: {len(entries)} 件")
+            body.append(f"confirm: {len(kept)} 件")
             # decisions に記録されるまでは、コミット本文が人の回答の唯一の控えになる
             for b in old_blocks:
                 if b["回答"].strip():
@@ -537,8 +554,8 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
             before = todo_md.parse(text)
             old_records = decisions.load(dpath)
             new_records = decisions.detect_reverts(repo, name, old_records)
-            pinned = {r["ref"] for r in old_records + new_records if r.get("kind") == "revert_move"}
-            after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today, pinned)
+            after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today,
+                                        old_records + new_records)
         except ValueError as e:
             print(f"apply: 未適用: {e}", file=sys.stderr)
             return 2

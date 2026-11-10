@@ -6,7 +6,8 @@
 
 出力:
   items           やる・待ち・完了の各行（ref, section, title, key, url, next, done, done_date,
-                  origin, added_date, age_days, pinned）
+                  origin, added_date, age_days, pinned_to）。pinned_to は人が戻したため
+                  その行を移してはいけないセクション
   confirm_blocks  確認待ちの各ブロック（number, ref, kind, question, facts, options, answer）。
                   ref/kind は apply.py が書いた問い末尾のタグから読み、question はタグを外したもの。
                   ref, kind, question, facts, options をそのまま confirm に写せば同じ行に戻る
@@ -15,6 +16,7 @@
   answered_refs   判断記録にある確認待ちへの回答（ref, kind, value, ts）
   rejected_refs   人が消した AI の追加（reject_add）の ref
   archived_keys   todo-archive/*.md に移った完了行の key
+pinned_to と rejected_refs には、まだ記録していない戻しも git 履歴から足す（ここでは書かない）。
 """
 import argparse
 import datetime
@@ -75,7 +77,7 @@ def archived_keys(repo: Path) -> "list[str]":
     keys = set()
     for p in sorted((Path(repo) / "todo-archive").glob("*.md")):
         try:
-            lines = p.read_text(encoding="utf-8").splitlines()
+            lines = todo_md.split_lines(p.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
         for n, line in enumerate(lines, 1):
@@ -100,6 +102,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
     repo, name = todo.parent, todo.name
     doc = todo_md.parse(todo.read_text(encoding="utf-8"))
     records = decisions.load(decisions_path)
+    records = records + decisions.detect_reverts(repo, name, records)
     t = datetime.date.fromisoformat(today)
 
     items = []
@@ -112,7 +115,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
                 "origin": origin_of(repo, name, it.title),
                 "added_date": added,
                 "age_days": (t - datetime.date.fromisoformat(added)).days if added else None,
-                "pinned": decisions.is_pinned(records, it.ref),
+                "pinned_to": decisions.pinned_sections(records, it.ref),
             })
 
     errors: "list[str]" = []

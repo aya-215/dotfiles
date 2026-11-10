@@ -94,8 +94,8 @@ class BuildTest(unittest.TestCase):
                       "todo(ai): add", date="2026-10-20")
         ctx = self.build()
         h = self.item(ctx, "title:手で書いた")
-        self.assertEqual((h["section"], h["origin"], h["added_date"], h["age_days"], h["pinned"]),
-                         ("やる", "human", "2026-10-01", 40, False))
+        self.assertEqual((h["section"], h["origin"], h["added_date"], h["age_days"], h["pinned_to"]),
+                         ("やる", "human", "2026-10-01", 40, []))
         a = self.item(ctx, "rc:abc")
         self.assertEqual((a["section"], a["origin"], a["added_date"], a["age_days"], a["key"], a["next"]),
                          ("待ち", "ai", "2026-10-20", 21, "rc:abc", "待つ"))
@@ -135,7 +135,26 @@ class BuildTest(unittest.TestCase):
         self.r.commit(doc(done="- [x] 済 [epc#1](https://g/1) (done: 2026-11-02)\n"), "todo: base")
         ctx = self.build([{"ts": "t", "ref": "epc#1", "kind": "revert_move", "value": "やる", "by": "human"}])
         h = self.item(ctx, "epc#1")
-        self.assertEqual((h["section"], h["done"], h["done_date"], h["pinned"]), ("完了", True, "2026-11-02", True))
+        self.assertEqual((h["section"], h["done"], h["done_date"], h["pinned_to"]),
+                         ("完了", True, "2026-11-02", ["待ち", "完了"]))
+
+    def test_pinned_to_is_the_undone_destination(self):
+        self.r.commit(doc(yaru="- [ ] 調査 [epc#1](https://g/1)\n"), "todo: base")
+        ctx = self.build([{"ts": "t", "ref": "epc#1", "kind": "revert_move", "value": "やる",
+                           "from": "やる", "to": "待ち", "by": "human"}])
+        self.assertEqual(self.item(ctx, "epc#1")["pinned_to"], ["待ち"])
+
+    def test_unrecorded_reverts_are_shown_but_not_written(self):
+        a = "- [ ] 調査 [epc#1](https://g/1)\n"
+        self.r.commit(doc(yaru=a), "todo: base")
+        self.r.commit(doc(matsu=a), "todo(ai): 移動1")
+        self.r.commit(doc(yaru=a), "todo: 戻した")
+        self.r.commit(doc(yaru=a + "- [ ] 追加 [epc#9](https://g/9)\n"), "todo(ai): 追加1")
+        self.r.commit(doc(yaru=a), "todo: 消した")
+        ctx = self.build()
+        self.assertEqual(self.item(ctx, "epc#1")["pinned_to"], ["待ち"])
+        self.assertEqual(ctx["rejected_refs"], ["epc#9"])
+        self.assertFalse((self.r.dir / "todo-decisions.jsonl").exists())
 
     def test_decision_lists(self):
         self.r.commit(doc(), "todo: base")

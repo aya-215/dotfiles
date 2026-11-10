@@ -104,6 +104,28 @@ class DetectReverts(unittest.TestCase):
         self.r.commit(doc(yaru=L), "todo: base")
         self.assertEqual(decisions.detect_reverts(self.r.dir, "todo.md"), [])
 
+    def test_second_revert_from_same_commit_recorded(self):
+        b = "- [ ] 別 [epc#2](https://g/2)\n"
+        dpath = self.r.dir / "todo-decisions.jsonl"
+        self.r.commit(doc(yaru=L + b), "todo: base")
+        self.r.commit(doc(matsu=L + b), "todo(ai): 移動2")
+        self.r.commit(doc(yaru=L, matsu=b), "todo: 1件戻した")
+        first = decisions.detect_reverts(self.r.dir, "todo.md")
+        self.assertEqual([x["ref"] for x in first], ["epc#1"])
+        decisions.append(dpath, first)
+        self.r.commit(doc(yaru=L + b), "todo: もう1件戻した")
+        second = decisions.detect_reverts(self.r.dir, "todo.md")
+        self.assertEqual([x["ref"] for x in second], ["epc#2"])
+        decisions.append(dpath, second)
+        self.assertEqual(decisions.detect_reverts(self.r.dir, "todo.md"), [])
+
+    def test_revert_move_keeps_undone_destination(self):
+        self.r.commit(doc(yaru=L), "todo: base")
+        self.r.commit(doc(matsu=L), "todo(ai): 移動1")
+        self.r.commit(doc(yaru=L), "todo: 戻した")
+        rec = decisions.detect_reverts(self.r.dir, "todo.md")[0]
+        self.assertEqual((rec["value"], rec["from"], rec["to"]), ("やる", "やる", "待ち"))
+
 
 class Records(unittest.TestCase):
     def test_load_append_pinned_answered(self):
@@ -114,10 +136,35 @@ class Records(unittest.TestCase):
             decisions.append(p, [{"ts": "y", "ref": "b", "kind": "policy", "value": "A", "by": "human"}])
             recs = decisions.load(p)
             self.assertEqual(len(recs), 2)
-            self.assertTrue(decisions.is_pinned(recs, "a"))
-            self.assertFalse(decisions.is_pinned(recs, "b"))
+            self.assertTrue(decisions.is_pinned(recs, "a", "待ち"))
+            self.assertFalse(decisions.is_pinned(recs, "b", "待ち"))
             self.assertEqual(decisions.already_answered(recs, "b", "policy")["value"], "A")
             self.assertIsNone(decisions.already_answered(recs, "b", "manual"))
+
+    def test_pin_blocks_only_the_undone_destination(self):
+        recs = [{"ref": "a", "kind": "revert_move", "value": "やる", "from": "やる", "to": "待ち", "by": "human"}]
+        self.assertTrue(decisions.is_pinned(recs, "a", "待ち"))
+        self.assertFalse(decisions.is_pinned(recs, "a", "完了"))
+        self.assertFalse(decisions.is_pinned(recs, "a", "やる"))
+        self.assertEqual(decisions.pinned_sections(recs, "a"), ["待ち"])
+        self.assertEqual(decisions.pinned_sections(recs, "b"), [])
+
+    def test_legacy_pin_without_destination_blocks_moves_away(self):
+        recs = [{"ref": "a", "kind": "revert_move", "value": "やる", "by": "human"}]
+        self.assertEqual(decisions.pinned_sections(recs, "a"), ["待ち", "完了"])
+        self.assertFalse(decisions.is_pinned(recs, "a", "やる"))
+
+    def test_is_rejected(self):
+        recs = [{"ref": "epc#9", "kind": "reject_add", "value": "やる"}, {"kind": "reject_add"}]
+        self.assertTrue(decisions.is_rejected(recs, "epc#9"))
+        self.assertFalse(decisions.is_rejected(recs, "epc#8"))
+
+    def test_load_keeps_unicode_line_separators_inside_a_record(self):
+        with tempfile.TemporaryDirectory() as t:
+            p = Path(t) / "d.jsonl"
+            decisions.append(p, [{"ref": "title:a\u2028b\x0cc", "kind": "is_task", "value": "A"},
+                                 {"ref": "epc#1", "kind": "policy", "value": "B"}])
+            self.assertEqual([r["ref"] for r in decisions.load(p)], ["title:a\u2028b\x0cc", "epc#1"])
 
 
 CONF = "1. 方針は？ [policy epc#1]\n   事実: f\n   選択: A x / B y\n   回答: A\n"
@@ -181,6 +228,88 @@ class ApplyIntegration(unittest.TestCase):
         res = self.run_apply({"source": "ai", "ops": [], "confirm": [], "answered": [{"answer": "A"}]})
         self.assertEqual(res.returncode, 2)
         self.assertFalse((self.r.dir / "todo-decisions.jsonl").exists())
+
+    def add_epc1(self):
+        return {"source": "ai", "ops": [{"op": "add", "section": "やる", "key": "epc#1", "url": "https://g/1",
+                                         "title": "調査", "reason": "r"}]}
+
+    def body(self):
+        return self.r.git("log", "-1", "--format=%b")
+
+    def test_ai_readd_of_rejected_key_skipped(self):
+        self.r.commit(doc(), "todo: base")
+        self.assertEqual(self.run_apply(self.add_epc1()).returncode, 0)
+        self.r.commit(doc(), "todo: 消した")
+        res = self.run_apply(self.add_epc1())
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("epc#1", self.r.todo.read_text(encoding="utf-8"))
+        self.assertIn("skip: rejected epc#1", self.body())
+        self.assertEqual([x["kind"] for x in decisions.load(self.r.dir / "todo-decisions.jsonl")], ["reject_add"])
+
+    def test_ai_attach_of_rejected_key_skipped(self):
+        self.r.commit(doc(), "todo: base")
+        self.assertEqual(self.run_apply(self.add_epc1()).returncode, 0)
+        self.r.commit(doc(yaru="- [ ] 手書き\n"), "todo: 消して手で書いた")
+        res = self.run_apply({"source": "ai", "ops": [
+            {"op": "attach", "ref": "title:手書き", "key": "epc#1", "url": "https://g/1", "reason": "r"}]})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("- [ ] 手書き\n", self.r.todo.read_text(encoding="utf-8"))
+        self.assertIn("skip: rejected epc#1", self.body())
+
+    def test_ai_move_of_pinned_ref_skipped(self):
+        self.r.commit(doc(yaru=L), "todo: base")
+        mv = {"source": "ai", "ops": [{"op": "move", "ref": "epc#1", "to": "待ち", "reason": "theirs"}]}
+        self.assertEqual(self.run_apply(mv).returncode, 0)
+        self.r.commit(doc(yaru=L), "todo: 戻した")
+        res = self.run_apply(mv)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## やる\n- [ ] 調査", self.r.todo.read_text(encoding="utf-8"))
+        self.assertIn("skip: pinned epc#1", self.body())
+
+    def test_pin_lets_sync_finish_a_pr_the_human_tabbed_back(self):
+        self.r.commit(doc(yaru=L), "todo: base")
+        to_wait = {"source": "ai", "ops": [{"op": "move", "ref": "epc#1", "to": "待ち", "reason": "theirs"}]}
+        self.assertEqual(self.run_apply(to_wait).returncode, 0)
+        self.r.commit(doc(yaru=L), "todo: Tab で戻した")
+        self.assertEqual(self.run_apply(to_wait).returncode, 0)
+        self.assertIn("## やる\n- [ ] 調査", self.r.todo.read_text(encoding="utf-8"))
+        self.assertIn("skip: pinned epc#1", self.body())
+        res = self.run_apply({"source": "sync", "ops": [
+            {"op": "move", "ref": "epc#1", "to": "完了", "reason": "GitHub 上でマージ済み"}]})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## 完了\n- [x] 調査 [epc#1](https://g/1) (done: 2026-11-10)", self.r.todo.read_text(encoding="utf-8"))
+        self.assertEqual(self.run_apply({"source": "ai", "ops": []}).returncode, 0)
+        self.assertEqual([x["kind"] for x in decisions.load(self.r.dir / "todo-decisions.jsonl")], ["revert_move"])
+
+    def test_pin_on_undone_done_blocks_sync(self):
+        self.r.commit(doc(yaru=L), "todo: base")
+        done = {"source": "sync", "ops": [{"op": "move", "ref": "epc#1", "to": "完了", "reason": "merged"}]}
+        self.assertEqual(self.run_apply(done).returncode, 0)
+        self.r.commit(doc(yaru=L), "todo: 完了から戻した")
+        res = self.run_apply(done)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## やる\n- [ ] 調査", self.r.todo.read_text(encoding="utf-8"))
+        self.assertIn("skip: pinned epc#1", self.body())
+
+    def test_answered_question_does_not_come_back(self):
+        self.r.commit(doc(yaru=L, confirm=CONF), "todo(ai): base")
+        again = {"ref": "epc#1", "kind": "policy", "question": "方針は？", "facts": "f",
+                 "options": [{"label": "A", "text": "x"}, {"label": "B", "text": "y"}]}
+        res = self.run_apply({"source": "ai", "ops": [], "confirm": [again]})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## 確認待ち\n\n## やる", self.r.todo.read_text(encoding="utf-8"))
+        res = self.run_apply({"source": "ai", "ops": [], "confirm": [again]})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## 確認待ち\n\n## やる", self.r.todo.read_text(encoding="utf-8"))
+        self.assertEqual(len(decisions.load(self.r.dir / "todo-decisions.jsonl")), 1)
+
+    def test_hand_edited_record_without_ref_does_not_crash(self):
+        self.r.commit(doc(yaru=L), "todo: base")
+        (self.r.dir / "todo-decisions.jsonl").write_text(
+            '{"kind": "revert_move", "value": "やる"}\n{"kind": "reject_add"}\n', encoding="utf-8")
+        res = self.run_apply({"source": "ai", "ops": [{"op": "move", "ref": "epc#1", "to": "待ち"}]})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("## 待ち\n- [ ] 調査", self.r.todo.read_text(encoding="utf-8"))
 
     def test_not_recorded_on_validation_failure(self):
         self.r.commit(doc(yaru=L, confirm=CONF), "todo(ai): base")
