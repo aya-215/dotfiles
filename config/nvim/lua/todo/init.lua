@@ -52,7 +52,26 @@ function M.commit()
   vim.system({ "git", "-C", dir, "commit", "-q", "-m", "todo: " .. os.date("%Y-%m-%d %H:%M"), "--", name }):wait()
 end
 
+-- 編集中は apply.py が書き込みをスキップするためのロック。中身は PID で、落ちて残っても生死判定で無視される
+local function lock_path()
+  return vim.fn.fnamemodify(M.path, ":h") .. "/.todo.lock"
+end
+
+function M.lock()
+  vim.fn.writefile({ tostring(vim.fn.getpid()) }, lock_path())
+end
+
+-- 他の nvim が置いたロックは消さない
+function M.unlock()
+  local f = lock_path()
+  local ok, content = pcall(vim.fn.readfile, f)
+  if ok and content[1] == tostring(vim.fn.getpid()) then
+    vim.fn.delete(f)
+  end
+end
+
 local function quit()
+  M.unlock()
   vim.cmd("exit")
   M.commit()
 end
@@ -65,14 +84,14 @@ function M._insert_task(above)
   vim.cmd.startinsert({ bang = true })
 end
 
--- expr マップ用: 完了エリアでは素の o/O、未完了エリアでは "- [ ] " 付きの新規行
+-- expr マップ用: 完了・確認待ちエリアでは素の o/O、未完了エリアでは "- [ ] " 付きの新規行
 -- (expr 内ではバッファを変更できないため挿入は <Cmd> 経由で行う)
 local function new_task(above)
   local core = require("todo.core")
   local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
   local row = vim.api.nvim_win_get_cursor(0)[1]
   local heading = core.find_done_heading(lines)
-  if heading and row >= heading then
+  if (heading and row >= heading) or core.in_confirm_area(lines, row) then
     return above and "O" or "o"
   end
   return ("<Cmd>lua require('todo')._insert_task(%s)<CR>"):format(tostring(above))
@@ -104,12 +123,14 @@ function M.setup()
     pattern = M.path,
     callback = function(ev)
       attach(ev.buf)
+      M.lock()
     end,
   })
   -- :q / :wq で抜けた場合の保険
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,
     callback = function()
+      M.unlock()
       if vim.fn.bufnr(M.path) ~= -1 and vim.fn.filereadable(M.path) == 1 then
         M.commit()
       end
