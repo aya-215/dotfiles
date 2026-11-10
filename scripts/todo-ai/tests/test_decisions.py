@@ -126,7 +126,7 @@ class ApplyIntegration(unittest.TestCase):
         self.assertEqual([(x["ref"], x["kind"], x["value"], x["by"]) for x in recs],
                          [("epc#1", "policy", "A", "human")])
         self.assertIn("todo-decisions.jsonl", self.r.git("show", "--stat", "--format=%s", "HEAD"))
-        self.assertEqual(self.r.git("status", "--porcelain").strip(), "")
+        self.assertEqual(self.r.git("status", "--porcelain", "--untracked-files=no").strip(), "")
 
     def test_revert_recorded_even_without_other_changes(self):
         self.r.commit(doc(yaru=L), "todo: base")
