@@ -60,7 +60,7 @@ class OriginTest(unittest.TestCase):
     def test_invalid_utf8_worktree_falls_back_to_head(self):
         self.commit("- [ ] ai one\n", "todo(ai): add")
         self.f.write_bytes("- [ ] ai one\n- [ ] 日本語\n".encode("shift_jis"))
-        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
+        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "ai")
 
     def test_invalid_utf8_in_head_too_is_human(self):
         self.f.write_bytes("- [ ] ai one 日本語\n".encode("shift_jis"))
