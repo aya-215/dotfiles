@@ -7,7 +7,7 @@ Claude Code の画面や挙動を変える自作 mod（function hooks plugin）�
 |---|---|---|
 | `session-autoname` | 対話セッションに色と、会話内容から作った名前を自動で付ける | [session-autoname/README.md](session-autoname/README.md) |
 | `session-memo` | （無効化中。`CLAUDE_CODE_PLUGIN_DIRS` から外してある）会話ごとの作業メモを、プロンプト上の帯と `/note` のパネルで扱う | [session-memo/README.md](session-memo/README.md) |
-| `prompt-cache-control` | （外部製）プロンプトキャッシュの hit 率と期限切れまでの残り時間を、プロンプト上の帯と `/cache` のパネルに出す。取得元は [davila7/claude-code-templates](https://github.com/davila7/claude-code-templates) の `cli-tool/components/mods/observability/prompt-cache-control`（commit `a6e6f93`、MIT）。`tsconfig.json` と `.gitignore` を足し、帯の `read`/`wrote`/`new` が縦に積まれて3行になるのを `hooks/prompt-cache-control.tsx` の Fragment を横並びの `Box` に替えて直した。入力欄の下の表示（`status: true`、`shortLine`）は帯と同じ中身を出すように書き換え、上の帯は `band: false` で消している。更新は取得元から丸ごと差し替え、この修正が取り込まれていなければ当て直す | [prompt-cache-control/README.md](prompt-cache-control/README.md) |
+| `prompt-cache-control` | （外部製）プロンプトキャッシュの hit 率と期限切れまでの残り時間を、プロンプト上の帯と `/cache` のパネルに出す。取得元は [davila7/claude-code-templates](https://github.com/davila7/claude-code-templates) の `cli-tool/components/mods/observability/prompt-cache-control`（commit `a6e6f93`、MIT）。`tsconfig.json` と `.gitignore` を足し、帯の `read`/`wrote`/`new` が縦に積まれて3行になるのを `hooks/prompt-cache-control.tsx` の Fragment を横並びの `Box` に替えて直した。更新は取得元から丸ごと差し替え、この修正が取り込まれていなければ当て直す | [prompt-cache-control/README.md](prompt-cache-control/README.md) |
 
 `prompt-rail`（プロンプトの一覧をレールで出す外部製 mod）はここに置かず、`claude plugin install prompt-rail@oikon48` でマーケットプレイスから入れている。
 

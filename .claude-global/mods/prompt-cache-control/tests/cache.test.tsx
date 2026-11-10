@@ -232,7 +232,7 @@ describe('the band', () => {
     expect(texts.at(-1)).toBe('beneath')
     expect(texts.slice(0, -1).some(t => /98%/.test(t))).toBe(true)
     await ui.unmount()
-    expect(calls.status.at(-1)).toMatch(/^● cache \S{10} 98% read 80k wrote 1k new 300 ⏱ [45]:\d\d 5m · warm/)
+    expect(calls.status.at(-1)).toMatch(/^cache 98% · [45]:\d\d$/)
   })
 
   test('a subagent request is not the main loop and leaves the meter alone', { options: { status: true } }, async ($, on) => {

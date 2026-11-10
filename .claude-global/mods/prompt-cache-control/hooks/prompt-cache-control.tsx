@@ -124,19 +124,11 @@ const COLOR: Record<Advice['kind'], string | undefined> = {
 }
 
 function shortLine(policy: Policy, now: number): string {
-  const { last, advice, left, idleAt: nextIdle } = current(policy, now)
+  const { last, advice, left } = current(policy, now)
   if (!last || advice.kind === 'off') return `cache: ${advice.text}`
-  const ratio = hitRatio(last)
-  const icon = advice.kind === 'warm' ? '●' : advice.kind === 'soon' ? '▲' : advice.kind === 'cold' || advice.kind === 'uncached' ? '○' : '✖'
-  const counts = `read ${fmtTokens(last.read)} wrote ${fmtTokens(last.write)} new ${fmtTokens(last.fresh)}`
-  const clock = advice.kind !== 'uncached' && advice.kind !== 'cold' ? ` ⏱ ${left > 0 ? fmtClock(left) : '0:00'}` : ''
-  const idleAt = showIdleLine ? nextIdle : undefined
-  const idlePart = idleAt !== undefined ? ` ${idleClock(idleAt, now)}` : ''
-  const tail = idleAt !== undefined ? (idleAt > now ? 'left idle, Claude Code compacts it before the cache lapses' : 'compacting while idle') : advice.text
-  return `${icon} cache ${bar(ratio, 10)} ${Math.round(ratio * 100)}% ${counts}${clock}${idlePart} ${ttl} · ${tail}`
+  const clock = left > 0 ? ` · ${fmtClock(left)}` : ''
+  return `cache ${Math.round(hitRatio(last) * 100)}%${clock}`
 }
-// whether the status line shows the idle compaction countdown, as the band does (set from the idleCompact option)
-let showIdleLine = true
 
 type Settings = { promptCacheTtl?: unknown; idleCompaction?: unknown; autoCompactEnabled?: unknown }
 
@@ -185,7 +177,6 @@ export const register: Register = (on, options) => {
   const showStatus = options.status === true
   const wantToast = options.toast !== false
   const showIdle = options.idleCompact !== false
-  showIdleLine = showIdle
 
   on('session.start', async ($, e, next) => {
     const r = await next(e)
