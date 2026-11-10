@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """旧形式の todo.md（`## やる` 無し）を新形式へ一度だけ変換する。
 
-使い方: migrate.py <path>  （その場で書き換える。成功時は何も出力しない）
+使い方: migrate.py <path> [--date YYYY-MM-DD]  （その場で書き換える。成功時は何も出力しない）
+日付の無い完了行には ` (done: <--date、既定は今日>)` を付ける。30日後にアーカイブされる。
+終了コード: 0 変換した / 1 旧形式として解釈できない / 2 引数が違う
 """
+import datetime
 import sys
 from pathlib import Path
 
@@ -10,10 +13,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import todo_md
 
 
-def migrate(text: str) -> str:
-    lines = text.splitlines()
+def _stamp(doc: todo_md.Doc, today: str) -> str:
+    for s in todo_md.TASK_SECTIONS:
+        for it in doc.sections[s]:
+            if it.done and not it.done_date:
+                it.done_date = today
+    return todo_md.render(doc)
+
+
+def migrate(text: str, today: "str | None" = None) -> str:
+    today = today or datetime.date.today().isoformat()
+    lines = todo_md.split_lines(text)
     if any(l.startswith("## ") and l[3:].strip() == "確認待ち" for l in lines):
-        return todo_md.render(todo_md.parse(text))
+        return _stamp(todo_md.parse(text), today)
     doc = todo_md.Doc()
     current = "やる"
     buckets = {"やる": [], "待ち": [], "完了": []}
@@ -39,16 +51,27 @@ def migrate(text: str) -> str:
         doc.preamble + ([""] if doc.preamble else []) + ["## 確認待ち", "", "## やる"]
         + buckets["やる"] + ["", "## 待ち"] + buckets["待ち"] + ["", "## 完了"] + buckets["完了"]
     ) + "\n"
-    return todo_md.render(todo_md.parse(out))
+    return _stamp(todo_md.parse(out), today)
 
 
 def main(argv):
-    if len(argv) != 2:
-        print("usage: migrate.py <path>", file=sys.stderr)
+    args = argv[1:]
+    today = None
+    if len(args) == 3 and args[1] == "--date":
+        today = args[2]
+        args = args[:1]
+    if len(args) != 1:
+        print("usage: migrate.py <path> [--date YYYY-MM-DD]", file=sys.stderr)
         return 2
-    p = Path(argv[1])
     try:
-        new = migrate(p.read_text(encoding="utf-8"))
+        if today is not None:
+            datetime.date.fromisoformat(today)
+    except ValueError:
+        print(f"migrate: --date が日付でない: {today!r}", file=sys.stderr)
+        return 2
+    p = Path(args[0])
+    try:
+        new = migrate(p.read_text(encoding="utf-8"), today)
     except todo_md.ParseError as e:
         print(f"migrate: {e}", file=sys.stderr)
         return 1
