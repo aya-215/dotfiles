@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Callable
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import decisions
 import todo_md
 from origin import origin_of
 from todo_md import TASK_SECTIONS, Doc, Item
@@ -445,7 +446,7 @@ def summarize(body: "list[str]") -> str:
     return " ".join(parts)
 
 
-def run(changes_path: Path, todo: Path, today: str) -> int:
+def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None" = None) -> int:
     try:
         changes = json.loads(changes_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
@@ -453,6 +454,7 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
         return 2
     source = changes.get("source") if isinstance(changes, dict) else None
     repo, name = todo.parent, todo.name
+    dpath = (decisions_path or repo / decisions.DECISIONS_NAME).expanduser().absolute()
     if not todo.is_file():
         print(f"apply: todo.md が無い: {todo}", file=sys.stderr)
         return 1
@@ -467,6 +469,8 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
         text = todo.read_text(encoding="utf-8")
         try:
             before = todo_md.parse(text)
+            old_records = decisions.load(dpath)
+            new_records = decisions.detect_reverts(repo, name, old_records)
             after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today)
         except ValueError as e:
             print(f"apply: 未適用: {e}", file=sys.stderr)
@@ -477,9 +481,15 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
         if errs:
             print("apply: 検証違反のため未適用:\n" + "\n".join(errs), file=sys.stderr)
             return 2
+        ts = decisions.now_iso()
+        for a in changes.get("answered", []) if "confirm" in changes else []:
+            new_records.append({"ts": ts, "ref": a.get("ref"), "kind": a.get("kind"),
+                                "value": a["answer"], "by": "human"})
+        body += [f"record {r['kind']} {r['ref']}" for r in new_records]
         kept, archived = split_archive(after, today)
         new_text = todo_md.render(kept)
-        if new_text == todo_md.render(before) and not archived:
+        todo_changed = new_text != todo_md.render(before) or bool(archived)
+        if not todo_changed and not new_records:
             return 0
         if nvim_editing(repo) or todo.read_text(encoding="utf-8") != text:
             print("apply: todo.md を編集中のためスキップ", file=sys.stderr)
@@ -493,22 +503,30 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
             archive_dir.mkdir(exist_ok=True)
             _write_atomic(p, (originals[p] or "") + "".join(todo_md._render_item(it) + "\n" for it in items))
             body += [f"archive {it.ref} → todo-archive/{month}.md" for it in items]
-        try:
-            _write_atomic(todo, new_text, expect=text)
-        except _Changed:
-            _restore(originals)
-            print("apply: 読んだ後に todo.md が変わったためスキップ", file=sys.stderr)
-            return 3
+        if new_records:
+            originals[dpath] = dpath.read_text(encoding="utf-8") if dpath.exists() else None
+            _write_atomic(dpath, (originals[dpath] or "") + decisions.render_lines(new_records))
+        if todo_changed:
+            try:
+                _write_atomic(todo, new_text, expect=text)
+            except _Changed:
+                _restore(originals)
+                print("apply: 読んだ後に todo.md が変わったためスキップ", file=sys.stderr)
+                return 3
 
-        paths = [name] + [p for p in ("todo-archive", "todo-decisions.jsonl") if (repo / p).exists()]
+        paths = ([name] if todo_changed else []) + [p for p in ("todo-archive", "todo-decisions.jsonl") if (repo / p).exists()]
+        if dpath.exists() and dpath.parent == repo and dpath.name != "todo-decisions.jsonl":
+            paths.append(dpath.name)
+        subject = summarize(body) or "判断の記録"
         try:
             _git(repo, "add", "--", *paths, retry=True)
-            _git(repo, "commit", "-q", "-m", f"todo({source}): {summarize(body)}", "-m", "\n".join(body),
+            _git(repo, "commit", "-q", "-m", f"todo({source}): {subject}", "-m", "\n".join(body),
                  "--", *paths, retry=True)
         except RuntimeError:
             # 未コミットのまま残すと次の人のコミットに AI の変更が混ざるので戻す。人が触った後なら触らない
             try:
-                _write_atomic(todo, text, expect=new_text)
+                if todo_changed:
+                    _write_atomic(todo, text, expect=new_text)
                 _restore(originals)
             except _Changed:
                 pass
@@ -527,13 +545,13 @@ def main(argv=None) -> int:
     p = _Parser(description="変更案 JSON を todo.md に適用する")
     p.add_argument("--changes", required=True, type=Path)
     p.add_argument("--todo", type=Path)
-    p.add_argument("--decisions", type=Path, help="判断記録（未使用。Task 5 で使う）")
+    p.add_argument("--decisions", type=Path, help="判断記録（既定は todo.md と同じディレクトリの todo-decisions.jsonl）")
     p.add_argument("--today", default=datetime.date.today().isoformat())
     a = p.parse_args(argv)
     todo = a.todo or Path(os.environ.get("TODO_MD_PATH") or Path.home() / "memo" / "todo.md")
     try:
         datetime.date.fromisoformat(a.today)
-        return run(a.changes, todo.expanduser().absolute(), a.today)
+        return run(a.changes, todo.expanduser().absolute(), a.today, a.decisions)
     except Exception as e:
         print(f"apply: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
