@@ -390,6 +390,19 @@
     }
   },
   "advisorModel": "opus",
+  "pluginConfigs": {
+    "prompt-rail@oikon48": {
+      "options": {
+        "classicHooks": false
+      }
+    },
+    "prompt-cache-control@inline": {
+      "options": {
+        "band": false,
+        "status": true
+      }
+    }
+  },
   "plansDirectory": "./.claude/plans",
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
