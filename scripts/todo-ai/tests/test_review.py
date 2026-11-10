@@ -70,6 +70,30 @@ class Review(unittest.TestCase):
         put(self.logs, "2026-11-08", "changes.json", {"ops": [{"op": "move", "ref": "epc#1", "to": "完了", "reason": "later"}]})
         self.assertNotIn("later", review.render(self.dec, self.logs, "2026-11-03"))
 
+    def test_timestamped_runs_use_the_latest_before_the_record(self):
+        jl(self.dec, [{"ts": "2026-11-09T12:00:00+09:00", "ref": "epc#1", "kind": "revert_move", "value": "やる", "by": "human"}])
+        put(self.logs, "2026-11-09", "changes-093000.json", {"ops": [
+            {"op": "move", "ref": "epc#1", "to": "待ち", "reason": "朝の判断"}]})
+        put(self.logs, "2026-11-09", "changes-150000.json", {"ops": [
+            {"op": "move", "ref": "epc#1", "to": "完了", "reason": "午後の判断"}]})
+        put(self.logs, "2026-11-09", "my-tasks-093000.json", {"candidates": [{"key": "epc#1", "evidence": "朝の根拠"}]})
+        put(self.logs, "2026-11-09", "my-tasks-150000.json", {"candidates": [{"key": "epc#1", "evidence": "午後の根拠"}]})
+        out = review.render(self.dec, self.logs, "2026-11-03")
+        self.assertIn("朝の判断", out)
+        self.assertIn("朝の根拠", out)
+        self.assertNotIn("午後", out)
+
+    def test_newer_run_of_the_same_day_wins_over_older(self):
+        jl(self.dec, [{"ts": "2026-11-09T18:00:00+09:00", "ref": "epc#1", "kind": "revert_move", "value": "やる", "by": "human"}])
+        put(self.logs, "2026-11-09", "changes.json", {"ops": [{"op": "move", "ref": "epc#1", "to": "待ち", "reason": "旧名"}]})
+        put(self.logs, "2026-11-09", "changes-093000.json", {"ops": [
+            {"op": "move", "ref": "epc#1", "to": "待ち", "reason": "朝の判断"}]})
+        put(self.logs, "2026-11-09", "changes-150000.json", {"ops": [
+            {"op": "move", "ref": "epc#1", "to": "完了", "reason": "午後の判断"}]})
+        out = review.render(self.dec, self.logs, "2026-11-03")
+        self.assertIn("午後の判断", out)
+        self.assertNotIn("朝の判断", out)
+
     def test_cli_bad_json_log_does_not_fail(self):
         jl(self.dec, [{"ts": "2026-11-09T10:00:00+09:00", "ref": "epc#1", "kind": "reject_add", "value": "やる", "by": "human"}])
         d = self.logs / "2026-11-08"

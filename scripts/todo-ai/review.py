@@ -7,6 +7,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -40,12 +41,33 @@ def _op_text(op: dict) -> str:
     return name
 
 
-def _find_ai(logs: Path, dates: "list[str]", day: str, ref: str):
-    """record の日以前で最も新しい日の、ref を触った op か確認待ち。"""
+def _runs(logs: Path, dates: "list[str]", ts: str, stem: str) -> "list[Path]":
+    """record の時刻より前の `<stem>.json`・`<stem>-HHMMSS.json` を新しい順に。stamp の無い旧名はその日の最初とみなす。"""
+    day = ts[:10]
+    m = re.match(r"\d{4}-\d{2}-\d{2}T(\d{2}):(\d{2}):(\d{2})", ts)
+    until = "".join(m.groups()) if m else "999999"
+    pat = re.compile(re.escape(stem) + r"(?:-(\d{6}))?\.json\Z")
+    out = []
     for d in dates:
         if d > day:
             continue
-        data = _read(logs / d / "changes.json")
+        try:
+            names = os.listdir(logs / d)
+        except OSError:
+            continue
+        runs = []
+        for n in names:
+            f = pat.match(n)
+            if f and not (d == day and (f.group(1) or "") > until):
+                runs.append((f.group(1) or "", n))
+        out += [logs / d / n for _, n in sorted(runs, reverse=True)]
+    return out
+
+
+def _find_ai(logs: Path, dates: "list[str]", ts: str, ref: str):
+    """record より前で最も新しい実行の、ref を触った op か確認待ち。"""
+    for path in _runs(logs, dates, ts, "changes"):
+        data = _read(path)
         if not isinstance(data, dict):
             continue
         for op in reversed(data.get("ops") or []):
@@ -57,11 +79,9 @@ def _find_ai(logs: Path, dates: "list[str]", day: str, ref: str):
     return None, None
 
 
-def _find_candidate(logs: Path, dates: "list[str]", day: str, ref: str):
-    for d in dates:
-        if d > day:
-            continue
-        data = _read(logs / d / "my-tasks.json")
+def _find_candidate(logs: Path, dates: "list[str]", ts: str, ref: str):
+    for path in _runs(logs, dates, ts, "my-tasks"):
+        data = _read(path)
         if not isinstance(data, dict):
             continue
         for c in data.get("candidates") or []:
@@ -82,9 +102,10 @@ def render(decisions_path: Path, logs: Path, since: str) -> str:
         dates = []
     rows = []
     for r in recs:
-        ref, day = str(r.get("ref", "")), str(r.get("ts", ""))[:10]
-        ai, reason = _find_ai(logs, dates, day, ref)
-        ev, ball = _find_candidate(logs, dates, day, ref)
+        ref, ts = str(r.get("ref", "")), str(r.get("ts", ""))
+        day = ts[:10]
+        ai, reason = _find_ai(logs, dates, ts, ref)
+        ev, ball = _find_candidate(logs, dates, ts, ref)
         human = f"{r.get('kind', '-')}: {r.get('value', '-')}"
         rows.append("| " + " | ".join(_cell(x) for x in (day, ref, human, ai, reason, ev, ball)) + " |\n")
     return HEADER + "".join(rows)
