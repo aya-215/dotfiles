@@ -14,7 +14,7 @@ description: 業務TODO（~/memo/todo.md）を一次データから AI が更新
 
 - todo.md・`todo-decisions.jsonl`・`todo-archive/` を Edit/Write で直接書く（書くのは apply.py だけ）
 - 外部アクション（PR/Issue コメント、Rocket Chat 送信、Issue 作成、`mcp__gitbucket__` の書き込み系）
-- 過去の実行ログ（`~/.local/log/todo-ai/` の今日以外）・過去の `/my-tasks` 出力を読む。AI の過去の推測が事実として戻ってくるため
+- 過去の実行ログ（`~/.local/log/todo-ai/` の今日以外）・過去の `/my-tasks` 出力を読む。AI の過去の推測が事実として戻ってくるため（例外は `review` モードの review.py だけ）
 - todo.md をタスクの根拠にする。台帳は重複検出と人の行の把握にだけ使い、それも context.json 経由で見る
 - 人が完了にした行を未完了に戻す・人の行のタイトルを書き換える（apply.py も止めるが、案にも入れない）
 
@@ -170,3 +170,23 @@ exit 2 で `確認待ちの問い・事実・選択が apply の書いた内容�
 4. 違反・警告: `apply.err`、`confirm_errors`、同期の失敗、GitBucket 未確認、my-tasks で取れなかったデータ源
 
 ログは `~/.local/log/todo-ai/<今日>/`（sync.out/err, my-tasks.json, context.json, changes.json, apply.out/err）。
+
+## review モード（`/todo review`）
+
+人が AI の判断を直した記録を週1で見直し、`/my-tasks` と `/todo` のどこを直すかを決める。収集・同期・適用はしない。
+
+過去ログを読んでよいのは review.py だけ。目的が AI の過去判断の評価で、タスクの根拠には使わないため。
+
+```bash
+python3 -I ~/.dotfiles/scripts/todo-ai/review.py --since $(date -d '7 days ago' +%F)
+```
+
+1. 出力の表（日付・ref・人がしたこと・AI がしたこと・AI の根拠・my-tasks の根拠・ball）を各行そのまま出す。`-` はログが無いだけで、推測で埋めない
+2. 各行を3層に振り分ける（agent-memory `scripts/task-inventory-verification-gate.md`）
+   - 取得層: 根拠のデータがそもそも無い・取れていない → 収集元を足す
+   - 判定層: データはあるが機械的に引く工程が無い → 規則・ゲートを足す
+   - 解釈層: 読んだのに誤読した → プロンプトの文言（確率的で、収集を厚くしても防げない）
+3. 層ごとに、直す先（my-tasks SKILL.md か todo SKILL.md のどの規則）と具体的な修正案を出す。表の根拠が空の行は層を断定せず「ログ不足」とする
+4. **ここで止まる。** SKILL.md の修正はユーザーが OK してから行う
+
+無人実行（非対話）のときは、表と修正案を出力するだけで終わる。
