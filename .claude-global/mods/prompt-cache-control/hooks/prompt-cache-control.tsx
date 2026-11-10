@@ -385,11 +385,12 @@ export const register: Register = (on, options) => {
         <Text color={color}>{bar(ratio, wide ? 10 : 6)}</Text>
         <Text bold>{`${Math.round(ratio * 100)}%`}</Text>
         {wide ? (
-          <>
+          // The host stacks a Fragment's children vertically even inside a row Box.
+          <Box flexDirection="row" columnGap={1}>
             <Text color="green">{`read ${fmtTokens(last.read)}`}</Text>
             <Text color="yellow">{`wrote ${fmtTokens(last.write)}`}</Text>
             <Text color="cyan">{`new ${fmtTokens(last.fresh)}`}</Text>
-          </>
+          </Box>
         ) : (
           <Text dimColor>{`${fmtTokens(promptTokens(last))} tok`}</Text>
         )}
