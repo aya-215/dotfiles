@@ -48,27 +48,30 @@ grep -E 'fire failed|giving up|skip:' ~/.local/log/fire-daily-review.log | tail 
 
 ### 3. 照合対象日の列挙と方式の判定
 
-日報の入力方式は2つある。対象日ごとに `~/.nb/claude/daily-slices/<date>/payload.txt` の有無で判定し、表に方式を載せる。
+日報の入力方式は2つある。対象日ごとに `~/.nb/claude/daily-slices/<date>/` に切り出し md が1件以上あるか（find で数える）で判定し、表に方式を載せる。fire 自身も切り出し md の件数で方式を切り替えている。payload.txt は旧方式の日にも、`--dry-run` でも書かれるので、方式の判定には使わない。
 
 | 方式 | 判定 | 照合の材料 |
 |---|---|---|
-| 新方式（日次の切り出し要約） | `payload.txt` あり | payload.txt（要約・git・RC・メールが全部入っている）、切り出し md、`check.json` |
-| 旧方式 | `payload.txt` なし | `~/.nb/claude/sessions/<date>/*.md`、git ログ、Rocket Chat（下記） |
+| 新方式（日次の切り出し要約） | 切り出し md が1件以上 | payload.txt（その日の入力の記録。要約・git・RC・メールが全部入っている）、切り出し md、`check.json` |
+| 旧方式 | 切り出し md が0件 | `~/.nb/claude/sessions/<date>/*.md`、git ログ、Rocket Chat（下記） |
 
 ```bash
-for d in ~/.nb/claude/sessions/*/; do
-  day=$(basename "$d")
+# 対象日は sessions/ と daily-slices/ の両方から集める
+days=$( { find ~/.nb/claude/sessions ~/.nb/claude/daily-slices -mindepth 1 -maxdepth 1 -type d -printf '%f\n'; } | sort -u )
+for day in $days; do
   [[ "$day" > "$SINCE" ]] || continue
   blog=~/src/github.com/aya-215/life/blog/$(echo "$day" | tr -d '-').md
   [ -f "$blog" ] || continue
   slice=~/.nb/claude/daily-slices/$day
-  if [ -f "$slice/payload.txt" ]; then
+  # ★ ls ではなく find を使う。名前が隠しファイル（.dotfiles-<sid8>.md）の切り出しがある
+  ns=$(find "$slice" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l)
+  if [ "$ns" -gt 0 ]; then
     method=新
-    # ★ ls ではなく find を使う。名前が隠しファイル（.dotfiles-<sid8>.md）の切り出しがある
-    n=$(find "$slice" -maxdepth 1 -name '*.md' | wc -l)
+    nf=$( [ -f "$slice/.failed" ] && grep -c . "$slice/.failed" || echo 0 )
+    n="切り出し${ns}+補完${nf}"
   else
     method=旧
-    n=$(find "$d" -maxdepth 1 -name '*.md' | wc -l)
+    n=$(find ~/.nb/claude/sessions/"$day" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l)
   fi
   items=$(sed -n '/📝 サマリー/,/^## [^📝]/p' "$blog" | grep -c '^- ')
   echo "$day 方式=$method sessions=$n items=$items"
@@ -80,10 +83,11 @@ done
 #### 新方式のデータの場所
 
 - 区切り: JST の前日 22:10（含む）〜当日 22:10（含まない）。`source ~/.dotfiles/scripts/daily-review/day-window.sh; day_window <date>` が `<since>\t<until>` を返す。この範囲の外の作業は日報に入らないのが正しい
-- `payload.txt`: 最後に生成した入力。後から `--dry-run` を走らせると上書きされるため、送信時点の完全な再現とは限らない
-- 切り出し md（`daily-slices/<date>/*.md`）: セッションごとの区切り内の要約。見出しが `（全期間の要約・補完）` で終わるものは切り出しに失敗して全期間の要約で埋めたもので、区切り外の内容を含みうる
-- `.failed`: 切り出しに失敗したセッションの sid8 一覧（無ければファイル自体が無い）
-- `check.json`: 日報投稿後の自動チェック結果（`scripts/daily-review/check-daily-report.sh --date <date> --no-wait` で再生成できる）。キーは `missing[{text,severity 重大|軽微}]`・`unsupported[{text,confidence 高|中|低}]`・`misclassified[{text}]`・`format[str]`・`notify`・`status`（`ok` / `report_missing` / `check_failed`）。`status` が `ok` 以外の日は中身が空なので、手動で照合する。`check.json` は検証の叩き台であり、サブエージェントの判定を置き換えない
+- `payload.txt`: その日の入力の記録（最後に生成したもの）。後から `--dry-run` を走らせると上書きされるため、送信時点の完全な再現とは限らない
+- 切り出し md（`daily-slices/<date>/*.md`）: セッションごとの区切り内の要約。切り出し md 自体に補完の印は付かない
+- `.failed`: 切り出しに失敗したセッションの sid8 一覧（無ければファイル自体が無い）。その sid8 の全期間の要約は `sessions/**/*-<sid8>.md`（find で探す。glob は隠しファイルを飛ばす）。fire はこれを payload.txt に補完として入れる
+- 補完の印: payload.txt の `## <proj> — HH:MM` 見出しの末尾に `（全期間の要約・補完）` が付く（fire が付ける。切り出し md や sessions/ の要約には付かない）。区切り外の内容を含みうる
+- `check.json`: 日報投稿後の自動チェック結果（`scripts/daily-review/check-daily-report.sh --date <date> --no-wait` で再生成できる）。キーは `missing[{text,severity 重大|軽微}]`・`unsupported[{text,confidence 高|中|低}]`・`misclassified[{text}]`・`format[str]`・`notify`・`status`（`ok` / `report_missing` / `check_failed`）。`status` が `ok` 以外のときは `message`（理由）も付き、中身は空なので、手動で照合する。`check.json` は検証の叩き台であり、サブエージェントの判定を置き換えない
 
 #### 旧方式でも Rocket Chat を照合に加える
 
@@ -119,7 +123,7 @@ bash ~/.dotfiles/scripts/lib/rocketchat.sh --from <date> --to <date> --budget 15
 - **自分のPRへの指摘対応は「自分の作業」が正しい。** 要約に【レビュー作業】と付いていても、それは要約側のラベルの粗さ。日報側が「自分の作業」に置いていれば**誤分類ではない**
 - **Work/Personal は「会社に提出・共有するか」で判定。** コミット先のリポジトリでは判断しない。dotfilesの整備はPersonal、社内雑務や発表準備やタスク整理はWork
 - **【旧方式のみ】多日セッションの日付帰属に注意。** 要約は `end` の日でバケット分けされるため、`start` が数日前のセッションが混ざる。前日以前から続く作業が当日の日報に無くても、取りこぼしと即断しない
-- **【新方式のみ】範囲の外の作業が書かれていたら根拠不明に数える。** 区切り（前日 22:10〜当日 22:10）の外の作業が日報にあれば、日付帰属の言い訳は効かない。ただし `（全期間の要約・補完）` の切り出しは区切り外を含みうるので、その由来と分かる場合は理由を添える
+- **【新方式のみ】範囲の外の作業が書かれていたら根拠不明に数える。** 区切り（前日 22:10〜当日 22:10）の外の作業が日報にあれば、日付帰属の言い訳は効かない。ただし補完の印（payload.txt の見出しの `（全期間の要約・補完）`）が付いた要約は区切り外を含みうるので、その由来と分かる場合は理由を添える
 
 ## 出力形式
 
