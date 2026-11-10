@@ -9,6 +9,7 @@
     "commit": "",
     "pr": ""
   },
+  "cleanupPeriodDays": 180,
   "permissions": {
     "allow": [
       "mcp__figma__get_screenshot",
