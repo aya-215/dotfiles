@@ -10,8 +10,12 @@
 #
 # 使用方法:
 #   ./summarize.sh <transcript.jsonl> <session_id>
+#   ./summarize.sh <transcript.jsonl> <session_id> --slice <YYYY-MM-DD> --since <ISO> --until <ISO>
+# 切り出しモード（--slice）は [since, until) の中の出来事だけを要約し、SLICES_ROOT/<日付>/ に書く。
+# 範囲より前の末尾は文脈としてだけ渡す。sessions/ の要約は消さず、生成失敗は終了コード 3 で返す。
 # 環境変数（テスト用に上書き可能）:
 #   CLAUDE_BIN / SESSIONS_ROOT / MAX_CHARS
+#   SLICES_ROOT / SLICE_MODEL / SLICE_MODEL_LARGE / SLICE_CONTEXT_CHARS（切り出しモード）
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,12 +37,43 @@ SUMMARIZER_MODEL="${SUMMARIZER_MODEL:-haiku}"
 SUMMARIZER_MODEL_LARGE="${SUMMARIZER_MODEL_LARGE:-claude-sonnet-5[1m]}"
 # 1M コンテキスト側の切り詰め上限（実測: 892,135 字を全量投入して 38 秒で完走）
 MAX_CHARS_LARGE="${MAX_CHARS_LARGE:-950000}"
+SLICES_ROOT="${SLICES_ROOT:-$HOME/.nb/claude/daily-slices}"
+SLICE_MODEL="${SLICE_MODEL:-claude-sonnet-5}"
+SLICE_MODEL_LARGE="${SLICE_MODEL_LARGE:-claude-sonnet-5[1m]}"
+SLICE_CONTEXT_CHARS="${SLICE_CONTEXT_CHARS:-20000}"
 
-transcript="${1:?usage: summarize.sh <transcript.jsonl> <session_id>}"
-session_id="${2:?usage: summarize.sh <transcript.jsonl> <session_id>}"
+readonly USAGE='usage: summarize.sh <transcript.jsonl> <session_id> [--slice <YYYY-MM-DD> --since <ISO> --until <ISO>]'
+transcript="${1:?$USAGE}"
+session_id="${2:?$USAGE}"
+shift 2
+
+slice_date=""
+slice_since=""
+slice_until=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --slice) slice_date="${2:?$USAGE}"; shift 2 ;;
+    --since) slice_since="${2:?$USAGE}"; shift 2 ;;
+    --until) slice_until="${2:?$USAGE}"; shift 2 ;;
+    *) echo "$USAGE" >&2; exit 2 ;;
+  esac
+done
+if [ -n "$slice_date$slice_since$slice_until" ] \
+   && { [ -z "$slice_date" ] || [ -z "$slice_since" ] || [ -z "$slice_until" ]; }; then
+  echo "--slice / --since / --until は3つ揃えて指定する" >&2
+  exit 2
+fi
+
+# 生成失敗時の終了コード。hook は常に 0、切り出しモードは呼び出し側がフォールバックできるよう 3
+fail_code=0
+extract_args=()
+if [ -n "$slice_date" ]; then
+  fail_code=3
+  extract_args=(--since "$slice_since" --until "$slice_until")
+fi
 
 # 前処理（失敗したら何もせず終了）
-extracted="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" 2>/dev/null)" || exit 0
+extracted="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" "${extract_args[@]}" 2>/dev/null)" || exit 0
 # 中身が実質空（ヘッダのみ）なら要約しない
 body_lines="$(printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | grep -c .)" || body_lines=0
 [ "$body_lines" -gt 0 ] || exit 0
@@ -61,6 +96,7 @@ proj_name="$(get_header project)"
 cwd_val="$(get_header cwd)"
 start_ts="$(get_header start)"
 end_ts="$(get_header end)"
+session_start_ts="$(get_header session_start)"
 
 # ロケールを固定し文字単位の切り詰めを保証する
 export LANG=ja_JP.UTF-8
@@ -70,9 +106,14 @@ export LANG=ja_JP.UTF-8
 #   ファイルが要約から丸ごと落ちる（実データで46件の欠落を確認）。
 #   閾値超過時は 1M コンテキストのモデルに回して全量を渡す。
 model="$SUMMARIZER_MODEL"
+large_model="$SUMMARIZER_MODEL_LARGE"
+if [ -n "$slice_date" ]; then
+  model="$SLICE_MODEL"
+  large_model="$SLICE_MODEL_LARGE"
+fi
 max_chars="$MAX_CHARS"
 if [ "${#extracted}" -gt "$LARGE_THRESHOLD" ]; then
-  model="$SUMMARIZER_MODEL_LARGE"
+  model="$large_model"
   max_chars="$MAX_CHARS_LARGE"
   echo "routing: 長尺セッション(${#extracted}字) → $model: $session_id"
 fi
@@ -96,6 +137,30 @@ safe_proj="$(printf '%s' "$proj_name" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-')"
 
 out_dir="$SESSIONS_ROOT/$target_date"
 out_file="$out_dir/${safe_proj}-${end_hhmm}-${sid_short}.md"
+if [ -n "$slice_date" ]; then
+  out_dir="$SLICES_ROOT/$slice_date"
+  out_file="$out_dir/${safe_proj}-${sid_short}.md"
+fi
+
+# 切り出しモード: 範囲より前の末尾を文脈として渡す（無ければブロックごと省く）
+context_block=""
+if [ -n "$slice_date" ]; then
+  context_raw="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" --until "$slice_since" 2>/dev/null \
+    | sed -n '/^---$/,$p' | tail -n +2)" || context_raw=""
+  if [ -n "$context_raw" ]; then
+    # 短い文字列に負オフセットを使うと空になるため、超えたときだけ末尾を切る
+    if [ "${#context_raw}" -gt "$SLICE_CONTEXT_CHARS" ]; then
+      context_raw="${context_raw: -$SLICE_CONTEXT_CHARS}"
+    fi
+    context_block="<<<CONTEXT_START>>>
+${context_raw}
+<<<CONTEXT_END>>>
+
+上記 <<<CONTEXT_START>>>〜<<<CONTEXT_END>>> は要約対象の範囲より前の経緯です。会話の流れを理解するためだけに使い、要約には含めないこと。
+
+"
+  fi
+fi
 
 read -r -d '' PROMPT <<EOF || true
 以下は Claude Code の1セッションの会話ログ（前処理済み: 会話テキストとツール使用メタのみ）です。
@@ -117,7 +182,7 @@ read -r -d '' PROMPT <<EOF || true
 - ## ナレッジ候補 — memory に残す価値のある発見。なければ「なし」
 - ## フィードバック/承認 — ユーザーから修正・指摘された点（pain）と、ユーザーが明確に承認・称賛した進め方（success）。なければ「なし」
 
-<<<TRANSCRIPT_START>>>
+${context_block}<<<TRANSCRIPT_START>>>
 ${extracted}
 <<<TRANSCRIPT_END>>>
 
@@ -163,13 +228,16 @@ for attempt in 1 2; do
   fi
   echo "discarded(attempt=$attempt): 必須見出し不足: $session_id (model=$model)"
 done
-[ -n "$body" ] || exit 0
+[ -n "$body" ] || exit "$fail_code"
 
 # redaction: 会話にシークレットが混入していても要約ファイルに残さない（二重ガードの1段目）
-body="$(printf '%s\n' "$body" | bash "$SCRIPT_DIR/../lib/redact.sh")" || exit 0
+body="$(printf '%s\n' "$body" | bash "$SCRIPT_DIR/../lib/redact.sh")" || exit "$fail_code"
 
-# 同一セッションの旧要約を削除（再開セッションは最新の要約が全期間をカバーするため1本に保つ）
-find "$SESSIONS_ROOT" -type f -name "*-${sid_short}.md" ! -path "$out_file" -delete 2>/dev/null || true
+# 同一セッションの旧要約を削除（再開セッションは最新の要約が全期間をカバーするため1本に保つ）。
+# 切り出しモードは日ごとに別ファイルを持つので消さない。
+if [ -z "$slice_date" ]; then
+  find "$SESSIONS_ROOT" -type f -name "*-${sid_short}.md" ! -path "$out_file" -delete 2>/dev/null || true
+fi
 
 # 組み立てはアトミックに: tmp に全て書いてから mv（途中失敗で壊れたファイルを残さない）
 mkdir -p "$out_dir"
@@ -177,9 +245,18 @@ mkdir -p "$out_dir"
   printf -- '---\n'
   printf 'project: %s\n' "$proj_name"
   printf 'session_id: %s\n' "$session_id"
-  printf 'start: %s\n' "$start_ts"
-  printf 'end: %s\n' "$end_ts"
-  printf 'cwd: %s\n' "$cwd_val"
+  if [ -n "$slice_date" ]; then
+    printf 'cwd: %s\n' "$cwd_val"
+    printf 'session_start: %s\n' "$session_start_ts"
+    printf 'start: %s\n' "$start_ts"
+    printf 'end: %s\n' "$end_ts"
+    printf 'window_since: %s\n' "$slice_since"
+    printf 'window_until: %s\n' "$slice_until"
+  else
+    printf 'start: %s\n' "$start_ts"
+    printf 'end: %s\n' "$end_ts"
+    printf 'cwd: %s\n' "$cwd_val"
+  fi
   printf -- '---\n\n'
   printf '%s\n' "$body"
 } > "${out_file}.tmp"

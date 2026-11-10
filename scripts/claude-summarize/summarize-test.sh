@@ -285,6 +285,86 @@ assert_absent "case7: sdk-cli セッションは md 生成されない" "$out7"
 # ※ case1 が既に entrypoint 無し fixture で md 生成を検証済みなので、ここは明示の再確認は省略可。
 #   万一 case1 が変わった場合の保険として本文コメントで意図を残す。
 
+# ==== 切り出しモード（case9〜12） ====
+# 22:09(範囲前) / 22:10(範囲内・Edit あり) / 22:11 / 翌日22:10(範囲外) の4行
+make_slice_transcript() {
+  local path="$1"
+  cat > "$path" <<JSONL
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:09:00.000Z","message":{"content":"LINE-A 前日の経緯"}}
+{"type":"assistant","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:10:00.000Z","message":{"content":[{"type":"text","text":"LINE-B 範囲内"},{"type":"tool_use","name":"Edit","input":{"file_path":"/home/aya/testproj/a.conf"}}]}}
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:11:00.000Z","message":{"content":"LINE-C 範囲内"}}
+{"type":"assistant","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-14T13:10:00.000Z","message":{"content":[{"type":"text","text":"LINE-D 範囲外"}]}}
+JSONL
+}
+
+# run_slice <case_name> — 切り出しモードで実行し、終了コードを $slice_rc に入れる
+slice_rc=0
+run_slice() {
+  local case_name="$1"
+  local case_dir="$TMP/$case_name"
+  mkdir -p "$case_dir/stub" "$case_dir/sessions" "$case_dir/slices"
+  make_slice_transcript "$case_dir/transcript.jsonl"
+  slice_rc=0
+  CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$case_dir/stub" \
+  SESSIONS_ROOT="$case_dir/sessions" SLICES_ROOT="$case_dir/slices" \
+    bash "$SCRIPT_DIR/summarize.sh" "$case_dir/transcript.jsonl" "$SID" \
+      --slice 2026-07-14 --since 2026-07-13T22:10:00+09:00 --until 2026-07-14T22:10:00+09:00 \
+      > "$case_dir/log" 2>&1 || slice_rc=$?
+}
+
+# ==== case9: 切り出しモードの正常系 ====
+mkdir -p "$TMP/case9/stub"
+good_body > "$TMP/case9/stub/out"
+run_slice case9
+out9="$TMP/case9/slices/2026-07-14/testproj-$SID_SHORT.md"
+assert_contains "case9: 切り出し要約が生成される" "$out9" '^## 意図'
+assert_contains "case9: window_since" "$out9" '^window_since: 2026-07-13T22:10:00\+09:00$'
+assert_contains "case9: window_until" "$out9" '^window_until: 2026-07-14T22:10:00\+09:00$'
+assert_contains "case9: session_start は範囲外を含む全体の先頭" "$out9" '^session_start: 2026-07-13T13:09:00\.000Z$'
+assert_contains "case9: start は範囲内の先頭" "$out9" '^start: 2026-07-13T13:10:00\.000Z$'
+assert_contains "case9: end は範囲内の末尾" "$out9" '^end: 2026-07-13T13:11:00\.000Z$'
+assert_contains "case9: スタブに claude-sonnet-5 が渡る" "$TMP/case9/stub/args.1" '^claude-sonnet-5$'
+if [ "$slice_rc" -eq 0 ]; then echo "ok: case9: 終了コード 0"; else echo "NG: case9: 終了コード $slice_rc"; fails=$((fails + 1)); fi
+assert_absent "case9: sessions/ には書かない" "$TMP/case9/sessions/2026-07-13"
+
+# ==== case10: 範囲前の発言は CONTEXT、範囲内の発言は TRANSCRIPT にだけ入る ====
+prompt10="$TMP/case9/stub/prompt.1"
+transcript_part="$(sed -n '/^<<<TRANSCRIPT_START>>>$/,/^<<<TRANSCRIPT_END>>>$/p' "$prompt10")"
+context_part="$(sed -n '/^<<<CONTEXT_START>>>$/,/^<<<CONTEXT_END>>>$/p' "$prompt10")"
+if ! printf '%s' "$transcript_part" | grep -q 'LINE-A' && printf '%s' "$transcript_part" | grep -q 'LINE-B' \
+   && ! printf '%s' "$transcript_part" | grep -q 'LINE-D'; then
+  echo "ok: case10: TRANSCRIPT に範囲前後の発言が無く範囲内の発言がある"
+else
+  echo "NG: case10: TRANSCRIPT の中身が不正 → $transcript_part"; fails=$((fails + 1))
+fi
+if printf '%s' "$context_part" | grep -q 'LINE-A' && ! printf '%s' "$context_part" | grep -q 'LINE-B'; then
+  echo "ok: case10: CONTEXT に範囲前の発言だけがある"
+else
+  echo "NG: case10: CONTEXT の中身が不正 → $context_part"; fails=$((fails + 1))
+fi
+
+# ==== case11: 切り出しモードは sessions/ の既存要約を消さない ====
+mkdir -p "$TMP/case11/stub" "$TMP/case11/sessions/2026-07-13"
+good_body > "$TMP/case11/stub/out"
+old11="$TMP/case11/sessions/2026-07-13/testproj-2209-$SID_SHORT.md"
+echo "old summary" > "$old11"
+run_slice case11
+assert_contains "case11: 切り出し要約が生成される" "$TMP/case11/slices/2026-07-14/testproj-$SID_SHORT.md" '^## 意図'
+assert_contains "case11: 同一sidの sessions/ 要約が残る" "$old11" 'old summary'
+
+# ==== case12: 2回とも不正出力 → 切り出しは 3、hook モードは 0（回帰） ====
+mkdir -p "$TMP/case12/stub"
+echo "要約できませんでした。" > "$TMP/case12/stub/out"
+run_slice case12
+if [ "$slice_rc" -eq 3 ]; then echo "ok: case12: 切り出しモードは生成失敗で 3"; else echo "NG: case12: 終了コード $slice_rc"; fails=$((fails + 1)); fi
+assert_absent "case12: 失敗時はファイルを残さない" "$TMP/case12/slices/2026-07-14/testproj-$SID_SHORT.md"
+mkdir -p "$TMP/case12h/stub"
+echo "要約できませんでした。" > "$TMP/case12h/stub/out"
+hook_rc=0
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$TMP/case12h/stub" SESSIONS_ROOT="$TMP/case12h/sessions" \
+  bash "$SCRIPT_DIR/summarize.sh" "$TMP/case9/transcript.jsonl" "$SID" > /dev/null 2>&1 || hook_rc=$?
+if [ "$hook_rc" -eq 0 ]; then echo "ok: case12: hook モードは生成失敗でも 0"; else echo "NG: case12: hook 終了コード $hook_rc"; fails=$((fails + 1)); fi
+
 # ==== 結果 ====
 if [ "$fails" -eq 0 ]; then
   echo "ALL OK"
