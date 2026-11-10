@@ -406,12 +406,5 @@
         "server.py"
       ]
     }
-  },
-  "pluginConfigs": {
-    "prompt-rail@oikon48": {
-      "options": {
-        "classicHooks": false
-      }
-    }
   }
 }
