@@ -57,7 +57,7 @@ class OriginTest(unittest.TestCase):
         self.commit("- [ ] x\n- [ ] ai one\n", "todo: 2026-01-03 10:00")
         self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
 
-    def test_invalid_utf8_worktree_is_human(self):
+    def test_invalid_utf8_worktree_falls_back_to_head(self):
         self.commit("- [ ] ai one\n", "todo(ai): add")
         self.f.write_bytes("- [ ] ai one\n- [ ] 日本語\n".encode("shift_jis"))
         self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
