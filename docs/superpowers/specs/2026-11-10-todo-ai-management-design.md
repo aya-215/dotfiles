@@ -74,7 +74,7 @@
 - 元リンク `[key](url)` の key がタスクの同一性の鍵。key の形式: GitHub は `<repo略称>#<番号>`、GitBucket は `gb:<repo>#<番号>`、Rocket Chat は `rc:<メッセージID>`、メールは `mail:<Message-ID の短縮>`
 - 元リンクの無い行 = 人が書いた行。AI は文言を変えずに元リンクと Next を後ろに付け足すことはしてよい。見つからなければ触らない
 - 確認待ちの番号は実行ごとに振り直す。「回答:」の後ろにユーザーが書き込む（ポップアップで編集可）
-- 完了セクションは肥大化する。30日より古い完了行は `~/memo/todo-archive/YYYY-MM.md` へ移す（決定的スクリプト）
+- 完了セクションは肥大化する。完了行の末尾に ` (done: YYYY-MM-DD)` を付け、30日より古い完了行は `~/memo/todo-archive/YYYY-MM.md` へ移す（決定的スクリプト）
 
 ## 仕組み
 
@@ -82,7 +82,7 @@
 
 ### 1. 決定的な部分（スクリプト、AI を使わない）
 
-- **GitHub 同期** (`todo-sync-github`): todo.md の元リンクのうち GitHub/GitBucket のものの状態を取得し、MERGED/CLOSED を完了へ移す。cron で頻繁に回してよい（例: 平日 8〜20時 毎時）
+- **GitHub 同期** (`todo-sync-github`): todo.md の元リンクのうち GitHub のものの状態を取得し（GitBucket は認証の都合で AI 実行側が判定する）、MERGED/CLOSED を完了へ移す。cron で頻繁に回してよい（例: 平日 8〜20時 毎時）
 - **適用器** (`todo-apply`): AI が出した変更案（JSON）を受け取り、todo.md に反映する唯一の書き込み口。検証すること:
   - 非空行が減らない（完了アーカイブ以外）
   - 元リンクの無い行の文言が変わっていない
