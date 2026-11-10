@@ -13,7 +13,7 @@ description: Use when the user wants to see everything currently on their plate 
 
 ## やらないこと
 
-- ファイル保存・git commit・Issue登録（チャット出力のみ）
+- ファイル保存・git commit・Issue登録（チャットモードでは出力のみ。`--json <path>` 指定時だけ、下の「JSON 出力モード」の1ファイルを書く）
 - 外部アクション（PRコメント投稿・催促メッセージ送信）。**提案までで止まる**
 - KPT・工数集計・生産性指標（それぞれ `weekly-report` / `effort-estimate` の役割）
 - 個人リポジトリ（`~/.dotfiles`、`aya-215/life` 自体）の作業を業務タスクとして出すこと
@@ -498,3 +498,45 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 - 「完了の記録が見当たらんから未完了やな」→ **断定せず「完了っぽい」へ。口頭で終わってるかもしれん**
 - 「assignee が他人やから待ちやな」→ **明示的な待ちの記録があるか確認したか**
 - 「完了っぽいけど一応注記付けとこ」→ **注記が要るなら自分ボールや**
+
+## JSON 出力モード（`--json <path>`）
+
+`/my-tasks --json <path>` で呼ばれたとき（`/todo` スキルが候補の入力として使う）。Step 0〜2.5 は通常どおり全部実行し、**Step 2.5 の検証ゲートを通った後の結果**を Step 3 の代わりに `<path>` へ JSON で書く。チャットには件数（自分ボール/他人ボール/完了っぽい）だけ出す。書くファイルは `<path>` の1つだけで、それ以外の保存・commit・外部アクションはしない。
+
+```json
+{"generated_at": "ISO8601", "window": {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"},
+ "candidates": [{"key": "rc:abc#1", "url": "...", "title": "...", "ball": "mine|theirs|maybe_done",
+   "next": "...", "evidence": "一次データの抜粋（1〜2行）", "deadline": "YYYY-MM-DD|null",
+   "waiting_person": "名前|null", "blocks": ["key", "..."]}]}
+```
+
+- `ball`: 自分ボール=`mine` / 他人ボール=`theirs` / 完了っぽい=`maybe_done`。この3値以外は書かない
+- `window`: Step の対象期間（直近2週間）。`deadline` は明示された締切だけ。推測しない
+- `blocks`: この候補が終わらないと進められない他候補の key。無ければ `[]`
+- `evidence` は一次データ（RC 発言・PR/Issue の状態・メール件名/Sent・差分）の**引用**。要約や推測を書かない
+- **証拠にしてはいけないもの**: `~/memo/todo.md`、過去の `/todo` ログ（`~/.local/log/todo-ai/`）、過去の `/my-tasks` 出力。台帳との突き合わせは `/todo` 側の責務で、ここで読むと台帳の誤りが候補に混入する。これらは読まない
+
+### key（一次データの ID から作る）
+
+| 出どころ | key | url |
+|---|---|---|
+| GitHub | `epc#N` / `emm#N` / `eae#N` / `eas#N`（`ebase-portal-chat` / `ebase-middleware-mcp` / `eb-api-extended` / `ebase-agent-specs`） | PR/Issue の URL |
+| GitBucket | `gb:<repo>#N` | PR/Issue の URL |
+| Rocket Chat | `rc:<_id>`（1発言に複数の作業があれば `rc:<_id>#1`, `#2`…） | 下記 permalink |
+| worktree 差分 | `wt:<worktree名>` | `null` |
+| メール | **常に `null`**（下記） | `null` |
+
+- **一次データまで遡れない候補は `key: null`**。ID を推測・捏造しない。`url` も取れなければ `null`
+- 上の略称に無いリポジトリの GitHub 候補も `key: null`（`url` は付ける）
+
+**Rocket Chat の `_id` と permalink。** Step 1 の RC 取得コマンドに `--with-ids` を足す（`rocketchat.sh --from ... --to ... --with-ids`）。発言行の末尾に ` {id:<_id>}`、ルーム見出しに ` {rid:<rid> t:<c|p|d> link:<URL接頭辞>}` が付く。`--with-ids` 無しでは出ないので、JSON モードでは必須。
+
+- 発言の key は `rc:<その行の {id:...}>`
+- permalink = 見出しの `link` + `?msg=<_id>`。`link` は `<RC_BASE_URL>/<channel|group|direct>/<名前>` の形で、`t=c` は `channel`、`t=p` は `group`、`t=d` は `direct`（DM は名前でなく rid）。名前は URL エンコード済み
+- スレッド返信は親でなくその返信自身の `_id` を使う
+
+**メールは key を作らない。** メール取得層（`thunderbird.sh --raw`）の `messageId` は Thunderbird 内部の連番（実測 `20729` 等）で、RFC の Message-ID（`@` を含む）ではない。`mail:` の key にすると台帳と突き合わせられない値になるため、メール由来の候補は `key: null`（`evidence` に件名と日付を引用）。
+
+### 出力後の確認
+
+書いた JSON は `scripts/todo-ai/my_tasks_schema.py` の `validate_candidates` で検証できる（`/todo` が適用前に呼ぶ）。
