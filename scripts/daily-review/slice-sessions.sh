@@ -48,7 +48,7 @@ main() {
     echo "usage: $0 <YYYY-MM-DD>" >&2
     return 0
   fi
-  local window since until out_dir work cands
+  local window since until out_dir cands
   window="$(day_window "$date")"
   since="${window%%$'\t'*}"
   until="${window##*$'\t'}"
@@ -58,7 +58,8 @@ main() {
   find "$out_dir" -maxdepth 1 \( -name '*.md' -o -name '.failed' \) -delete
 
   work="$(mktemp -d)"
-  trap 'rm -rf "${work:-}"' EXIT
+  # trap は main 終了後に走るため work はグローバルにしておく
+  trap 'rm -rf "$work"' EXIT
   cands="$work/cands.tsv"
   list_candidates "$since" > "$cands" || true
 
@@ -78,9 +79,10 @@ main() {
     [ -e "$rcfile" ] || continue
     sid="${rcfile##*/rc.}"
     rc="$(cat "$rcfile")"
-    if [ "$rc" = "3" ]; then
+    if [ "$rc" != "0" ]; then
       echo "${sid:0:8}" >> "$out_dir/.failed"
       failed=$((failed + 1))
+      sed "s/^/[${sid:0:8}] /" "$work/err.$sid" >&2 || true
     fi
   done
   written="$(find "$out_dir" -maxdepth 1 -name '*.md' | wc -l)"

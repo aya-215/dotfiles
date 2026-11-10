@@ -29,6 +29,8 @@ printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "$7" "$8" >> "$
 case "$2" in
   aaaaaaaa*) mkdir -p "$SLICES_ROOT/$4"; echo "# s" > "$SLICES_ROOT/$4/proj-${2:0:8}.md" ;;
   cccccccc*) exit 3 ;;
+  ffffffff*) echo "boom" >&2; exit 2 ;;
+  99999999*) mkdir -p "$SLICES_ROOT/$4"; echo "# h" > "$SLICES_ROOT/$4/.proj-${2:0:8}.md" ;;
 esac
 exit 0
 EOF2
@@ -44,16 +46,24 @@ echo '{}' > "$R1/cccccccc-$U.jsonl"
 echo '{}' > "$R1/dddddddd-$U.jsonl"
 echo '{}' > "$R1/subagents/eeeeeeee-$U.jsonl"
 echo '{}' > "$R1/not-a-uuid.jsonl"
+echo '{}' > "$R1/ffffffff-$U.jsonl"
+echo '{}' > "$R1/99999999-$U.jsonl"
+touch -d '2026-11-04 12:00' "$R1/ffffffff-$U.jsonl" "$R1/99999999-$U.jsonl"
 touch -d '2026-11-01 12:00' "$R1/dddddddd-$U.jsonl"
 touch -d '2026-11-04 12:00' "$R1/aaaaaaaa-$U.jsonl" "$R2/aaaaaaaa-$U.jsonl" "$R1/bbbbbbbb-$U.jsonl" \
   "$R1/cccccccc-$U.jsonl" "$R1/subagents/eeeeeeee-$U.jsonl" "$R1/not-a-uuid.jsonl"
 
+mkdir -p "$TMP/tmpdir"
+export TMPDIR="$TMP/tmpdir"
 export STUB_CALLS="$TMP/calls.log" SLICES_ROOT="$TMP/slices" SUMMARIZE_BIN="$TMP/stub.sh"
 export JSONL_ROOTS="$TMP/r1:$TMP/r2"
 : > "$STUB_CALLS"
 
-out="$(bash "$SCRIPT_DIR/slice-sessions.sh" 2026-11-04 | tail -1)"
-check "最終行" "slices: written=1 failed=1 candidates=3" "$out"
+out="$(bash "$SCRIPT_DIR/slice-sessions.sh" 2026-11-04 2>"$TMP/stderr.log" | tail -1)"
+check "最終行" "slices: written=2 failed=2 candidates=5" "$out"
+check "終了コード2も stderr がログに出る" "[ffffffff] boom" "$(grep ffffffff "$TMP/stderr.log")"
+check "一時ディレクトリが残らない" "0" "$(find "$TMP/tmpdir" -mindepth 1 | wc -l)"
+check "隠しファイル名の md も数える" "yes" "$([ -e "$SLICES_ROOT/2026-11-04/.proj-99999999.md" ] && echo yes || echo no)"
 check "古い jsonl は渡らない" "0" "$(grep -c dddddddd "$STUB_CALLS" || true)"
 check "subagents は渡らない" "0" "$(grep -c eeeeeeee "$STUB_CALLS" || true)"
 check "UUID 形式でないものは渡らない" "0" "$(grep -c not-a-uuid "$STUB_CALLS" || true)"
@@ -61,11 +71,13 @@ check "重複は大きいほうだけ" "$R2/aaaaaaaa-$U.jsonl" "$(grep aaaaaaaa 
 check "aaaaaaaa は1回だけ" "1" "$(grep -c aaaaaaaa "$STUB_CALLS")"
 check "引数" "$R1/bbbbbbbb-$U.jsonl|bbbbbbbb-$U|--slice|2026-11-04|--since|2026-11-03T22:10:00+09:00|--until|2026-11-04T22:10:00+09:00" \
   "$(grep bbbbbbbb "$STUB_CALLS")"
-check ".failed" "cccccccc" "$(cat "$SLICES_ROOT/2026-11-04/.failed")"
+check ".failed" "cccccccc
+ffffffff" "$(sort "$SLICES_ROOT/2026-11-04/.failed")"
 
 # 2回目: 前回の md と .failed が残らない（スタブが何も書かない状態で再実行）
 echo "# stale" > "$SLICES_ROOT/2026-11-04/stale.md"
-touch -d '2000-01-01' "$R1/aaaaaaaa-$U.jsonl" "$R2/aaaaaaaa-$U.jsonl" "$R1/cccccccc-$U.jsonl"
+touch -d '2000-01-01' "$R1/aaaaaaaa-$U.jsonl" "$R2/aaaaaaaa-$U.jsonl" "$R1/cccccccc-$U.jsonl" \
+  "$R1/ffffffff-$U.jsonl" "$R1/99999999-$U.jsonl"
 out2="$(bash "$SCRIPT_DIR/slice-sessions.sh" 2026-11-04 | tail -1)"
 check "再実行の最終行" "slices: written=0 failed=0 candidates=1" "$out2"
 check "再実行で md が残らない" "0" "$(find "$SLICES_ROOT/2026-11-04" -name '*.md' | wc -l)"
