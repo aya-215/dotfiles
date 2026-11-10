@@ -57,6 +57,17 @@ class OriginTest(unittest.TestCase):
         self.commit("- [ ] x\n- [ ] ai one\n", "todo: 2026-01-03 10:00")
         self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
 
+    def test_invalid_utf8_worktree_is_human(self):
+        self.commit("- [ ] ai one\n", "todo(ai): add")
+        self.f.write_bytes("- [ ] ai one\n- [ ] 日本語\n".encode("shift_jis"))
+        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
+
+    def test_invalid_utf8_in_head_too_is_human(self):
+        self.f.write_bytes("- [ ] ai one 日本語\n".encode("shift_jis"))
+        git(self.repo, "add", "todo.md")
+        git(self.repo, "commit", "-q", "-m", "todo(ai): add")
+        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
+
     def test_unknown_title_is_human(self):
         self.commit("- [ ] a\n", "todo(ai): add")
         self.assertEqual(origin_of(self.repo, "todo.md", "zzz"), "human")
