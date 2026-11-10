@@ -412,14 +412,23 @@ def _commit_human_edits(repo: Path, name: str) -> None:
     _git(repo, "commit", "-q", "-m", f"todo: {stamp}", "--", name, retry=True)
 
 
-def _last_written_confirm(repo: Path, name: str) -> "list[str]":
-    h = _git(repo, "log", "-1", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", name).strip()
-    if not h:
-        return []
+def _confirm_at(repo: Path, rev: str, name: str) -> "list[str] | None":
     try:
-        return todo_md.parse(_git(repo, "show", f"{h}:{name}")).confirm
+        return todo_md.parse(_git(repo, "show", f"{rev}:{name}")).confirm
     except (RuntimeError, ValueError):
-        return []
+        return None
+
+
+def _last_written_confirm(repo: Path, name: str) -> "list[str]":
+    # 確認待ちを変えなかった AI/同期コミットは人の追記をそのまま運ぶので、基準にすると追記を apply の内容と取り違える
+    out = _git(repo, "log", f"-{decisions.MAX_SCAN}", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", name)
+    for h in out.split():
+        mine = _confirm_at(repo, h, name)
+        if mine is None:
+            continue
+        if mine != _confirm_at(repo, f"{h}^", name):
+            return mine
+    return []
 
 
 def _write_atomic(path: Path, text: str, expect: "str | None" = None) -> None:

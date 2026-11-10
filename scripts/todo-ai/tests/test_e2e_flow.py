@@ -169,6 +169,18 @@ class E2EFlow(unittest.TestCase):
             {"op": "set_next", "ref": "epc#1202", "next": "彌永さんのレビュー", "reason": "r"}]}, 3)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("来週聞く", self.todo.read_text(encoding="utf-8"))
+        # 確認待ちに触れない AI/同期コミットの後も、人の追記は守られ続ける
+        self.assertEqual(len(self.context()["confirm_errors"]), 1)
+        res = self.apply({"source": "ai", "ops": [], "confirm": []}, 4)
+        self.assertEqual(res.returncode, 2, res.stdout)
+        self.assertIn("来週聞く", self.todo.read_text(encoding="utf-8"))
+        res = self.apply({"source": "sync", "ops": [
+            {"op": "move", "ref": "epc#1202", "to": "完了", "reason": "merged"}]}, 5)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(len(self.context()["confirm_errors"]), 1)
+        res = self.apply({"source": "ai", "ops": [], "confirm": []}, 6)
+        self.assertEqual(res.returncode, 2, res.stdout)
+        self.assertIn("来週聞く", self.todo.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
