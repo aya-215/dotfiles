@@ -180,6 +180,27 @@ end
 -- 日付が複数回付かない
 eq(core.toggle({ "## やる", "", "## 完了", "- [x] a (done: 2026-01-02)" }, 4)[2], "- [ ] a", "toggle strips existing date")
 
+-- 終了時はコミットが済むまでロックを残す
+do
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  vim.env.TODO_MD_PATH = dir .. "/todo.md"
+  package.loaded["todo"] = nil
+  local todo = require("todo")
+  vim.fn.writefile(core.skeleton(), todo.path)
+  vim.cmd.edit(todo.path)
+  todo.lock()
+  local lock_at_commit
+  todo.commit = function()
+    lock_at_commit = vim.fn.filereadable(dir .. "/.todo.lock")
+  end
+  todo.leave()
+  eq(lock_at_commit, 1, "leave commits while lock is held")
+  eq(vim.fn.filereadable(dir .. "/.todo.lock"), 0, "leave unlocks after commit")
+  vim.cmd("bwipeout!")
+  vim.fn.delete(dir, "rf")
+end
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)

@@ -70,10 +70,19 @@ function M.unlock()
   end
 end
 
-local function quit()
+-- 書き込み → commit → unlock の順。先に外すと apply.py が未コミットの人の編集に AI の変更を重ねる
+function M.leave()
+  if vim.fn.bufnr(M.path) ~= -1 and vim.fn.filereadable(M.path) == 1 then
+    M.commit()
+  end
   M.unlock()
-  vim.cmd("exit")
+end
+
+-- exit の後は処理が走らないので、unlock は VimLeavePre の M.leave に任せる
+local function quit()
+  vim.cmd("update")
   M.commit()
+  vim.cmd("exit")
 end
 
 function M._insert_task(above)
@@ -130,10 +139,7 @@ function M.setup()
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = group,
     callback = function()
-      M.unlock()
-      if vim.fn.bufnr(M.path) ~= -1 and vim.fn.filereadable(M.path) == 1 then
-        M.commit()
-      end
+      M.leave()
     end,
   })
 end

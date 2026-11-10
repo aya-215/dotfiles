@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Callable
@@ -30,8 +31,10 @@ OP_LABELS = {
     "add": "追加", "move": "移動", "set_next": "next更新", "attach": "紐付け",
     "order": "並べ替え", "confirm": "確認待ち", "archive": "アーカイブ",
 }
-_CONFIRM_Q = re.compile(r"\d+\. ")
-_CONFIRM_FIELD = re.compile(r"(事実|選択|回答)[:：]\s*(.*)\Z")
+CONFIRM_FIELDS = ("事実", "選択", "回答")
+_CONFIRM_Q = re.compile(r"(\d+)\. (.+)\Z")
+_CONFIRM_FIELD = re.compile(r"\s+(事実|選択|回答)[:：] ?(.*)\Z")
+GIT_RETRIES = 10
 
 
 class ChangeError(ValueError):
@@ -70,21 +73,68 @@ def _note(op: dict, head: str, url: "str | None") -> str:
     return s
 
 
-def _check_old_confirm(lines: "list[str]", answered: list) -> None:
-    n_answers = 0
-    for line in lines:
-        st = line.strip()
-        if not st or _CONFIRM_Q.match(st):
+def parse_confirm(lines: "list[str]") -> "list[dict]":
+    """確認待ちを「問い・事実・選択・回答」の4行ブロックの列として厳密に読む。崩れていれば ChangeError。
+
+    各ブロックは {"question", "事実", "選択", "回答", "lines"}。ブロックの間の空行だけ許す。
+    """
+    blocks = []
+    i = 0
+    while i < len(lines):
+        if not lines[i].strip():
+            i += 1
             continue
-        m = _CONFIRM_FIELD.match(st)
+        m = _CONFIRM_Q.match(lines[i])
         if not m:
-            raise ChangeError(f"確認待ちに解釈できない行がある（全置換すると消える）: {line!r}")
-        if m.group(1) == "回答" and m.group(2).strip():
-            n_answers += 1
-    if len(answered) < n_answers:
-        raise ChangeError(
-            f"確認待ちの回答 {n_answers} 件に対し answered が {len(answered)} 件（回答が消える）"
-        )
+            raise ChangeError(f"確認待ちに解釈できない行がある（全置換すると消える）: {lines[i]!r}")
+        block = {"question": m.group(2), "lines": lines[i:i + 4]}
+        for j, name in enumerate(CONFIRM_FIELDS, 1):
+            f = _CONFIRM_FIELD.match(lines[i + j]) if i + j < len(lines) else None
+            if not f or f.group(1) != name:
+                raise ChangeError(f"確認待ちのブロックが崩れている（{name} の行が無い）: {lines[i]!r}")
+            block[name] = f.group(2)
+        blocks.append(block)
+        i += 4
+    return blocks
+
+
+def _check_answers(blocks: "list[dict]", answered: list) -> None:
+    pool = Counter()
+    for a in answered:
+        if not isinstance(a, dict) or not isinstance(a.get("answer"), str):
+            raise ChangeError(f"answered の要素に answer の文字列が無い: {a!r}")
+        pool[a["answer"].strip()] += 1
+    for b in blocks:
+        ans = b["回答"].strip()
+        if not ans:
+            continue
+        if pool[ans] <= 0:
+            raise ChangeError(f"確認待ちの回答が answered に無い（全置換すると消える）: {ans!r}")
+        pool[ans] -= 1
+
+
+def confirm_edit_errors(current: "list[str]", written: "list[str]") -> "list[str]":
+    """確認待ちの問い・事実・選択が、apply が最後に書いた内容から変わっていれば違反を返す。
+
+    written は最後の todo(ai)/todo(sync) コミット時点の確認待ち。人が足した文は全置換で消えるため止める。
+    """
+    try:
+        cur = parse_confirm(current)
+    except ChangeError as e:
+        return [str(e)]
+    try:
+        prev = parse_confirm(written)
+    except ChangeError:
+        prev = []
+    pool = Counter((b["question"], b["事実"], b["選択"]) for b in prev)
+    errs = []
+    for b in cur:
+        k = (b["question"], b["事実"], b["選択"])
+        if pool[k] <= 0:
+            errs.append(f"確認待ちの問い・事実・選択が apply の書いた内容と違う（人の追記が消える）: {b['lines'][0]!r}")
+        else:
+            pool[k] -= 1
+    return errs
 
 
 def _render_confirm(entries: list) -> "list[str]":
@@ -157,13 +207,13 @@ def apply_changes(
             loc = locate(ref)
             if loc is None or loc[0] == to:
                 continue
+            if loc[0] == "完了":
+                raise ChangeError(f"{source} は完了から戻せない: {ref}")
             it = doc.sections[loc[0]].pop(loc[1])
             if to == "完了":
                 it.done, it.done_date = True, today
                 doc.sections[to].insert(0, it)
             else:
-                if loc[0] == "完了":
-                    it.done, it.done_date = False, None
                 doc.sections[to].append(it)
             body.append(_note(op, f"move {ref} → {to}", op.get("url") or it.url))
         elif kind == "set_next":
@@ -221,11 +271,17 @@ def apply_changes(
         answered = changes.get("answered", [])
         if not isinstance(entries, list) or not isinstance(answered, list):
             raise ChangeError("confirm/answered が配列でない")
-        _check_old_confirm(doc.confirm, answered)
+        old_blocks = parse_confirm(doc.confirm)
+        _check_answers(old_blocks, answered)
         new_confirm = _render_confirm(entries)
         if new_confirm != doc.confirm:
             doc.confirm = new_confirm
             body.append(f"confirm: {len(entries)} 件")
+            # decisions に記録されるまでは、コミット本文が人の回答の唯一の控えになる
+            for b in old_blocks:
+                if b["回答"].strip():
+                    body.append(f"answer: {b['lines'][0]}")
+                    body.extend(b["lines"][1:])
     return doc, body
 
 
@@ -252,10 +308,16 @@ def validate(before: Doc, after: Doc, origins: Callable[[str], str], source: str
         if titles_a[t] < n and origins(t) == "human":
             errs.append(f"人が書いたタイトルが変わる: {t!r}")
     if source in SOURCES:
-        done_a = Counter(_ident(it) for it in _items(after, ["完了"]))
-        for ident, n in Counter(_ident(it) for it in _items(before, ["完了"])).items():
-            if done_a[ident] < n:
-                errs.append(f"{source} は完了から戻せない: {ident!r}")
+        done_b, done_a = _items(before, ["完了"]), _items(after, ["完了"])
+        pairs_a = Counter((it.title, it.key) for it in done_a if it.key)
+        for (t, k), n in Counter((it.title, it.key) for it in done_b if it.key).items():
+            if pairs_a[(t, k)] < n:
+                errs.append(f"{source} は完了から戻せない: {k} {t!r}")
+        # key の無い完了行は attach で key が付きうるので、タイトルだけで数える
+        titles_done_a = Counter(it.title for it in done_a)
+        for t, n in Counter(it.title for it in done_b if not it.key).items():
+            if titles_done_a[t] < n:
+                errs.append(f"{source} は完了から戻せない: {t!r}")
     return errs
 
 
@@ -308,7 +370,7 @@ def nvim_editing(todo_dir: Path) -> bool:
             return True
     except PermissionError:
         return True
-    except (ValueError, ProcessLookupError):
+    except (ValueError, OverflowError, OSError):
         pass
     try:
         lock.unlink()
@@ -317,11 +379,22 @@ def nvim_editing(todo_dir: Path) -> bool:
     return False
 
 
-def _git(repo: Path, *args: str) -> str:
-    r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8")
-    if r.returncode != 0:
-        raise RuntimeError(f"git {' '.join(args)} failed: {r.stderr.strip()}")
-    return r.stdout
+class _Changed(Exception):
+    """読んだ後に todo.md が書き換えられた。"""
+
+
+def _git(repo: Path, *args: str, retry: bool = False) -> str:
+    """retry=True なら index.lock の競合（nvim の git 連携など）を、ロックを消して最大10回まで再試行する。"""
+    for n in range(GIT_RETRIES):
+        r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, encoding="utf-8")
+        if r.returncode == 0:
+            return r.stdout
+        if not retry or "index.lock" not in r.stderr or n == GIT_RETRIES - 1:
+            raise RuntimeError(f"git {' '.join(args)} failed: {r.stderr.strip()}")
+        git_dir = Path(_git(repo, "rev-parse", "--absolute-git-dir").strip())
+        (git_dir / "index.lock").unlink(missing_ok=True)
+        time.sleep(1)
+    raise AssertionError("unreachable")
 
 
 def _commit_human_edits(repo: Path, name: str) -> None:
@@ -329,11 +402,22 @@ def _commit_human_edits(repo: Path, name: str) -> None:
     if not _git(repo, "status", "--porcelain", "--", name).strip():
         return
     stamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    _git(repo, "add", "--", name)
-    _git(repo, "commit", "-q", "-m", f"todo: {stamp}", "--", name)
+    _git(repo, "add", "--", name, retry=True)
+    _git(repo, "commit", "-q", "-m", f"todo: {stamp}", "--", name, retry=True)
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def _last_written_confirm(repo: Path, name: str) -> "list[str]":
+    h = _git(repo, "log", "-1", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", name).strip()
+    if not h:
+        return []
+    try:
+        return todo_md.parse(_git(repo, "show", f"{h}:{name}")).confirm
+    except (RuntimeError, ValueError):
+        return []
+
+
+def _write_atomic(path: Path, text: str, expect: "str | None" = None) -> None:
+    """expect を渡すと、置き換える直前に中身が expect のままか確かめ、違えば書かずに _Changed。"""
     tmp = path.with_name(f".{path.name}.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(text)
@@ -341,7 +425,18 @@ def _write_atomic(path: Path, text: str) -> None:
         os.fsync(f.fileno())
     if path.exists():
         shutil.copymode(path, tmp)
+    if expect is not None and path.read_text(encoding="utf-8") != expect:
+        tmp.unlink()
+        raise _Changed(str(path))
     os.replace(tmp, path)
+
+
+def _restore(originals: "dict[Path, str | None]") -> None:
+    for p, old in originals.items():
+        if old is None:
+            p.unlink(missing_ok=True)
+        else:
+            _write_atomic(p, old)
 
 
 def summarize(body: "list[str]") -> str:
@@ -377,6 +472,8 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
             print(f"apply: 未適用: {e}", file=sys.stderr)
             return 2
         errs = validate(before, after, lambda t: origin_of(repo, name, t), source) + roundtrip_errors(after)
+        if "confirm" in changes:
+            errs += confirm_edit_errors(before.confirm, _last_written_confirm(repo, name))
         if errs:
             print("apply: 検証違反のため未適用:\n" + "\n".join(errs), file=sys.stderr)
             return 2
@@ -384,21 +481,38 @@ def run(changes_path: Path, todo: Path, today: str) -> int:
         new_text = todo_md.render(kept)
         if new_text == todo_md.render(before) and not archived:
             return 0
-        if nvim_editing(repo):
+        if nvim_editing(repo) or todo.read_text(encoding="utf-8") != text:
             print("apply: todo.md を編集中のためスキップ", file=sys.stderr)
             return 3
 
         archive_dir = repo / "todo-archive"
+        originals: "dict[Path, str | None]" = {}
         for month, items in sorted(archived.items()):
+            p = archive_dir / f"{month}.md"
+            originals[p] = p.read_text(encoding="utf-8") if p.exists() else None
             archive_dir.mkdir(exist_ok=True)
-            with open(archive_dir / f"{month}.md", "a", encoding="utf-8") as f:
-                f.write("".join(todo_md._render_item(it) + "\n" for it in items))
+            _write_atomic(p, (originals[p] or "") + "".join(todo_md._render_item(it) + "\n" for it in items))
             body += [f"archive {it.ref} → todo-archive/{month}.md" for it in items]
-        _write_atomic(todo, new_text)
+        try:
+            _write_atomic(todo, new_text, expect=text)
+        except _Changed:
+            _restore(originals)
+            print("apply: 読んだ後に todo.md が変わったためスキップ", file=sys.stderr)
+            return 3
 
         paths = [name] + [p for p in ("todo-archive", "todo-decisions.jsonl") if (repo / p).exists()]
-        _git(repo, "add", "--", *paths)
-        _git(repo, "commit", "-q", "-m", f"todo({source}): {summarize(body)}", "-m", "\n".join(body), "--", *paths)
+        try:
+            _git(repo, "add", "--", *paths, retry=True)
+            _git(repo, "commit", "-q", "-m", f"todo({source}): {summarize(body)}", "-m", "\n".join(body),
+                 "--", *paths, retry=True)
+        except RuntimeError:
+            # 未コミットのまま残すと次の人のコミットに AI の変更が混ざるので戻す。人が触った後なら触らない
+            try:
+                _write_atomic(todo, text, expect=new_text)
+                _restore(originals)
+            except _Changed:
+                pass
+            raise
     return 0
 
 
