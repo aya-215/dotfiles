@@ -120,7 +120,7 @@ class Records(unittest.TestCase):
             self.assertIsNone(decisions.already_answered(recs, "b", "manual"))
 
 
-CONF = "1. 方針は？\n   事実: f\n   選択: A x / B y\n   回答: A\n"
+CONF = "1. 方針は？ [policy epc#1]\n   事実: f\n   選択: A x / B y\n   回答: A\n"
 
 
 class ApplyIntegration(unittest.TestCase):
@@ -168,6 +168,13 @@ class ApplyIntegration(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertIn("## やる\n- [ ] 調査", self.r.todo.read_text(encoding="utf-8"))
         self.assertIn("skip: pinned epc#1", self.r.git("log", "-1", "--format=%b"))
+
+    def test_answer_recorded_without_answered(self):
+        self.r.commit(doc(yaru=L, confirm=CONF), "todo(ai): base")
+        res = self.run_apply({"source": "ai", "ops": [], "confirm": []})
+        self.assertEqual(res.returncode, 0, res.stderr)
+        recs = decisions.load(self.r.dir / "todo-decisions.jsonl")
+        self.assertEqual([(x["ref"], x["kind"], x["value"]) for x in recs], [("epc#1", "policy", "A")])
 
     def test_answered_without_ref_kind_rejected(self):
         self.r.commit(doc(yaru=L, confirm=CONF), "todo(ai): base")

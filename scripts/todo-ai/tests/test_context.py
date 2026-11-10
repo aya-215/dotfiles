@@ -41,31 +41,13 @@ class Repo:
         self.git("commit", "-q", "-m", msg, env=env)
 
 
-class TagTest(unittest.TestCase):
-    def test_tag_parsed_kind_first_ref_rest(self):
-        self.assertEqual(context.parse_tag("まだ要る？ [still_needed rc:abc#1]"), ("still_needed", "rc:abc#1"))
-
-    def test_title_ref_with_spaces_and_brackets(self):
-        self.assertEqual(context.parse_tag("これはタスク？ [is_task title:合田さん [件] の返信]"),
-                         ("is_task", "title:合田さん [件] の返信"))
-
-    def test_untagged_or_unknown_kind(self):
-        self.assertEqual(context.parse_tag("相談する？"), (None, None))
-        self.assertEqual(context.parse_tag("相談する？ [foo epc#1]"), (None, None))
-
-    def test_tag_helper_matches_parser(self):
-        q = context.with_tag("相談する？", "policy", "epc#1202")
-        self.assertEqual(q, "相談する？ [policy epc#1202]")
-        self.assertEqual(context.parse_tag(q), ("policy", "epc#1202"))
-
-
 class OptionsTest(unittest.TestCase):
     def test_roundtrip_with_render_confirm(self):
         entries = [
-            {"ref": "epc#1", "kind": "policy", "question": "相談する？ [policy epc#1]", "facts": "710件",
+            {"ref": "epc#1", "kind": "policy", "question": "相談する？", "facts": "710件",
              "options": [{"label": "A", "text": "相談する", "recommended": True},
                          {"label": "B", "text": "そのまま", "recommended": False}]},
-            {"ref": "rc:x", "kind": "manual", "question": "やった？ [manual rc:x]", "facts": "",
+            {"ref": "rc:x", "kind": "manual", "question": "やった？", "facts": "",
              "options": []},
         ]
         lines = apply._render_confirm(entries)
@@ -73,17 +55,20 @@ class OptionsTest(unittest.TestCase):
         again = apply._render_confirm([{k: b[k] for k in ("ref", "kind", "question", "facts", "options")}
                                        for b in blocks])
         self.assertEqual(again, lines)
+        self.assertEqual(lines[0], "1. 相談する？ [policy epc#1]")
+        self.assertEqual((blocks[0]["question"], blocks[0]["ref"], blocks[0]["kind"]), ("相談する？", "epc#1", "policy"))
         self.assertEqual(blocks[0]["options"][0], {"label": "A", "text": "相談する", "recommended": True})
         self.assertEqual(blocks[1]["options"], [])
 
     def test_slash_inside_option_text_roundtrips(self):
-        entries = [{"question": "q", "facts": "",
+        entries = [{"ref": "epc#1", "kind": "policy", "question": "q", "facts": "",
                     "options": [{"label": "A", "text": "x / y", "recommended": True},
                                 {"label": "B", "text": "z", "recommended": False}]}]
         lines = apply._render_confirm(entries)
         opts = context.confirm_blocks(lines)[0]["options"]
         self.assertEqual(opts, entries[0]["options"])
-        self.assertEqual(apply._render_confirm([{"question": "q", "facts": "", "options": opts}]), lines)
+        self.assertEqual(apply._render_confirm([{"ref": "epc#1", "kind": "policy", "question": "q", "facts": "",
+                                                 "options": opts}]), lines)
 
 
 class BuildTest(unittest.TestCase):
@@ -122,6 +107,25 @@ class BuildTest(unittest.TestCase):
         self.assertIsNone(h["added_date"])
         self.assertIsNone(h["age_days"])
 
+    def test_key_is_the_date_needle_when_present(self):
+        self.r.commit(doc(yaru="- [ ] 返信\n"), "todo: base", date="2026-10-01")
+        self.r.commit(doc(yaru="- [ ] 返信\n- [ ] 返信 [rc:k1](https://rc/k1)\n"), "todo(ai): add", date="2026-11-01")
+        h = self.item(self.build(), "rc:k1")
+        self.assertEqual((h["added_date"], h["age_days"]), ("2026-11-01", 9))
+
+    def test_archived_keys(self):
+        self.r.commit(doc(), "todo: base")
+        arc = self.r.dir / "todo-archive"
+        arc.mkdir()
+        (arc / "2026-09.md").write_text("- [x] 古い [epc#7](https://g/7) (done: 2026-09-01)\n- [x] 鍵なし (done: 2026-09-02)\n",
+                                        encoding="utf-8")
+        (arc / "2026-10.md").write_text("- [x] 返信 [rc:z9](https://rc/z9) (done: 2026-10-01)\nゴミ行\n", encoding="utf-8")
+        self.assertEqual(self.build()["archived_keys"], ["epc#7", "rc:z9"])
+
+    def test_no_archive_dir(self):
+        self.r.commit(doc(), "todo: base")
+        self.assertEqual(self.build()["archived_keys"], [])
+
     def test_empty_title_uses_key_for_date(self):
         self.r.commit(doc(yaru="- [ ] [epc#5](https://g/5)\n"), "todo(ai): add", date="2026-11-01")
         h = self.item(self.build(), "epc#5")
@@ -152,6 +156,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(ctx["confirm_errors"], [])
         self.assertEqual([(b["number"], b["ref"], b["kind"], b["answer"]) for b in ctx["confirm_blocks"]],
                          [(1, "epc#1", "policy", "B で"), (2, "rc:x", "manual", "")])
+        self.assertEqual(ctx["confirm_blocks"][0]["question"], "相談する？")
         self.assertEqual(ctx["answered_now"], [{"ref": "epc#1", "kind": "policy", "answer": "B で"}])
 
     def test_free_text_in_confirm_is_error(self):
@@ -169,20 +174,20 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(len(ctx["confirm_errors"]), 1)
         self.assertIn("相談する", ctx["confirm_errors"][0])
 
-    def test_answered_untagged_block_is_error(self):
+    def test_untagged_block_is_error(self):
         conf = "1. 相談する？\n   事実: f\n   選択: A する\n   回答: A\n"
         self.r.commit(doc(confirm=conf), "todo(ai): base")
         ctx = self.build()
         self.assertEqual(ctx["answered_now"], [])
         self.assertEqual(len(ctx["confirm_errors"]), 1)
-        self.assertIn("ref", ctx["confirm_errors"][0])
+        self.assertIn("タグ", ctx["confirm_errors"][0])
 
-    def test_unanswered_untagged_block_is_fine(self):
+    def test_unanswered_untagged_block_is_error_too(self):
         conf = "1. 相談する？\n   事実: f\n   選択: A する\n   回答:\n"
         self.r.commit(doc(confirm=conf), "todo(ai): base")
         ctx = self.build()
-        self.assertEqual(ctx["confirm_errors"], [])
-        self.assertEqual((ctx["confirm_blocks"][0]["ref"], ctx["confirm_blocks"][0]["kind"]), (None, None))
+        self.assertEqual(len(ctx["confirm_errors"]), 1)
+        self.assertIn("タグ", ctx["confirm_errors"][0])
 
 
 class CliTest(unittest.TestCase):

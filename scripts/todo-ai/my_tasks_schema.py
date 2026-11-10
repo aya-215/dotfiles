@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import todo_md
 
 BALLS = ("mine", "theirs", "maybe_done")
+SOURCES = ("daily", "rocketchat", "github", "gitbucket", "worktree", "sessions", "mail")
 _REQUIRED = ("key", "url", "title", "ball", "next", "evidence", "deadline",
              "waiting_person", "blocks")
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
@@ -32,6 +33,9 @@ def validate_candidates(data) -> "list[str]":
     if not (isinstance(w, dict) and all(
             isinstance(w.get(k), str) and _DATE.match(w[k]) for k in ("from", "to"))):
         errs.append("window must be {from, to} as YYYY-MM-DD")
+    sf = data.get("sources_failed", [])
+    if not (isinstance(sf, list) and all(x in SOURCES for x in sf)):
+        errs.append(f"sources_failed must be a list of {SOURCES}")
     cands = data.get("candidates")
     if not isinstance(cands, list):
         return errs + ["candidates must be a list"]

@@ -166,11 +166,11 @@ class ApplyChangesTest(unittest.TestCase):
              "facts": "依頼あり", "options": [{"label": "A", "text": "はい"}]},
         ])
         self.assertEqual(new.confirm, [
-            "1. 方針を決める",
+            "1. 方針を決める [policy epc#1202]",
             "   事実: PR が2本",
             "   選択: A まとめる（おすすめ） / B 分ける",
             "   回答:",
-            "2. タスク？",
+            "2. タスク？ [is_task title:インターン資料修正]",
             "   事実: 依頼あり",
             "   選択: A はい",
             "   回答:",
@@ -186,18 +186,53 @@ class ApplyChangesTest(unittest.TestCase):
         with self.assertRaises(ChangeError):
             self.run_ops([], confirm=[])
 
-    def test_answers_must_match_answered_verbatim(self):
-        self.doc.confirm = ["1. q1", "   事実: f", "   選択: A x", "   回答: A", "",
-                            "2. q2", "   事実: f", "   選択: B y", "   回答: B にする、理由は来週"]
-        for answered in ([None, None], [{"answer": "A"}, {"answer": "B"}], [{"answer": "A"}, {"answer": "A"}]):
+    def test_confirm_requires_ref_and_known_kind(self):
+        base = {"ref": "epc#1", "kind": "policy", "question": "q", "facts": "", "options": []}
+        for bad in ({"ref": ""}, {"ref": None}, {"kind": "other"}, {"kind": None}, {"ref": "a\nb"}):
+            with self.assertRaises(ChangeError, msg=bad):
+                self.run_ops([], confirm=[{**base, **bad}])
+
+    def test_existing_tag_in_question_not_doubled(self):
+        new, _ = self.run_ops([], confirm=[
+            {"ref": "epc#1", "kind": "policy", "question": "q [manual rc:x]", "facts": "", "options": []}])
+        self.assertEqual(new.confirm[0], "1. q [policy epc#1]")
+
+    def test_tag_helpers(self):
+        self.assertEqual(apply.parse_tag("まだ要る？ [still_needed rc:abc#1]"), ("still_needed", "rc:abc#1"))
+        self.assertEqual(apply.parse_tag("タスク？ [is_task title:返信 [件] の件]"), ("is_task", "title:返信 [件] の件"))
+        self.assertEqual(apply.parse_tag("相談する？"), (None, None))
+        self.assertEqual(apply.parse_tag("相談する？ [foo epc#1]"), (None, None))
+        self.assertEqual(apply.strip_tag("相談する？ [policy epc#1]"), "相談する？")
+        self.assertEqual(apply.strip_tag("相談する？"), "相談する？")
+
+    ANSWERED = ["1. q1 [policy epc#1]", "   事実: f", "   選択: A x", "   回答: A", "",
+                "2. q2 [manual rc:x]", "   事実: f", "   選択: B y", "   回答:  B にする、理由は来週"]
+
+    def test_answer_records_come_from_tags(self):
+        self.assertEqual(apply.answer_records(apply.parse_confirm(self.ANSWERED)),
+                         [("epc#1", "policy", "A"), ("rc:x", "manual", "B にする、理由は来週")])
+
+    def test_answered_optional_but_must_match_tags_when_given(self):
+        self.doc.confirm = list(self.ANSWERED)
+        new, body = self.run_ops([], confirm=[])
+        self.assertEqual(new.confirm, [])
+        self.assertIn("answer: 2. q2 [manual rc:x]", body)
+        self.assertIn("   回答:  B にする、理由は来週", body)
+        ok = [{"ref": "rc:x", "kind": "manual", "answer": "B にする、理由は来週"},
+              {"ref": "epc#1", "kind": "policy", "answer": "A"}]
+        self.run_ops([], confirm=[], answered=ok)
+        for answered in ([None, None], [{"answer": "A"}, {"answer": "B"}], ok[:1],
+                         [ok[0], {**ok[1], "ref": "epc#2"}], [ok[0], {**ok[1], "kind": "manual"}]):
             with self.assertRaises(ChangeError, msg=answered):
                 self.run_ops([], confirm=[], answered=answered)
-        new, body = self.run_ops([], confirm=[], answered=[
-            {"ref": "epc#1", "kind": "policy", "answer": "B にする、理由は来週"},
-            {"ref": "epc#2", "kind": "policy", "answer": "A"}])
+
+    def test_answered_untagged_block_rejected(self):
+        self.doc.confirm = ["1. q1", "   事実: f", "   選択: A x", "   回答: A"]
+        with self.assertRaises(ChangeError):
+            self.run_ops([], confirm=[])
+        self.doc.confirm = ["1. q1", "   事実: f", "   選択: A x", "   回答:"]
+        new, _ = self.run_ops([], confirm=[])
         self.assertEqual(new.confirm, [])
-        self.assertIn("answer: 2. q2", body)
-        self.assertIn("   回答: B にする、理由は来週", body)
 
     def test_reopen_move_rejected_before_validate(self):
         doc = todo_md.parse(REOPEN_SWAP)
@@ -357,18 +392,37 @@ class CliTest(RepoMixin, unittest.TestCase):
         self.assertEqual(r.returncode, 2)
         self.assertEqual(self.todo.read_text(encoding="utf-8"), text)
 
-    def test_confirm_unrecorded_answer_exit2(self):
+    def test_confirm_untagged_answer_exit2(self):
         self.commit(BASE.replace("## 確認待ち\n", "## 確認待ち\n1. 問い\n   事実: f\n   選択: A x\n   回答:\n"),
                     "todo(ai): 確認待ち1")
         text = BASE.replace("## 確認待ち\n", "## 確認待ち\n1. 問い\n   事実: f\n   選択: A x\n   回答: A\n")
         self.commit(text)
+        for extra in ({}, {"answered": [{"ref": "epc#1202", "kind": "policy", "answer": "A"}]}):
+            r = self.run_apply({"source": "ai", "ops": [], "confirm": [], **extra})
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("タグ", r.stderr)
+            self.assertEqual(self.todo.read_text(encoding="utf-8"), text)
+
+    def test_confirm_answer_recorded_from_tag(self):
+        q = "1. 問い [policy epc#1202]\n   事実: f\n   選択: A x\n   回答:\n"
+        self.commit(BASE.replace("## 確認待ち\n", "## 確認待ち\n" + q), "todo(ai): 確認待ち1")
+        self.commit(BASE.replace("## 確認待ち\n", "## 確認待ち\n" + q.replace("回答:", "回答: A")))
         r = self.run_apply({"source": "ai", "ops": [], "confirm": []})
-        self.assertEqual(r.returncode, 2)
-        self.assertEqual(self.todo.read_text(encoding="utf-8"), text)
-        r = self.run_apply({"source": "ai", "ops": [], "confirm": [],
-                            "answered": [{"ref": "epc#1202", "kind": "policy", "answer": "A"}]})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("回答: A", self.todo.read_text(encoding="utf-8"))
+        recs = [json.loads(l) for l in (self.repo / "todo-decisions.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([(x["ref"], x["kind"], x["value"]) for x in recs], [("epc#1202", "policy", "A")])
+
+    def test_confirm_baseline_survives_many_commits_without_confirm_change(self):
+        q = "1. 問い [policy epc#1202]\n   事実: f\n   選択: A x\n   回答:\n"
+        text = BASE.replace("## 確認待ち\n", "## 確認待ち\n" + q)
+        self.commit(text, "todo(ai): 確認待ち1")
+        for i in range(60):
+            self.commit(text.replace("— next: 読む", f"— next: n{i}"), f"todo(sync): next{i}")
+        r = self.run_apply({"source": "ai", "ops": [], "confirm": [
+            {"ref": "epc#1202", "kind": "policy", "question": "問い", "facts": "f",
+             "options": [{"label": "A", "text": "x"}]}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
 
     def test_human_edit_of_confirm_block_exit2(self):
         self.commit(BASE.replace("## 確認待ち\n", "## 確認待ち\n1. 問い\n   事実: f\n   選択: A x\n   回答:\n"),

@@ -505,6 +505,7 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 
 ```json
 {"generated_at": "ISO8601", "window": {"from": "YYYY-MM-DD", "to": "YYYY-MM-DD"},
+ "sources_failed": [],
  "candidates": [{"key": "rc:abc#1", "url": "...", "title": "...", "ball": "mine|theirs|maybe_done",
    "next": "...", "evidence": "一次データの抜粋（1〜2行）", "deadline": "YYYY-MM-DD|null",
    "waiting_person": "名前|null", "blocks": ["key", "..."]}]}
@@ -513,6 +514,7 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 - `ball`: 自分ボール=`mine` / 他人ボール=`theirs` / 完了っぽい=`maybe_done`。この3値以外は書かない
 - `window`: Step の対象期間（直近2週間）。`deadline` は明示された締切だけ。推測しない
 - `blocks`: この候補が終わらないと進められない他候補の key。無ければ `[]`
+- `sources_failed`: Step 1 の取得に失敗した（エラー・認証切れ・0件が不自然で裏が取れない）ソース。`daily` / `rocketchat` / `github` / `gitbucket` / `worktree` / `sessions` / `mail` の名前で書き、全部取れたら `[]`。`/todo` は失敗したソースの行を「進展なし」と扱わないためにこれを見る
 - `evidence` は一次データ（RC 発言・PR/Issue の状態・メール件名/Sent・差分）の**引用**。要約や推測を書かない
 - **証拠にしてはいけないもの**: `~/memo/todo.md`、過去の `/todo` ログ（`~/.local/log/todo-ai/`）、過去の `/my-tasks` 出力。台帳との突き合わせは `/todo` 側の責務で、ここで読むと台帳の誤りが候補に混入する。これらは読まない
 

@@ -35,6 +35,8 @@ OP_LABELS = {
 CONFIRM_FIELDS = ("事実", "選択", "回答")
 _CONFIRM_Q = re.compile(r"(\d+)\. (.+)\Z")
 _CONFIRM_FIELD = re.compile(r"\s+(事実|選択|回答)[:：] ?(.*)\Z")
+KINDS = ("policy", "before_share", "manual", "conflict", "is_task", "still_needed")
+_TAG = re.compile(r" \[(" + "|".join(KINDS) + r") (.+)\]\Z")
 GIT_RETRIES = 10
 
 
@@ -99,21 +101,45 @@ def parse_confirm(lines: "list[str]") -> "list[dict]":
     return blocks
 
 
+def with_tag(question: str, kind: str, ref: str) -> str:
+    return f"{question} [{kind} {ref}]"
+
+
+def parse_tag(question: str) -> "tuple[str | None, str | None]":
+    """問いの末尾の `[<kind> <ref>]` を (kind, ref) で返す。kind が先なので空白を含む title: の ref も読める。"""
+    m = _TAG.search(question)
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
+def strip_tag(question: str) -> str:
+    return _TAG.sub("", question)
+
+
+def answer_records(blocks: "list[dict]") -> "list[tuple[str, str, str]]":
+    """回答欄が埋まったブロックの (ref, kind, 回答)。タグが無ければ記録先が分からないので ChangeError。"""
+    out = []
+    for b in blocks:
+        ans = b["回答"].strip()
+        if not ans:
+            continue
+        kind, ref = parse_tag(b["question"])
+        if ref is None:
+            raise ChangeError(f"回答のある確認待ちに [kind ref] のタグが無い（記録先が分からない）: {b['lines'][0]!r}")
+        out.append((ref, kind, ans))
+    return out
+
+
 def _check_answers(blocks: "list[dict]", answered: list) -> None:
-    pool = Counter()
+    """answered は記録には使わない。渡されたときだけ、回答欄から読んだ内容と一致するか確かめる。"""
+    got = Counter()
     for a in answered:
         if not isinstance(a, dict) or not isinstance(a.get("answer"), str):
             raise ChangeError(f"answered の要素に answer の文字列が無い: {a!r}")
         if not all(isinstance(a.get(k), str) and a[k] for k in ("ref", "kind")):
             raise ChangeError(f"answered の要素の ref/kind が空でない文字列でない: {a!r}")
-        pool[a["answer"].strip()] += 1
-    for b in blocks:
-        ans = b["回答"].strip()
-        if not ans:
-            continue
-        if pool[ans] <= 0:
-            raise ChangeError(f"確認待ちの回答が answered に無い（全置換すると消える）: {ans!r}")
-        pool[ans] -= 1
+        got[(a["ref"], a["kind"], a["answer"].strip())] += 1
+    if got != Counter(answer_records(blocks)):
+        raise ChangeError("answered が確認待ちの回答欄と食い違う")
 
 
 def confirm_edit_errors(current: "list[str]", written: "list[str]") -> "list[str]":
@@ -145,7 +171,10 @@ def _render_confirm(entries: list) -> "list[str]":
     for n, e in enumerate(entries, 1):
         if not isinstance(e, dict):
             raise ChangeError(f"confirm の要素が object でない: {e!r}")
-        q = _str(e, "question")
+        ref = _str(e, "ref")
+        if e.get("kind") not in KINDS:
+            raise ChangeError(f"confirm の kind が不正: {e.get('kind')!r}")
+        q = with_tag(strip_tag(_str(e, "question")), e["kind"], ref)
         facts = _str(e, "facts", required=False) or ""
         opts = []
         options = e.get("options") or []
@@ -274,11 +303,13 @@ def apply_changes(
 
     if "confirm" in changes:
         entries = changes["confirm"]
-        answered = changes.get("answered", [])
-        if not isinstance(entries, list) or not isinstance(answered, list):
+        answered = changes.get("answered")
+        if not isinstance(entries, list) or not isinstance(answered, (list, type(None))):
             raise ChangeError("confirm/answered が配列でない")
         old_blocks = parse_confirm(doc.confirm)
-        _check_answers(old_blocks, answered)
+        answer_records(old_blocks)
+        if answered is not None:
+            _check_answers(old_blocks, answered)
         new_confirm = _render_confirm(entries)
         if new_confirm != doc.confirm:
             doc.confirm = new_confirm
@@ -412,22 +443,43 @@ def _commit_human_edits(repo: Path, name: str) -> None:
     _git(repo, "commit", "-q", "-m", f"todo: {stamp}", "--", name, retry=True)
 
 
-def _confirm_at(repo: Path, rev: str, name: str) -> "list[str] | None":
-    try:
-        return todo_md.parse(_git(repo, "show", f"{rev}:{name}")).confirm
-    except (RuntimeError, ValueError):
-        return None
+def _confirms_at(repo: Path, revs: "list[str]") -> "list[list[str] | None]":
+    """各 rev（`<commit>:<path>` の形）の確認待ち。無い・読めないものは None。git は1回だけ起動する。"""
+    r = subprocess.run(["git", "-C", str(repo), "cat-file", "--batch"], input="".join(v + "\n" for v in revs).encode(),
+                       capture_output=True)
+    if r.returncode != 0:
+        raise RuntimeError(f"git cat-file failed: {r.stderr.decode(errors='replace').strip()}")
+    data, pos, out = r.stdout, 0, []
+    for _ in revs:
+        end = data.index(b"\n", pos)
+        header = data[pos:end].split()
+        pos = end + 1
+        if len(header) != 3 or header[1] != b"blob":
+            out.append(None)
+            continue
+        size = int(header[2])
+        blob, pos = data[pos:pos + size], pos + size + 1
+        try:
+            out.append(todo_md.parse(blob.decode("utf-8")).confirm)
+        except ValueError:
+            out.append(None)
+    return out
+
+
+CONFIRM_SCAN_CHUNK = 50
 
 
 def _last_written_confirm(repo: Path, name: str) -> "list[str]":
+    """確認待ちを実際に変えた最後の ai/sync コミットの確認待ち。件数で打ち切らない。"""
     # 確認待ちを変えなかった AI/同期コミットは人の追記をそのまま運ぶので、基準にすると追記を apply の内容と取り違える
-    out = _git(repo, "log", f"-{decisions.MAX_SCAN}", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", name)
-    for h in out.split():
-        mine = _confirm_at(repo, h, name)
-        if mine is None:
-            continue
-        if mine != _confirm_at(repo, f"{h}^", name):
-            return mine
+    commits = _git(repo, "log", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", name).split()
+    for i in range(0, len(commits), CONFIRM_SCAN_CHUNK):
+        chunk = commits[i:i + CONFIRM_SCAN_CHUNK]
+        got = _confirms_at(repo, [r for h in chunk for r in (f"{h}:{name}", f"{h}^:{name}")])
+        for j in range(len(chunk)):
+            mine, parent = got[2 * j], got[2 * j + 1]
+            if mine is not None and mine != parent:
+                return mine
     return []
 
 
@@ -497,9 +549,8 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
             print("apply: 検証違反のため未適用:\n" + "\n".join(errs), file=sys.stderr)
             return 2
         ts = decisions.now_iso()
-        for a in changes.get("answered", []) if "confirm" in changes else []:
-            new_records.append({"ts": ts, "ref": a.get("ref"), "kind": a.get("kind"),
-                                "value": a["answer"], "by": "human"})
+        for ref, kind, ans in answer_records(parse_confirm(before.confirm)) if "confirm" in changes else []:
+            new_records.append({"ts": ts, "ref": ref, "kind": kind, "value": ans, "by": "human"})
         body += [f"record {r['kind']} {r['ref']}" for r in new_records]
         kept, archived = split_archive(after, today)
         new_text = todo_md.render(kept)

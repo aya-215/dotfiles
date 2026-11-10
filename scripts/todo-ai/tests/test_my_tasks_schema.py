@@ -60,6 +60,17 @@ class ValidateCandidatesTest(unittest.TestCase):
         d["window"] = {"from": "2026-11-10"}
         self.assertTrue(my_tasks_schema.validate_candidates(d))
 
+    def test_sources_failed(self):
+        d = load()
+        self.assertEqual(d["sources_failed"], [])
+        d["sources_failed"] = ["rocketchat", "mail"]
+        self.assertEqual(my_tasks_schema.validate_candidates(d), [])
+        del d["sources_failed"]
+        self.assertEqual(my_tasks_schema.validate_candidates(d), [])
+        for bad in ("rocketchat", ["rc"], [1], None):
+            d["sources_failed"] = bad
+            self.assertTrue(my_tasks_schema.validate_candidates(d), bad)
+
     def test_null_waiting_person_ok_but_wrong_type_not(self):
         self.assertTrue(self.bad(lambda c: c.update(waiting_person=3)))
 

@@ -16,7 +16,6 @@ import decisions
 import migrate
 import my_tasks_schema
 import todo_md
-from context import with_tag
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "my-tasks-sample.json"
 TODAY = "2026-11-10"
@@ -99,12 +98,12 @@ class E2EFlow(unittest.TestCase):
             {"op": "order", "section": "やる", "refs": ["epc#1163", "rc:Xk3p9aQ2#1"]},
         ], "confirm": [
             {"ref": "rc:old1", "kind": "still_needed",
-             "question": with_tag("坂西さんへの返信はまだ要る？", "still_needed", "rc:old1"),
+             "question": "坂西さんへの返信はまだ要る？",
              "facts": "追加から40日、直近2週間に決着・進展の発言なし",
              "options": [{"label": "A", "text": "要る", "recommended": False},
                          {"label": "B", "text": "不要（完了にする）", "recommended": True}]},
             {"ref": is_task_ref, "kind": "is_task",
-             "question": with_tag("合田さんへのコンテナ設置依頼の返信はタスク？", "is_task", is_task_ref),
+             "question": "合田さんへのコンテナ設置依頼の返信はタスク？",
              "facts": "Sent に「Re: コンテナ設置のお願い」あり",
              "options": [{"label": "A", "text": "タスクとして追加", "recommended": False},
                          {"label": "B", "text": "タスクではない", "recommended": True}]},
@@ -113,13 +112,14 @@ class E2EFlow(unittest.TestCase):
         self.assertTrue(self.git("log", "-1", "--format=%s").startswith("todo(ai): "))
         self.assertEqual([it.ref for it in self.section("やる")], ["epc#1163", "rc:Xk3p9aQ2#1", "rc:old1"])
         self.assertEqual(self.section("やる")[1].title, "インターン資料修正")
+        self.assertIn("1. 坂西さんへの返信はまだ要る？ [still_needed rc:old1]\n", self.todo.read_text(encoding="utf-8"))
 
         # 人が確認待ちの1件目に回答する（nvim のポップアップを閉じたときのコミット）
         text = self.todo.read_text(encoding="utf-8")
         self.assertEqual(text.count("   回答:\n"), 2)
         self.human_commit(text.replace("   回答:\n", "   回答: B\n", 1), "2026-11-10")
 
-        # 2回目: 回答の反映（context の answered_now をそのまま渡し、未回答の問いは写し直す）
+        # 2回目: 回答の反映（apply が回答欄のタグから記録する。未回答の問いは context から写し直す）
         ctx = self.context()
         self.assertEqual(ctx["confirm_errors"], [])
         self.assertEqual(ctx["answered_now"], [{"ref": "rc:old1", "kind": "still_needed", "answer": "B"}])
@@ -127,7 +127,7 @@ class E2EFlow(unittest.TestCase):
                 for b in ctx["confirm_blocks"] if not b["answer"]]
         res = self.apply({"source": "ai", "ops": [
             {"op": "move", "ref": "rc:old1", "to": "完了", "reason": "確認待ちの回答 B（不要）"},
-        ], "confirm": keep, "answered": ctx["answered_now"]}, 2)
+        ], "confirm": keep}, 2)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual([(r["ref"], r["kind"], r["value"]) for r in self.records()],
                          [("rc:old1", "still_needed", "B")])
@@ -137,7 +137,8 @@ class E2EFlow(unittest.TestCase):
 
         # 3回目: 同じ問いは出ない
         ctx = self.context()
-        self.assertEqual([(b["ref"], b["kind"]) for b in ctx["confirm_blocks"]], [(is_task_ref, "is_task")])
+        self.assertEqual([(b["ref"], b["kind"], b["question"]) for b in ctx["confirm_blocks"]],
+                         [(is_task_ref, "is_task", "合田さんへのコンテナ設置依頼の返信はタスク？")])
         self.assertEqual(ctx["answered_now"], [])
         self.assertIn({"ref": "rc:old1", "kind": "still_needed", "value": "B", "ts": self.records()[0]["ts"]},
                       ctx["answered_refs"])
@@ -151,7 +152,7 @@ class E2EFlow(unittest.TestCase):
 
     def test_human_edited_question_reported_and_ops_still_apply_without_confirm(self):
         self.human_commit(migrate.migrate(OLD), "2026-10-01")
-        q = with_tag("坂西さんへの返信はまだ要る？", "still_needed", "rc:old1")
+        q = "坂西さんへの返信はまだ要る？"
         res = self.apply({"source": "ai", "ops": [], "confirm": [
             {"ref": "rc:old1", "kind": "still_needed", "question": q, "facts": "40日",
              "options": [{"label": "A", "text": "要る"}]}]}, 1)

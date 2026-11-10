@@ -8,11 +8,13 @@
   items           やる・待ち・完了の各行（ref, section, title, key, url, next, done, done_date,
                   origin, added_date, age_days, pinned）
   confirm_blocks  確認待ちの各ブロック（number, ref, kind, question, facts, options, answer）。
-                  ref/kind は question 末尾のタグ `[<kind> <ref>]` から読む。無ければ null
+                  ref/kind は apply.py が書いた問い末尾のタグから読み、question はタグを外したもの。
+                  ref, kind, question, facts, options をそのまま confirm に写せば同じ行に戻る
   confirm_errors  確認待ちを全置換できない理由（空でなければ /todo は confirm を出さない）
-  answered_now    回答欄が埋まったブロックを、apply.py の answered にそのまま渡せる形にしたもの
+  answered_now    回答欄が埋まったブロックの (ref, kind, answer)。apply.py も同じものを記録する
   answered_refs   判断記録にある確認待ちへの回答（ref, kind, value, ts）
   rejected_refs   人が消した AI の追加（reject_add）の ref
+  archived_keys   todo-archive/*.md に移った完了行の key
 """
 import argparse
 import datetime
@@ -29,18 +31,8 @@ import decisions
 import todo_md
 from origin import origin_of
 
-KINDS = ("policy", "before_share", "manual", "conflict", "is_task", "still_needed")
-_TAG = re.compile(r" \[(" + "|".join(KINDS) + r") (.+)\]\Z")
+KINDS = apply.KINDS
 _OPTION = re.compile(r"(\S+) (.*?)(（おすすめ）)?\Z")
-
-
-def with_tag(question: str, kind: str, ref: str) -> str:
-    return f"{question} [{kind} {ref}]"
-
-
-def parse_tag(question: str) -> "tuple[str | None, str | None]":
-    m = _TAG.search(question)
-    return (m.group(1), m.group(2)) if m else (None, None)
 
 
 def _parse_options(s: str) -> "list[dict]":
@@ -64,8 +56,8 @@ def confirm_blocks(lines: "list[str]") -> "list[dict]":
     """確認待ちの行を apply.py と同じ厳密さで読む。崩れていれば apply.ChangeError。"""
     out = []
     for n, b in enumerate(apply.parse_confirm(lines), 1):
-        kind, ref = parse_tag(b["question"])
-        out.append({"number": n, "ref": ref, "kind": kind, "question": b["question"],
+        kind, ref = apply.parse_tag(b["question"])
+        out.append({"number": n, "ref": ref, "kind": kind, "question": apply.strip_tag(b["question"]),
                     "facts": b["事実"], "options": _parse_options(b["選択"]), "answer": b["回答"].strip()})
     return out
 
@@ -77,6 +69,23 @@ def added_date(repo: Path, name: str, needle: str) -> "str | None":
                        capture_output=True, text=True, encoding="utf-8")
     lines = r.stdout.split() if r.returncode == 0 else []
     return lines[0] if lines else None
+
+
+def archived_keys(repo: Path) -> "list[str]":
+    keys = set()
+    for p in sorted((Path(repo) / "todo-archive").glob("*.md")):
+        try:
+            lines = p.read_text(encoding="utf-8").splitlines()
+        except (OSError, ValueError):
+            continue
+        for n, line in enumerate(lines, 1):
+            try:
+                it = todo_md._parse_item(line, n)
+            except todo_md.ParseError:
+                continue
+            if it.key:
+                keys.add(it.key)
+    return sorted(keys)
 
 
 def _last_written_confirm(repo: Path, name: str) -> "list[str]":
@@ -96,7 +105,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
     items = []
     for section in todo_md.TASK_SECTIONS:
         for it in doc.sections[section]:
-            added = added_date(repo, name, it.title or it.key or "")
+            added = added_date(repo, name, it.key or it.title)
             items.append({
                 "ref": it.ref, "section": section, "title": it.title, "key": it.key, "url": it.url,
                 "next": it.next, "done": it.done, "done_date": it.done_date,
@@ -116,12 +125,10 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
         errors += apply.confirm_edit_errors(doc.confirm, _last_written_confirm(repo, name))
     answered_now = []
     for b in blocks:
-        if not b["answer"]:
-            continue
         if b["ref"] is None:
-            errors.append(f"回答のあるブロックに ref/kind のタグが無い（記録できない）: {b['number']}. {b['question']}")
-            continue
-        answered_now.append({"ref": b["ref"], "kind": b["kind"], "answer": b["answer"]})
+            errors.append(f"確認待ちのブロックに [kind ref] のタグが無い（記録先が分からない）: {b['number']}. {b['question']}")
+        elif b["answer"]:
+            answered_now.append({"ref": b["ref"], "kind": b["kind"], "answer": b["answer"]})
 
     return {
         "today": today,
@@ -133,6 +140,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
         "answered_refs": [{"ref": r.get("ref"), "kind": r.get("kind"), "value": r.get("value"), "ts": r.get("ts")}
                           for r in records if r.get("kind") in KINDS],
         "rejected_refs": sorted({r["ref"] for r in records if r.get("kind") == "reject_add" and r.get("ref")}),
+        "archived_keys": archived_keys(repo),
     }
 
 
