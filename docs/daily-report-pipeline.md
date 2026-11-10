@@ -219,10 +219,17 @@ RemoteTrigger action:"get" trigger_id:"trig_01Xeb7Pw4dHu7jtitzMbK1iv"
 | 層 | 実行場所 | 消費 |
 |---|---|---|
 | セッション要約（`summarize.sh`） | ローカル `claude -p` | **サブスク枠** |
+| 切り出し要約（`slice-sessions.sh` → `summarize.sh --slice`） | ローカル `claude -p`（`claude-sonnet-5`） | **サブスク枠** |
 | メール整理（`thunderbird-summarize.sh`） | ローカル `claude -p`（`claude-sonnet-5`） | **サブスク枠** |
-| 日報生成（ルーティン） | クラウド | **ルーティン実行枠** |
+| 自己チェック（`check-daily-report.sh`） | ローカル `claude -p`（`claude-opus-5`） | **サブスク枠** |
+| 日報生成（ルーティン） | クラウド | **サブスク枠**（ルーティン実行枠に加えて、5時間の利用上限も共有する） |
 
 日報生成をクラウドルーティンに移したのは、Agent SDKクレジット消費を避けるため。
+
+**どの層もサブスクの5時間上限を共有する**（2026-11-10 に実測）。上限に当たると、手元の切り出しは全部失敗して全期間の要約で補完される。
+ルーティンは起動直後に `rate_limit: rejected (five_hour)` で終わり、Issue は書き換わらない。fire は HTTP 200 を受け取るので、
+fire のログでは成功に見える（`RemoteTrigger get_run_log` で分かる）。その日は 22:40 の自己チェックが `report_missing` で通知するので、
+上限が戻ってから `--date <日付> --overwrite` で作り直す。22:10 は、17時ごろにリセットが来る普段の使い方なら上限が空いている時刻として選んでいる。
 ただし**メール整理だけはローカルの claude バイナリを使う**（スレッド全体を読ませてから圧縮する必要があり、
 ペイロード予算内に生データを載せきれないため）。
 
