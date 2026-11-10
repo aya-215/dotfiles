@@ -108,7 +108,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 4. **attach**: `key` が null の行（やる/待ち）と、同じ作業だと言い切れる候補（`key` と `url` あり、その key の行がまだ無い）。行の `next` が null のときだけ候補の `next` も付ける。言い切れなければ何もしない
 5. **set_next**: 行の `next` と候補の `next` が違うとき。ただし `origin: human` で `next` が既にある行は上書きしない。自分の PR に未対応のレビュー指摘があるときの next は `N1,N2 残` の形で始める
 6. **still_needed**: やる/待ちの行で、key が `rc:` か `mail:` で始まり、`age_days` が 14 より大きく（null は対象外）、同じ key の候補が今回の `my-tasks.json` に無く、`answered_refs` に `(ref, still_needed)` が無いもの → `confirm kind=still_needed`（選択: 要る / 不要＝完了にする）
-7. **is_task**: `key` が null の `mine`/`theirs` 候補、または `key` はあるが `url` が null の候補（`wt:` 等。apply は url の無い key を受け付けない）で、同じ作業の行が無いもの → `confirm kind=is_task`。ref は key があれば key、無ければ `title:<候補の title>`。`answered_refs` に同じ ref の is_task があれば出さない。ref の表記が違っても同じ作業への回答が `answered_refs` にあれば出さない
+7. **is_task**: `key` が null の候補（ball を問わない）、または `key` はあるが `url` が null の候補（`wt:` 等。apply は url の無い key を受け付けない）で、同じ作業の行が無いもの → `confirm kind=is_task`。ref は key があれば key、無ければ `title:<候補の title>`。`answered_refs` に同じ ref の is_task があれば出さない。ref の表記が違っても同じ作業への回答が `answered_refs` にあれば出さない
 8. **conflict**: 完了にある行と同じ key の候補が `mine`/`theirs`（元がまだ開いている）→ `confirm kind=conflict`。選択は「完了のまま（おすすめ）」と「自分でやるに戻す」。**AI は完了から動かせない**ので、戻す op は作らない
 9. **order**（やる）: 並べ替え後の順を `{"op": "order", "section": "やる", "refs": [...]}` で出す。順位は ① 対応する候補に `waiting_person` がある ② `deadline` が早い（null は後）③ `blocks` が多い ④ 元の順。候補の無い行は元の順のまま後ろ。**refs は前の op を適用した後の ref**（attach した行は付けた key、add した行はその key）。順が変わらなければ出さない
 10. **policy / before_share / manual**: 候補の next が「方針を決める」「人に見せる前の確認」「ユーザーにしかできない手作業」のときだけ。多用しない
@@ -133,13 +133,14 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 - changes.json に `confirm` と `answered` の **キーを入れない**（確認待ち欄はそのまま残る）
 - 回答に基づく op も作らない
 - それ以外の op はいつもどおり作って適用する
-- `confirm_errors` の文言をそのまま報告に入れ、「確認待ちを apply が書いた形に戻すか、問いを消してください」と添える
+- `confirm_errors` の文言をそのまま報告に入れ、直し方を添える: 問い・事実・選択の書き換えや自由文なら「apply が書いた形に戻すか、そのブロックを消してください」、`タグが無い` なら「そのブロックを消すか回答を消してください」
 
 #### apply が全体を止める書き方（1つでもあると何も書かれない）
 
 - 完了にある行への `move`
 - `add` の `section` がやる/待ち以外、`key` があるのに `url` が null、key の形式違い（`epc#N` `emm#N` `eae#N` `eas#N` `gb:<repo>#N` `rc:<id>` `rc:<id>#N` `mail:<id>` `wt:<name>`）
 - どの文字列にも改行を入れる
+- `title`・`next` に ` — next: ` や `](` を含める、`title` の前後に空白がある、`url` に空白や括弧がある（書き出すと別の行に読めてしまうため全体が止まる）
 - `options` の要素に `label`/`text` が無い・空
 
 存在しない ref への op は apply がその op だけ飛ばす（`skip:` としてコミット本文に残る）。
