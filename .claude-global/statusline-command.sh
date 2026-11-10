@@ -100,31 +100,24 @@ case $model in
     ;;
 esac
 
-# Format number as K (e.g., 35000 -> 35K)
+# Format a token count as K or M (e.g., 35000 -> 35K, 1000000 -> 1M, 1500000 -> 1.5M)
 format_k() {
   local n=$1
-  if [ "$n" -ge 1000 ] 2>/dev/null; then
+  if [ "$n" -ge 1000000 ] 2>/dev/null; then
+    local whole=$((n / 1000000)) tenth=$(( (n % 1000000) / 100000 ))
+    if [ "$tenth" -eq 0 ]; then echo "${whole}M"; else echo "${whole}.${tenth}M"; fi
+  elif [ "$n" -ge 1000 ] 2>/dev/null; then
     echo "$((n / 1000))K"
   else
     echo "${n:-0}"
   fi
 }
 
-# Calculate context usage percentage (until autocompact)
-# Autocompact buffer is ~22.5% of context, so effective max is 77.5%.
-# NOTE: deliberately NOT using .context_window.used_percentage from the JSON --
-# that field is measured against a different baseline (it reported 8% where this
-# autocompact-relative calculation reports 10%), so swapping would silently
-# change the number this status line has always shown.
-AUTOCOMPACT_RATIO=775  # 77.5% as integer (775/1000)
-
+# Context usage against the full context window.
 if [ -n "$context_size" ] && [ "$context_size" -gt 0 ] 2>/dev/null; then
   current=$((${cu_input:-0} + ${cu_cache_creation:-0} + ${cu_cache_read:-0}))
-  effective_max=$((context_size * AUTOCOMPACT_RATIO / 1000))
-  compact_pct=$((current * 100 / effective_max))
-  current_k=$(format_k $current)
-  effective_k=$(format_k $effective_max)
-  context_info="${compact_pct}% (${current_k}/${effective_k})"
+  context_pct=$((current * 100 / context_size))
+  context_info="${context_pct}% ($(format_k "$current")/$(format_k "$context_size"))"
 else
   context_info="0%"
 fi
@@ -163,18 +156,6 @@ color_for_pct() {
   fi
 }
 
-# 10-segment progress bar
-progress_bar() {
-  local pct=$1
-  local filled=$(( pct / 10 ))
-  local empty=$(( 10 - filled ))
-  local bar=""
-  local i
-  for i in $(seq 1 $filled); do bar="${bar}█"; done
-  for i in $(seq 1 $empty);  do bar="${bar}░"; done
-  printf '%s' "$bar"
-}
-
 # Format rate-limit reset time (Unix epoch seconds) to human-readable JST
 format_reset_time() {
   local epoch="$1"
@@ -210,19 +191,17 @@ if [ "$todo_count" -gt 0 ] 2>/dev/null; then
 fi
 echo
 
-# Output lines 2-3: rate limits, straight from the session JSON.
+# Output line 2: rate limits, straight from the session JSON ("5h 82% (18:00) | 7d 20% (日 15日)").
 # Only present for Claude.ai subscribers, and only after the first API response.
+rate_line=""
 if [ -n "$pct_5h" ]; then
   pct_5h=${pct_5h%%.*}
-  bar_5h=$(progress_bar "$pct_5h")
-  col_5h=$(color_for_pct "$pct_5h")
-  time_5h=$(format_reset_time "${reset_5h%%.*}" "5h")
-  printf "${col_5h}[%s] %3d%%${R} ${S}│${R} 5h reset: %s\n" "$bar_5h" "$pct_5h" "$time_5h"
+  rate_line="5h $(color_for_pct "$pct_5h")${pct_5h}%${R} ($(format_reset_time "${reset_5h%%.*}" "5h"))"
 fi
 if [ -n "$pct_7d" ]; then
   pct_7d=${pct_7d%%.*}
-  bar_7d=$(progress_bar "$pct_7d")
-  col_7d=$(color_for_pct "$pct_7d")
-  time_7d=$(format_reset_time "${reset_7d%%.*}" "7d")
-  printf "${col_7d}[%s] %3d%%${R} ${S}│${R} 7d reset: %s\n" "$bar_7d" "$pct_7d" "$time_7d"
+  [ -n "$rate_line" ] && rate_line="${rate_line} ${S}|${R} "
+  rate_line="${rate_line}7d $(color_for_pct "$pct_7d")${pct_7d}%${R} ($(format_reset_time "${reset_7d%%.*}" "7d"))"
 fi
+# %b expands the colour escapes without treating the % in the text as a format.
+[ -n "$rate_line" ] && printf '%b\n' "$rate_line"
