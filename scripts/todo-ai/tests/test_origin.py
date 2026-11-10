@@ -46,6 +46,17 @@ class OriginTest(unittest.TestCase):
         self.commit("- [ ] same\n- [ ] same\n", "todo: 2026-01-02 10:00")
         self.assertEqual(origin_of(self.repo, "todo.md", "same"), "human")
 
+    def test_uncommitted_duplicate_is_human(self):
+        self.commit("- [ ] ai one\n", "todo(ai): add")
+        self.f.write_text("- [ ] ai one\n- [ ] ai one\n")
+        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
+
+    def test_removed_and_retyped_is_human(self):
+        self.commit("- [ ] x\n- [ ] ai one\n", "todo(ai): add")
+        self.commit("- [ ] x\n", "todo: 2026-01-02 10:00")
+        self.commit("- [ ] x\n- [ ] ai one\n", "todo: 2026-01-03 10:00")
+        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
+
     def test_unknown_title_is_human(self):
         self.commit("- [ ] a\n", "todo(ai): add")
         self.assertEqual(origin_of(self.repo, "todo.md", "zzz"), "human")
