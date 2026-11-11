@@ -222,7 +222,7 @@ done
 - **glob（`*/`・`*.md`）を `for` に渡さない。** zsh は該当なしの glob に `no matches found` を出して**ループごと中断する**。`.md が無い日が1つあるだけで以降が読まれず、旧コマンドは zsh で84ファイル中45ファイルしか読まなかった（`find` 版は84ファイル）。`2>/dev/null` や `[ -f ] || continue` では防げない。ファイル列挙は `find` に任せる。
 - **日付比較は `[[ "$d" < "$start" ]]`。** `[ "$d" \< "$start" ]` は zsh で `condition expected: <` を吐いて `continue` を実行せず、全期間を読む（実測: 対象10ディレクトリに対し55ディレクトリ・464ファイル）。
 
-**8) 課題DB（eB-PM 02043・読み取り専用）**
+**7) 課題DB（eB-PM 02043・読み取り専用）**
 
 ```bash
 start=$(date -d '14 days ago' +%Y-%m-%d)
@@ -235,7 +235,7 @@ python3 ~/.dotfiles/scripts/lib/ebpm_issues.py --since "$start"
 - **notices は大半がチーム全体宛ての cc**（実測で14日に35件）。本文が自分（森/森さん/mori）を名指しして依頼・質問している場合だけ候補にする。それ以外の notices と自分のコメントは、他ソースの候補の**決着の証拠**（「投稿済み」等）にだけ使う。
 - `assigned` のうち status が完了系でないものは自分ボール候補。自分のコメントの「〜します」は 2-a の宣言形ルールに従う。
 
-**7) メール（直近2週間・Sent 基点の投げ返し判定）**
+**8) メール（直近2週間・Sent 基点の投げ返し判定）**
 
 ```bash
 start=$(date -d '14 days ago' +%Y-%m-%d); end=$(date +%Y-%m-%d)
@@ -254,7 +254,7 @@ bash ~/.dotfiles/scripts/lib/thunderbird.sh --from "$start" --to "$end" --no-bod
 
 ### Step 2: タスク候補を抽出する
 
-以下のシグナルを拾う。**迷ったら出す**（取捨選択はユーザーが行う）。
+以下のシグナルを拾う。**迷ったら出す**（取捨選択はユーザーが行う）。**ただし担当者の除外（2-e の F2）と PR のボール判定（2-e の pr_ball）は、2-a〜2-d を含むすべての ball 判定に先立って適用する。**
 
 | シグナル | 例 | 出す先 |
 |---|---|---|
@@ -341,11 +341,12 @@ GH_TOKEN="$GH_WORK" gh pr view <N> --repo <repo> --json body --jq '.body' | grep
 
 #### 2-e. 課題DB・PR のボール判定・担当者の扱い
 
-- **自分の PR のボールは `pr_ball.py` で決める（決定的処理。AI が判定しない）。** GitHub は `python3 ~/.dotfiles/scripts/todo-ai/pr_ball.py github epc#1210`（略称は `epc/emm/eae/eas`）。GitBucket は MCP で PR を読み、`{"state","author","reviewers","events":[{"user","ts","kind":"comment|review","state"}]}` に整形して `pr_ball.py --from-json` の stdin に渡す。出力の `ball` は次のとおり扱う:
+- **自分の PR のボールは `pr_ball.py` で決める（決定的処理。AI が判定しない）。** GitHub は `python3 ~/.dotfiles/scripts/todo-ai/pr_ball.py github epc#1210`（略称は `epc/emm/eae/eas`）。GitBucket は MCP で PR を読み、次の JSON に整形して渡す: `python3 ~/.dotfiles/scripts/todo-ai/pr_ball.py --from-json < pr.json`。形は `{"state":"open|closed|merged","author":"<login>","reviewers":["<login>"],"events":[{"user":"<login>","ts":"<タイムゾーン付きISO8601>","kind":"comment|review","state":"<レビュー状態|null>"}]}`（`author` は非空、`ts` はタイムゾーン必須）。出力の `ball` は次のとおり扱う:
   - `mine` → 自分ボール / `theirs` → 他人ボール
   - `done` → `maybe_done`（完了っぽい）
   - `unknown` → **pr_ball では決めない。** 取得失敗を「待ち」と決めつけないため、`reason` を `evidence` に書き、上の既存ルールで判定する
-- **他人が担当のものは候補にしない（F2）。** assignee が自分以外の Issue/PR、他の人に割り当てられた課題DB の課題は除外する。ただし**自分の作業がその人の返答を待っている場合は `theirs`** で出す。
+- **他人が担当のものは候補にしない（F2。すべての ball 判定に適用し、2-a〜2-d の判定より前に見る）。** assignee が自分以外の Issue/PR、他の人に割り当てられた課題DB の課題は除外する。ただし**自分の作業がその人の返答を待っている場合は `theirs`** で出す。
+- 課題DB の候補の各フィールド: `key`=`ebpm:<issue_no>`、`url`=ebpm_issues の該当行の `url`、`title`=`issue_title`、`ball`=assigned は `mine`・依頼を受けた notice は `mine`・自分の依頼への相手待ちは `theirs`、`evidence`=該当コメント/お知らせ/status の引用（1〜2行）。
 - 課題DB の key は `ebpm:<課題No>`（例 `ebpm:No00007400`）。`item_id` が取れない課題は key を `null` にする。
 
 ### Step 2.5: 検証ゲート（出力の直前に必ず実行する）
