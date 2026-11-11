@@ -26,7 +26,7 @@ description: Use when the user wants to see everything currently on their plate 
 
 ## 実行コスト
 
-Step 0〜3 をすべて実行して**8分前後**かかる。短縮モードは設けない。待ち時間が問題になる場合は、工程を削るのではなくバックグラウンドで実行すること。
+Step 0〜3 をすべて実行して**約14分**かかる（実測。トークンは全体で**約306k tokens**）。短縮モードは設けない。待ち時間が問題になる場合は、工程を削るのではなくバックグラウンドで実行すること。
 
 トークン量の目安（別実行での実測値。日によって増減する）:
 
@@ -70,7 +70,7 @@ git -C ~/src/github.com/aya-215/life pull --ff-only
 
 ### Step 1: 一次データを集める
 
-7ソースを**並列に**実行する（相互に依存しない）。全ソース共通の注意:
+8ソース（課題DB を含む）を**並列に**実行する（相互に依存しない）。全ソース共通の注意:
 
 - **`start` / `end` は各コマンドの先頭で定義する。** Bash 呼び出し間でシェル変数は persist しない。未定義で渡すと `rocketchat.sh` は「--from と --to は必須」で `exit 2`（静かには壊れないが1ステップ無駄になる）。`GH_TOKEN` の未定義はもっと悪く、`gh` は**エラーにならず現在のアクティブアカウントへ静かにフォールバックする**（実測確認済み）。eBASE-Mori がアクティブなら偶然動くが、aya-215 に切り替わっていると **0件が静かに返る** — Step 0-2 の失敗モードそのもの。
 - **過去の `/my-tasks` 出力は一次データではない。** このスキルの結果は日報とセッション要約に記録されるため、次回それを読むと**前回の推測が「実測された事実」として戻ってくる。** 実測で、ある締切を全ソースに grep したらヒットは日報とセッション要約の2箇所だけ、どちらも過去の my-tasks 出力の引用で、一次発言はどこにも存在しなかった。「タスク棚卸し」「/my-tasks で整理」を見たら**そこから先は自分の過去出力**。締切・タスク名は Rocket Chat・Issue/PR 等の一次発言まで遡って裏を取る。
@@ -210,20 +210,30 @@ done
 
 ```bash
 start=$(date -d '14 days ago' +%Y-%m-%d)
-for dir in ~/.nb/claude/sessions/*/; do
-  d=$(basename "$dir")
-  [[ "$d" < "$start" ]] && continue   # zsh: [ "$d" \< "$start" ] は動かない（下の注記）
-  for sf in "$dir"*.md; do
-    [ -f "$sf" ] || continue          # zsh: .md が無い日に glob が no matches found でループごと中断する
-    awk 'seen && /^---$/ { b=1; next } /^project:/ { seen=1 } b { print }' "$sf" | head -25
-  done 2>/dev/null
+find ~/.nb/claude/sessions -mindepth 2 -maxdepth 2 -name '*.md' | sort | while IFS= read -r sf; do
+  d=$(basename "$(dirname "$sf")")
+  [[ "$d" < "$start" ]] && continue
+  awk 'seen && /^---$/ { b=1; next } /^project:/ { seen=1 } b { print }' "$sf" | head -25
 done
 ```
 
-**zsh 固有の罠が2つある。bash の常識で「冗長」と判断して消すと静かに壊れる。**
+**このコマンドは zsh（Claude の Bash ツール）でも bash でも動く。書き換えるときは次を守る。**
 
-- **`[[ ]]` を使う。** `[ "$d" \< "$start" ]` は zsh では `\<` が解釈されず `condition expected: <` を stderr に吐いて**`continue` を実行しない**。エラーで止まらないため気づけないまま**全期間を読む**。実測では対象10ディレクトリに対し55ディレクトリ・464ファイルを読み、2ヶ月前に完了した作業が「今のタスク」として並んだ。同じ罠は `quarterly-dev-report` でも踏まれており、姉妹スキル（`retrospective`・`verify-daily-report`）はすでに `[[ ]]` へ移行済み。
-- **`[ -f "$sf" ] || continue` を省かない。** `.md` が1つも無い日があり、zsh は該当なしの glob に `no matches found` を出して**ループごと中断する**（bash のように未展開のまま渡らない）。途中の日で止まると以降が読まれないが、エラーが紛れて気づきにくい。
+- **glob（`*/`・`*.md`）を `for` に渡さない。** zsh は該当なしの glob に `no matches found` を出して**ループごと中断する**。`.md が無い日が1つあるだけで以降が読まれず、旧コマンドは zsh で84ファイル中45ファイルしか読まなかった（`find` 版は84ファイル）。`2>/dev/null` や `[ -f ] || continue` では防げない。ファイル列挙は `find` に任せる。
+- **日付比較は `[[ "$d" < "$start" ]]`。** `[ "$d" \< "$start" ]` は zsh で `condition expected: <` を吐いて `continue` を実行せず、全期間を読む（実測: 対象10ディレクトリに対し55ディレクトリ・464ファイル）。
+
+**8) 課題DB（eB-PM 02043・読み取り専用）**
+
+```bash
+start=$(date -d '14 days ago' +%Y-%m-%d)
+python3 ~/.dotfiles/scripts/lib/ebpm_issues.py --since "$start"
+```
+
+出力は JSON（`me` / `comments`=自分の直近コメント / `notices`=自分宛てのお知らせ / `assigned`=自分担当の課題 / `failed` / `notes` / `truncated`）。他ソースと並列に流してよいが、課題DB への POST は1回30件まで・呼び出し間1秒・並列禁止（スクリプトが守る）。
+
+- **`failed` が null でない、または `truncated` が true なら `sources_failed` に `ebpm` を入れる。** truncated は一部しか読めていないので、課題DB のデータだけを根拠に「14日進展なし」と判定しない。課題DB が落ちていても棚卸し全体は止めず、他ソースで続ける。
+- **notices は大半がチーム全体宛ての cc**（実測で14日に35件）。本文が自分（森/森さん/mori）を名指しして依頼・質問している場合だけ候補にする。それ以外の notices と自分のコメントは、他ソースの候補の**決着の証拠**（「投稿済み」等）にだけ使う。
+- `assigned` のうち status が完了系でないものは自分ボール候補。自分のコメントの「〜します」は 2-a の宣言形ルールに従う。
 
 **7) メール（直近2週間・Sent 基点の投げ返し判定）**
 
@@ -329,9 +339,18 @@ GH_WORK=$(gh auth token --user eBASE-Mori)   # 未定義だと現在のアクテ
 GH_TOKEN="$GH_WORK" gh pr view <N> --repo <repo> --json body --jq '.body' | grep -iE "closes|fixes|resolves"
 ```
 
+#### 2-e. 課題DB・PR のボール判定・担当者の扱い
+
+- **自分の PR のボールは `pr_ball.py` で決める（決定的処理。AI が判定しない）。** GitHub は `python3 ~/.dotfiles/scripts/todo-ai/pr_ball.py github epc#1210`（略称は `epc/emm/eae/eas`）。GitBucket は MCP で PR を読み、`{"state","author","reviewers","events":[{"user","ts","kind":"comment|review","state"}]}` に整形して `pr_ball.py --from-json` の stdin に渡す。出力の `ball` は次のとおり扱う:
+  - `mine` → 自分ボール / `theirs` → 他人ボール
+  - `done` → `maybe_done`（完了っぽい）
+  - `unknown` → **pr_ball では決めない。** 取得失敗を「待ち」と決めつけないため、`reason` を `evidence` に書き、上の既存ルールで判定する
+- **他人が担当のものは候補にしない（F2）。** assignee が自分以外の Issue/PR、他の人に割り当てられた課題DB の課題は除外する。ただし**自分の作業がその人の返答を待っている場合は `theirs`** で出す。
+- 課題DB の key は `ebpm:<課題No>`（例 `ebpm:No00007400`）。`item_id` が取れない課題は key を `null` にする。
+
 ### Step 2.5: 検証ゲート（出力の直前に必ず実行する）
 
-Step 1 の収集から Step 3 までは**8分前後かかる**。その間に PR は承認され、Issue は閉じる。
+Step 1 の収集から Step 3 までは**約14分かかる**。その間に PR は承認され、Issue は閉じる。
 **収集時点のスナップショットのまま出力すると、既に終わったことを宿題として報告する。**
 実測で、レビュー承認が Issue/PR 取得の**18分後**に付き、`CHANGES_REQUESTED` のまま報告した。
 
@@ -443,7 +462,7 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 | **返信を読まずに他人ボールへ置く** | 既に答えが返っている件を「催促候補」として蒸し返す | 発言以降の返信を必ず読み、内容で行き先を決める |
 | **質問形だけ拾って宣言形を拾わない** | 他人ボールが水増しされ、自分が宣言した成果物が丸ごと消える | 「〜します」「〜を作成します」は自分ボール |
 | **一覧の結果でレビューPRを判定** | Approve 済み・依頼解除済みの PR を自分ボールへ誤出力する | Step 2.5 の検証ゲートで一括判定する |
-| **検証ゲートを省く** | 8分の実行中に承認・クローズされた項目を宿題として報告する（実測: 承認の18分前の状態で報告） | 出力直前に必ず実行する。並列で1〜2秒 |
+| **検証ゲートを省く** | 14分の実行中に承認・クローズされた項目を宿題として報告する（実測: 承認の18分前の状態で報告） | 出力直前に必ず実行する。並列で1〜2秒 |
 | **`lastHuman` だけで投げ返しと判定** | レビュー途中の自分のコメントを投げ返しと誤認し、未提出のレビューが消える | 優先順位表を上から当てる。ルール2がルール4より先 |
 | **完了報告を宣言と誤読** | 「対応しました＋確認お願いします」を未着手扱いし、相手の確認待ちを自分ボールに残す | 「〜します」（未着手）と「〜しました」（着地済み）を対で判別する |
 | **クローズ済み Issue を確認しない** | 期間中にマージ・クローズされた項目が「未着手」のまま残る（実測: 締切付きタスクが完了後も最上位に並んだ） | RC から番号を抽出して `state` を引く |
@@ -485,7 +504,7 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 - 「Rocket Chat 長いから grep で絞ろか」→ **返信が全部消える。全文を読む**
 - 「自分の質問ばっかり並んどるな」→ **返信を読んでいない兆候。データの取り方を疑う**
 - 「一覧にレビュー依頼が出とるから自分ボールやな」→ **Step 2.5 の検証ゲートを通したか**
-- 「収集したときはこの状態やったし、そのまま出そか」→ **8分経っとる。承認もクローズも起きる**
+- 「収集したときはこの状態やったし、そのまま出そか」→ **14分経っとる。承認もクローズも起きる**
 - 「自分が最後に喋っとるから投げ返し済みやな」→ **レビュー未提出やないか。優先順位表を上から当てろ**
 - 「『対応しました』って書いてあるから自分の宿題やな」→ **完了報告や。相手の確認待ちやないか**
 - 「この締切、たぶんこのタスクのやつやろ」→ **根拠の発言を言えないなら書かない**
@@ -514,7 +533,7 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 - `ball`: 自分ボール=`mine` / 他人ボール=`theirs` / 完了っぽい=`maybe_done`。この3値以外は書かない
 - `window`: Step の対象期間（直近2週間）。`deadline` は明示された締切だけ。推測しない
 - `blocks`: この候補が終わらないと進められない他候補の key。無ければ `[]`
-- `sources_failed`: Step 1 の取得に失敗した（エラー・認証切れ・0件が不自然で裏が取れない）ソース。`daily` / `rocketchat` / `github` / `gitbucket` / `worktree` / `sessions` / `mail` の名前で書き、全部取れたら `[]`。`/todo` は失敗したソースの行を「進展なし」と扱わないためにこれを見る
+- `sources_failed`: Step 1 の取得に失敗した（エラー・認証切れ・0件が不自然で裏が取れない）ソース。`daily` / `rocketchat` / `github` / `gitbucket` / `worktree` / `sessions` / `mail` / `ebpm` の名前で書き、全部取れたら `[]`。`/todo` は失敗したソースの行を「進展なし」と扱わないためにこれを見る
 - `evidence` は一次データ（RC 発言・PR/Issue の状態・メール件名/Sent・差分）の**引用**。要約や推測を書かない
 - **証拠にしてはいけないもの**: `~/memo/todo.md`、過去の `/todo` ログ（`~/.local/log/todo-ai/`）、過去の `/my-tasks` 出力。台帳との突き合わせは `/todo` 側の責務で、ここで読むと台帳の誤りが候補に混入する。これらは読まない
 
@@ -525,6 +544,7 @@ REST API も 404 なので、**クローズではなく削除**である（リ�
 | GitHub | `epc#N` / `emm#N` / `eae#N` / `eas#N`（`ebase-portal-chat` / `ebase-middleware-mcp` / `eb-api-extended` / `ebase-agent-specs`） | PR/Issue の URL |
 | GitBucket | `gb:<repo>#N` | PR/Issue の URL |
 | Rocket Chat | `rc:<_id>`（1発言に複数の作業があれば `rc:<_id>#1`, `#2`…） | 下記 permalink |
+| 課題DB | `ebpm:<課題No>`（例 `ebpm:No00007400`。`item_id` が無ければ `null`） | `https://ebpm.ebase-jp.com/ebase-web-v3/DispDetail.do?volumeName=02043&itemID=<item_id>` |
 | worktree 差分 | `wt:<worktree名>` | `null` |
 | メール | **常に `null`**（下記） | `null` |
 
