@@ -156,6 +156,17 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(ctx["rejected_refs"], ["epc#9"])
         self.assertFalse((self.r.dir / "todo-decisions.jsonl").exists())
 
+    def test_intents_on_items_and_intent_refs(self):
+        self.r.commit(doc(yaru="- [ ] 残す [epc#1](https://g/1)\n- [ ] 手書き\n"), "todo(user): base")
+        recs = [{"ts": f"t{i}", "ref": "epc#1", "kind": "intent", "value": f"v{i}", "by": "human"} for i in range(7)]
+        recs.append({"ts": "t9", "ref": "title:新", "kind": "intent", "value": "改名後", "by": "human", "prev_ref": "title:旧"})
+        recs.append({"ts": "t10", "ref": "epc#gone", "kind": "intent", "value": "消した", "by": "human"})
+        ctx = self.build(recs)
+        self.assertEqual([i["value"] for i in self.item(ctx, "epc#1")["intents"]], ["v6", "v5", "v4", "v3", "v2"])
+        self.assertEqual(self.item(ctx, "epc#1")["intents"][0], {"ts": "t6", "value": "v6"})
+        self.assertEqual(self.item(ctx, "title:手書き")["intents"], [])
+        self.assertEqual(ctx["intent_refs"], ["epc#1", "epc#gone", "title:新", "title:旧"])
+
     def test_decision_lists(self):
         self.r.commit(doc(), "todo: base")
         ctx = self.build([

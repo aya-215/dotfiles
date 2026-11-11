@@ -16,6 +16,8 @@
   answered_refs   判断記録にある確認待ちへの回答（ref, kind, value, ts）
   rejected_refs   人が消した AI の追加（reject_add）の ref
   archived_keys   todo-archive/*.md に移った完了行の key
+  intents         （各 item）ユーザー指示の意図。新しい順で最大5件の {ts, value}
+  intent_refs     意図の記録がある全 ref（prev_ref 含む。todo.md から消えた行も）。/todo は足し直さない
 pinned_to と rejected_refs には、まだ記録していない戻しも git 履歴から足す（ここでは書かない）。
 """
 import argparse
@@ -34,6 +36,16 @@ import todo_md
 from origin import origin_of
 
 KINDS = apply.KINDS
+MAX_INTENTS = 5
+
+
+def _intent_refs(records: "list[dict]") -> "list[str]":
+    """行が todo.md から消えていても残す（/todo が消した行を足し直さないため）。prev_ref も含む。"""
+    refs = set()
+    for r in records:
+        if r.get("kind") == "intent":
+            refs |= {x for x in (r.get("ref"), r.get("prev_ref")) if isinstance(x, str) and x}
+    return sorted(refs)
 _OPTION = re.compile(r"(\S+) (.*?)(（おすすめ）)?\Z")
 
 
@@ -116,6 +128,8 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
                 "added_date": added,
                 "age_days": (t - datetime.date.fromisoformat(added)).days if added else None,
                 "pinned_to": decisions.pinned_sections(records, it.ref),
+                "intents": [{"ts": r.get("ts"), "value": r.get("value")}
+                            for r in decisions.intents(records, it.ref)[:MAX_INTENTS]],
             })
 
     errors: "list[str]" = []
@@ -144,6 +158,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
                           for r in records if r.get("kind") in KINDS],
         "rejected_refs": sorted({r["ref"] for r in records if r.get("kind") == "reject_add" and r.get("ref")}),
         "archived_keys": archived_keys(repo),
+        "intent_refs": _intent_refs(records),
     }
 
 
