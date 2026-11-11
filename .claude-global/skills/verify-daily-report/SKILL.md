@@ -95,7 +95,7 @@ done
 旧方式の日報も Rocket Chat を入力源にしているのに、セッション要約だけで照合すると RC 由来の記述が根拠不明に化ける。対象日ごとに取得してサブエージェントに渡す。
 
 ```bash
-bash ~/.dotfiles/scripts/lib/rocketchat.sh --from <date> --to <date> --budget 15000   # 字数基準
+bash ~/.dotfiles/scripts/lib/rocketchat.sh --from <date> --to <date> --budget 25000   # 字数基準（fire と同じ値）
 ```
 
 新方式の日は payload.txt の「Rocket Chat 当日履歴」節に入っている（`(Rocket Chat: 取得失敗)` と出ていたら、その日の RC 由来は照合できないので確信度を下げる）。

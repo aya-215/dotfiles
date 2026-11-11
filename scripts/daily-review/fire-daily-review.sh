@@ -35,7 +35,7 @@ readonly SLICE_BIN="${SLICE_BIN:-$SCRIPT_DIR/slice-sessions.sh}"
 readonly REDACT="$SCRIPT_DIR/../lib/redact.sh"
 # /fire の text 上限は 65,536 文字。余裕を見て 60,000 に抑える
 readonly MAX_PAYLOAD_CHARS=60000
-readonly MAX_RC_CHARS=15000
+readonly MAX_RC_CHARS=25000
 readonly MAX_GIT_CHARS=8000
 # メールは整理済み（要約層通過後）で日次実測 0〜3,600 文字。余裕を見て 6,000 に抑える。
 readonly MAX_MAIL_CHARS=6000
