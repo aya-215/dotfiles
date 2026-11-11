@@ -12,7 +12,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 import apply
+import decisions
 import todo_md
+from origin import origin_of
 from apply import ChangeError, apply_changes, confirm_edit_errors, split_archive, validate
 
 APPLY = str(HERE / "apply.py")
@@ -1033,6 +1035,104 @@ class ConfirmFormatTest(unittest.TestCase):
         self.assertIn("answer: " + OLD_BLOCK[0], body)
         self.assertIn("   回答: A", body)
         self.assertEqual(apply.roundtrip_errors(new), [])
+
+
+AI_TITLE = "PR #1210 車両候補の選択肢バブル（彌永さん）の再レビュー"
+
+
+class AiEditTitleTest(unittest.TestCase):
+    def setUp(self):
+        self.doc = todo_md.parse(BASE.replace(
+            "- [ ] インターン資料修正\n",
+            f"- [ ] インターン資料修正\n- [ ] {AI_TITLE} [epc#1210](https://g/1210) — next: 見る\n"
+            "- [ ] AI の鍵なし行\n"))
+
+    def origins(self, title):
+        return "ai" if title in (AI_TITLE, "AI の鍵なし行", "済んだ") else "human"
+
+    def run_ops(self, ops, source="ai", effects=None):
+        return apply_changes(self.doc, {"source": source, "ops": ops}, self.origins, TODAY, effects=effects)
+
+    def test_ai_can_shorten_ai_line_without_intent(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "epc#1210", "title": "車両候補バブルの再レビュー",
+                                   "reason": "長い"}])
+        it = new.sections["やる"][1]
+        self.assertEqual((it.title, it.key, it.next), ("車両候補バブルの再レビュー", "epc#1210", "見る"))
+        self.assertTrue(any(l.startswith("edit_title epc#1210") for l in body))
+        self.assertEqual(validate(self.doc, new, self.origins, "ai"), [])
+
+    def test_ai_cannot_retitle_human_line(self):
+        for ref in ("title:インターン資料修正", "epc#1163"):
+            with self.assertRaises(ChangeError, msg=ref):
+                self.run_ops([{"op": "edit_title", "ref": ref, "title": "短く"}])
+
+    def test_retitle_human_and_readd_its_title_rejected(self):
+        with self.assertRaises(ChangeError):
+            self.run_ops([{"op": "edit_title", "ref": "title:インターン資料修正", "title": "別"},
+                          {"op": "add", "section": "やる", "title": "インターン資料修正"}])
+
+    def test_sync_still_cannot_edit_title(self):
+        with self.assertRaises(ChangeError):
+            self.run_ops([{"op": "edit_title", "ref": "epc#1210", "title": "短く"}], source="sync")
+
+    def test_ai_retitle_of_done_row_skipped(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "epc#1100", "title": "短く"}])
+        self.assertEqual(new.sections["完了"][0].title, "済んだ")
+        self.assertIn("skip: done epc#1100", body)
+
+    def test_ai_retitle_of_keyless_line_links_lineage(self):
+        fx = apply.Effects()
+        new, _ = self.run_ops([{"op": "edit_title", "ref": "title:AI の鍵なし行", "title": "鍵なし行"}], effects=fx)
+        self.assertEqual(new.sections["やる"][2].ref, "title:鍵なし行")
+        self.assertEqual(fx.aliases, [("title:鍵なし行", "title:AI の鍵なし行")])
+        self.assertEqual(fx.retitled, [])
+
+    def test_ai_cannot_retitle_cleanup_line(self):
+        self.doc.sections["やる"].append(todo_md.Item("後片付け（2026-11-01）", next="x"))
+        origins = lambda t: "ai"
+        new, body = apply_changes(self.doc, {"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "title:後片付け（2026-11-01）", "title": "片付け"}]}, origins, TODAY)
+        self.assertEqual(new.sections["やる"][-1].title, "後片付け（2026-11-01）")
+        self.assertIn("skip: cleanup title:後片付け（2026-11-01）", body)
+
+
+class AiEditTitleCliTest(RepoMixin, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.text = BASE.replace("- [ ] インターン資料修正\n",
+                                 f"- [ ] インターン資料修正\n- [ ] {AI_TITLE} [epc#1210](https://g/1210)\n")
+        self.commit(self.text, "todo(ai): 追加1")
+
+    def retitle(self, title):
+        r = self.run_apply({"source": "ai", "ops": [{"op": "edit_title", "ref": "epc#1210", "title": title}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.head("%s").startswith("todo(ai): "))
+
+    def test_origin_stays_ai_after_shortening_to_a_substring(self):
+        self.retitle("車両候補の選択肢バブル")
+        self.assertEqual(origin_of(self.repo, "todo.md", "車両候補の選択肢バブル"), "ai")
+        self.retitle("選択肢バブル")
+        self.assertEqual(origin_of(self.repo, "todo.md", "選択肢バブル"), "ai")
+
+    def test_origin_stays_ai_after_rewording(self):
+        self.retitle("車両候補バブルの再レビュー")
+        self.assertEqual(origin_of(self.repo, "todo.md", "車両候補バブルの再レビュー"), "ai")
+
+    def test_human_line_rejected_with_exit2(self):
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "資料修正"}]})
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(self.todo.read_text(encoding="utf-8"), self.text)
+
+    def test_keyless_rename_records_alias(self):
+        self.commit(self.text.replace("- [ ] 坂西さんの対応\n", "- [ ] 坂西さんの対応\n- [ ] AI の長い鍵なし行\n"),
+                    "todo(ai): 追加1")
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "title:AI の長い鍵なし行", "title": "鍵なし行"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        recs = decisions.load(self.repo / decisions.DECISIONS_NAME)
+        self.assertEqual([(x["ref"], x["kind"], x["prev_ref"]) for x in recs],
+                         [("title:鍵なし行", "alias", "title:AI の長い鍵なし行")])
 
 
 if __name__ == "__main__":

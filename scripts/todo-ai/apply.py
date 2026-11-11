@@ -29,6 +29,7 @@ from todo_md import TASK_SECTIONS, Doc, Item
 
 SOURCES = ("ai", "sync", "user")
 USER_OPS = ("edit_title", "delete", "note")
+AI_OPS = ("edit_title",)
 CLEANUP_PREFIX = decisions.CLEANUP_PREFIX
 OPEN_SECTIONS = ("やる", "待ち")
 ARCHIVE_DAYS = 30
@@ -59,7 +60,8 @@ class Effects:
     intents は記録する意図（{"ref", "value", "op", 任意で "prev_ref"}）。deleted / retitled は適用前から
     あった行のうち delete で消した行・edit_title で題を変えた行（変更前の状態）で、validate の免除に使う。
     reopened は完了から出した行の (ref, 今の節)。完了へ戻さない pin として記録する。
-    aliases は key の無い行に key を付けた (key, 旧 ref)。source を問わず集め、alias として記録する。
+    aliases は key の無い行に key を付けた (key, 旧 ref) と、source ai が key の無い行の題を変えた (新 ref, 旧 ref)。
+    source を問わず集め、alias として記録する。
     """
 
     intents: "list[dict]" = field(default_factory=list)
@@ -288,9 +290,10 @@ def apply_changes(
     後片付けは題の前方一致）の add/attach も飛ばす。
     source user（ユーザー指示）は例外: 戻し・却下の記録に縛られず、完了から戻せ、edit_title / delete / note を
     使える。各 op に intent が必須で、op を1つでも飛ばすなら全体を ChangeError にする（承認された変更を欠かさない）。
+    source ai も edit_title を使えるが、origins が "ai" の行（この実行で足した行を含む）だけで、人の行なら ChangeError。
+    完了の行と後片付けの行は飛ばす。
     effects を渡すと、source user の意図と validate の免除対象をそこに集める。
     変更案の形が不正なら ChangeError。人のタイトル保護などの結果の検証は validate が行う。
-    origins は現状の op では使わない。
     """
     if not isinstance(changes, dict):
         raise ChangeError("変更案が object でない")
@@ -343,7 +346,7 @@ def apply_changes(
         intent = _str(op, "intent", required=user)
         if user and not intent.strip():
             raise ChangeError(f"{kind}: intent が空白だけ")
-        if kind in USER_OPS and not user:
+        if kind in USER_OPS and not user and not (source == "ai" and kind in AI_OPS):
             raise ChangeError(f"{kind} は user だけが使える")
         refs_out: "list[tuple[str, str]]" = []
         if kind == "add":
@@ -441,7 +444,19 @@ def apply_changes(
             if title != it.title:
                 if not it.key and _find(doc, "title:" + title):
                     raise ChangeError(f"edit_title: 同じ題の key の無い行が既にあり ref が重なる: {title!r}")
-                if all(it is not f for f in fresh):
+                if not user:
+                    # validate は題の数で比べるので、人の行の改名と同じ題の add の組を見逃す。ここで行ごとに止める
+                    if all(it is not f for f in fresh) and origins(it.title) != "ai":
+                        raise ChangeError(f"edit_title: {source} は人の行の題を変えられない: {ref}")
+                    if loc[0] == "完了":
+                        skip(f"done {ref}")
+                        continue
+                    if it.title.startswith(CLEANUP_PREFIX) or title.startswith(CLEANUP_PREFIX):
+                        skip(f"cleanup {ref}")
+                        continue
+                    if not it.key:
+                        fx.aliases.append(("title:" + title, ref))
+                elif all(it is not f for f in fresh):
                     fx.retitled.append(copy.deepcopy(it))
                 it.title = title
                 body.append(_note(op, f"edit_title {ref} → {title}", it.url))
