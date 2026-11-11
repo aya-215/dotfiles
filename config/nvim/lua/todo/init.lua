@@ -109,17 +109,22 @@ end
 M.ns = vim.api.nvim_create_namespace("todo_conceal")
 
 -- 表示だけを変える（ファイルの中身は変えない）。カーソル行には付けず生の文字を見せる。
--- render-markdown が通常モードで conceallevel を 3 にし cchar が消えるため、→ は cchar ではなくインラインの仮想文字で出す
+-- render-markdown が通常モードで conceallevel を 3 にし cchar が消えるため、→ は cchar ではなくインラインの仮想文字で出す。
+-- 仮想文字は conceal と違い conceallevel 0（render-markdown の挿入モード）でも出るので、そのときは付けない
 function M.decorate(buf)
   vim.api.nvim_buf_clear_namespace(buf, M.ns, 0, -1)
   local win = vim.api.nvim_get_current_win()
-  local cursor = vim.api.nvim_win_get_buf(win) == buf and vim.api.nvim_win_get_cursor(win)[1] or -1
+  if vim.api.nvim_win_get_buf(win) ~= buf then
+    win = vim.fn.win_findbuf(buf)[1]
+  end
+  local cursor = win and vim.api.nvim_win_get_buf(win) == buf and vim.api.nvim_win_get_cursor(win)[1] or -1
+  local arrow = win ~= nil and vim.wo[win].conceallevel > 0
   local core = require("todo.core")
   for lnum, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
     if lnum ~= cursor then
       for _, r in ipairs(core.conceal_ranges(line)) do
         local opts = { end_col = r[2], conceal = "" }
-        if r[3] then
+        if r[3] and arrow then
           opts.virt_text = { { r[3], "Comment" } }
           opts.virt_text_pos = "inline"
         end
@@ -145,11 +150,22 @@ local function attach_view(buf)
       M.decorate(buf)
     end,
   })
-  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved", "CursorMovedI" }, {
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved", "CursorMovedI", "ModeChanged" }, {
     group = group,
     buffer = buf,
     callback = function()
       M.decorate(buf)
+    end,
+  })
+  vim.b[buf].todo_view = true
+  -- OptionSet はバッファに限定できないので1つだけ作り、表示を付けたバッファのときだけ付け直す
+  vim.api.nvim_create_autocmd("OptionSet", {
+    group = vim.api.nvim_create_augroup("todo_md_view_option", { clear = true }),
+    pattern = "conceallevel",
+    callback = function()
+      if vim.b.todo_view then
+        M.decorate(vim.api.nvim_get_current_buf())
+      end
     end,
   })
   for _, win in ipairs(vim.fn.win_findbuf(buf)) do

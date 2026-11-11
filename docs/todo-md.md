@@ -75,7 +75,7 @@ nvim から直接書いた変更が長く未コミットのまま残る問題が
 - 確認待ちの問いの末尾タグ ` [<kind> <ref>]` を隠す
 - タスク行の ` — next: ` を ` → ` で見せる
 
-render-markdown が通常モードで `conceallevel` を 3 にし conceal の代わりの文字（cchar）が出なくなるため、→ はインラインの仮想文字で出している。
+render-markdown が通常モードで `conceallevel` を 3 にし conceal の代わりの文字（cchar）が出なくなるため、→ はインラインの仮想文字で出している。仮想文字は conceal と違い `conceallevel=0` でも出るので、窓の `conceallevel` が 0 の間は付けない（モードの切り替え・`conceallevel` の変更で付け直す）。
 隠した文字も折り返しの幅には数えられる（Neovim の挙動）ので、長い URL のある行は折り返し位置がずれることがある。行を短くするのは `/todo` の題・next の書き方（`docs/todo-ai.md`）の役割。
 
 ## 安全装置

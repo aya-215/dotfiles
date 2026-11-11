@@ -263,6 +263,22 @@ do
   vim.api.nvim_win_set_cursor(0, { 9, 0 })
   vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
   eq({ marked_rows()[4], marked_rows()[9] }, { true, nil }, "cursor row shows raw text")
+  local function arrows()
+    local n = 0
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
+      if m[4].virt_text then
+        n = n + 1
+      end
+    end
+    return n
+  end
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  eq(arrows(), 1, "arrow shown while conceallevel > 0")
+  vim.wo.conceallevel = 0
+  eq(arrows(), 0, "no arrow when conceallevel is 0 (render-markdown in insert mode)")
+  vim.wo.conceallevel = 3
+  eq(arrows(), 1, "arrow back when conceallevel returns")
   vim.cmd("silent write")
   eq(vim.fn.readfile(todo.path), content, "conceal does not change file contents")
   vim.cmd("bwipeout!")
