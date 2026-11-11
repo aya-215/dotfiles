@@ -73,6 +73,19 @@ git -C ~/memo commit -m "todo: 新形式へ移行" -- todo.md
 cron の PATH に Nix の `gh` は無いが、見つからなければ `~/.nix-profile/bin` と `/etc/profiles/per-user/$USER/bin` を前に足して探す。
 `ebase-dev/*` へは `gh auth token --user eBASE-Mori` のトークンで問い合わせる。
 
+### 4. cron で /todo を無人実行
+
+平日 7 時に1回。`claude -p` はサブスクの枠で動く（2026-11-11 にユーザー確認）。
+
+```cron
+0 7 * * 1-5 mkdir -p /home/aya/.local/log/todo-ai && /home/aya/.dotfiles/scripts/todo-ai/run-unattended.sh >> /home/aya/.local/log/todo-ai/cron.log 2>&1
+```
+
+- 承認ダイアログに答える人がいないので `--permission-mode auto` で動かす。hook は `disableAllHooks` で止める（セッション要約の再帰発火を防ぐ）
+- `~/.claude/skills` はメイン checkout（`~/.dotfiles`）を指す。そこが main 以外のブランチで `/todo` が無いと、claude を呼ばずに exit 1 で終わる
+- 前回の実行が終わっていなければ何もせず終わる（flock）
+- 実行するコマンドは `run-unattended.sh --dry-run` で確かめられる
+
 ## 使い方
 
 ### /todo
@@ -112,6 +125,8 @@ python3 ~/.dotfiles/scripts/todo-ai/review.py --since $(date -d '7 days ago' +%F
 | 場所 | 中身 |
 |---|---|
 | `~/.local/log/todo-ai/sync.log` | cron の同期の stderr/stdout |
+| `~/.local/log/todo-ai/cron.log` | 無人実行の開始・終了と終了コード |
+| `~/.local/log/todo-ai/<YYYY-MM-DD>/run-<HHMMSS>.log` | 無人実行1回分の claude の出力 |
 | `~/.local/log/todo-ai/<YYYY-MM-DD>/` | `/todo` の1回ごとのファイル。名前に開始時刻 `<HHMMSS>` が付く（`sync-`, `context-`, `my-tasks-`, `changes-`, `head-before-`, `apply-`） |
 | `git -C ~/memo log` | AI・同期の変更と理由（`todo(ai): ` / `todo(sync): ` の本文。飛ばした op は `skip: ...`） |
 | `~/memo/todo-decisions.jsonl` | 人の判断の記録 |
@@ -120,5 +135,4 @@ python3 ~/.dotfiles/scripts/todo-ai/review.py --since $(date -d '7 days ago' +%F
 
 ## やっていないこと
 
-- 無人実行（cron から `claude -p "/todo"`）。`claude -p` の利用がサブスクの枠で済むかの確認待ちのため、まだ作っていない。今は手で `/todo` を実行する
 - GitBucket の状態は `/todo` 実行時に AI が読み取りで見るだけで、cron の同期は GitHub だけ

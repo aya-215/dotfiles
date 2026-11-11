@@ -1,6 +1,6 @@
 ---
 name: todo
-description: 業務TODO（~/memo/todo.md）を一次データから AI が更新する。GitHub 同期 → /my-tasks の JSON 収集 → 台帳と突き合わせた変更案 → apply.py で適用。「/todo」「TODO更新」「todo を最新にして」「確認待ちに答えたから反映して」等で使用。無人実行（cron の `claude -p "/todo"`）はまだ作っていない。
+description: 業務TODO（~/memo/todo.md）を一次データから AI が更新する。GitHub 同期 → /my-tasks の JSON 収集 → 台帳と突き合わせた変更案 → apply.py で適用。「/todo」「TODO更新」「todo を最新にして」「確認待ちに答えたから反映して」等で使用。平日朝に cron（scripts/todo-ai/run-unattended.sh）から `claude -p "/todo"` で無人実行もされる。
 ---
 
 # /todo
@@ -8,7 +8,7 @@ description: 業務TODO（~/memo/todo.md）を一次データから AI が更新
 `~/memo/todo.md` を、一次データ（`/my-tasks` の収集結果・GitHub・GitBucket）に合わせて更新する。
 書き込みは `apply.py` だけが行う。Claude は変更案 JSON を作るだけで、todo.md を直接編集しない。
 
-**質問しない。** 将来の無人実行（`claude -p "/todo"`）でも同じ手順で最後まで走れるようにする。迷ったら「何もしない」か「確認待ちに出す」側に倒す。AskUserQuestion は使わない。
+**質問しない。** 無人実行（`claude -p "/todo"`）でも同じ手順で最後まで走れるようにする。迷ったら「何もしない」か「確認待ちに出す」側に倒す。AskUserQuestion は使わない。
 
 ## やらないこと
 
