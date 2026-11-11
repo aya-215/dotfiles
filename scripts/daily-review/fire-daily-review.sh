@@ -135,12 +135,17 @@ rocketchat_log="$(bash "$ROCKETCHAT_BIN" \
 # worktree は ../<略称>-<ブランチ名> という兄弟ディレクトリに作られる（worktree スキルの規約）ため、
 # glob では本体と別リポジトリに見えてしまう。--git-common-dir は worktree でも本体の .git を指すので、
 # その親ディレクトリ名を正規リポジトリ名として集約キーに使う。
-# 正規名は origin の末尾要素（.git 抜き）。clone 名や worktree 名が違っても同じリポジトリを1見出しにまとめる。
+# 正規名は origin の末尾要素（.git 抜き。GitBucket は <group>/<repo>）。clone 名や worktree 名が違っても同じリポジトリを1見出しにまとめる。
 # origin が無ければ共通 .git の親ディレクトリ名、それも取れなければ自身のディレクトリ名。
 canonical_repo_name() {
   local repo="$1" url common name
   if url="$(git -C "$repo" remote get-url origin 2>/dev/null)" && [ -n "$url" ]; then
-    name="$(printf '%s' "$url" | sed -E 's#/+$##; s#\.git$##; s#.*[/:]##')"
+    # GitBucket は顧客別 fork で同名リポジトリが多いため <group>/<repo> を名前にする
+    url="$(printf '%s' "$url" | sed -E 's#/+$##; s#\.git$##')"
+    case "$url" in
+      */gitbucket/git/*/*) name="$(printf '%s' "$url" | sed -E 's#.*/gitbucket/git/([^/]+/[^/]+)$#\1#')" ;;
+      *) name="${url##*[/:]}" ;;
+    esac
     [ -n "$name" ] && { printf '%s\n' "$name"; return; }
   fi
   common="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
@@ -189,7 +194,7 @@ collect_git_log() {
       [ "${repo_labels[$ri]}" = "$label" ] || continue
       repo="${all_repos[$ri]}"
       local branch
-      branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
+      branch="$(git -C "$repo" branch --show-current 2>/dev/null)" || branch=""
       [ -z "$branch" ] && branch="detached"
       # 時刻+ブランチ+件名+変更量を1コミット1行に整形する。--shortstat の統計行は
       # awk で直前の件名行へ「（N files +A -D）」として畳み込む。

@@ -182,6 +182,8 @@ mkcommit "$R/gb" GB_COMMIT $ME
 git init -q "$R/localonly"
 mkcommit "$R/localonly" LOCAL_COMMIT $ME
 mkdir -p "$R/notarepo"
+# 壊れた gitfile（存在しない gitdir）があっても他は収集される
+mkdir -p "$R/broken" && printf 'gitdir: /nonexistent/xx/.git/worktrees/y\n' > "$R/broken/.git"
 FIRE_GIT_ROOTS="$R/*/
 $C/missing/*/" run_fire "$C" --dry-run --date 2026-11-04
 P="$C/slices/2026-11-04/payload.txt"
@@ -190,11 +192,23 @@ has "c13 個人 GitHub は Personal" "$P" "### [Personal] dotfiles"
 has "c13 origin 名で集約（Work）" "$P" "### [Work] eb-api-extended"
 check "c13 同名見出しは1つ" 1 "$(grep -c '^### \[Work\] eb-api-extended' "$P")"
 check "c13 同じコミットは1行" 1 "$(grep -c SHARED_COMMIT "$P")"
-has "c13 GitBucket は Work" "$P" "### [Work] release-skills-repo"
+has "c13 GitBucket は Work" "$P" "### [Work] eBASE/release-skills-repo"
 has "c13 origin 無しはディレクトリ名で Work" "$P" "### [Work] localonly"
 lacks "c13 他人の author は入らない" "$P" "OTHER_AUTHOR_COMMIT"
 lacks "c13 clone 名の見出しは出ない" "$P" "eae-docs-x"
 check "c13 Personal が Work より先" 1 "$([ "$(grep -n '\[Personal\]' "$P" | head -1 | cut -d: -f1)" -lt "$(grep -n '\[Work\]' "$P" | head -1 | cut -d: -f1)" ] && echo 1 || echo 0)"
+
+# ---- ケース14: 同名の GitBucket リポジトリは group で分かれる ----
+C="$TMP/c14"; mkdir -p "$C/home" "$C/roots"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
+for g in groupA groupB; do
+  git init -q "$C/roots/$g" && git -C "$C/roots/$g" remote add origin "http://192.168.208.80:8080/gitbucket/git/$g/ebase-web.git"
+  mkcommit "$C/roots/$g" "COMMIT_$g" $ME
+done
+FIRE_GIT_ROOTS="$C/roots/*/" run_fire "$C" --dry-run --date 2026-11-04
+P="$C/slices/2026-11-04/payload.txt"
+has "c14 groupA は別見出し" "$P" "### [Work] groupA/ebase-web"
+has "c14 groupB は別見出し" "$P" "### [Work] groupB/ebase-web"
 
 # ---- ケース5: --overwrite ----
 C="$TMP/c5"; mkdir -p "$C/home"
