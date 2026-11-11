@@ -221,6 +221,33 @@ class AnswersTest(unittest.TestCase):
         self.assertIsNotNone(decisions.already_answered(recs, "epc#1100", "conflict"))
         self.assertEqual(decisions.pinned_sections(recs, "epc#1100"), ["完了"])
 
+    def test_carried_conflict_block_leaves_everything_for_todo(self):
+        # 確認待ちを書き直すと conflict の回答が古いかの基準（問いを書いたコミット）が動くので、conflict を持ち越さない
+        conflict = {"ref": "epc#1100", "kind": "conflict", "question": "完了にした件がまだ開いている。どうする？",
+                    "facts": "", "options": [{"label": "A", "text": "完了のまま", "recommended": True},
+                                             {"label": "B", "text": "やるに戻す"}],
+                    "on_answer": {"A": [], "B": [{"op": "move", "ref": "epc#1100", "to": "やる"}]}}
+        self.ask(conflict, IS_TASK)
+        with open(self.repo / "todo-decisions.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ref": "epc#1100", "kind": "intent", "value": "完了のまま", "op": "note",
+                                "by": "human"}, ensure_ascii=False) + "\n")
+        git(self.repo, "add", ".")
+        git(self.repo, "commit", "-q", "-m", "todo(user): 意図")
+        self.answer("B", "A")
+        self.assert_untouched(self.run_answers(), self.head())
+        out = context.build(self.todo, self.repo / "todo-decisions.jsonl", TODAY)
+        self.assertEqual([(a["ref"], a["superseded"]) for a in out["answered_now"]],
+                         [("epc#1100", True), ("title:z の件", False)])
+        git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+        self.answer(None, "A")
+        self.assert_untouched(self.run_answers(), self.head())
+
+    def test_on_answer_with_an_op_answers_cannot_run_is_not_saved(self):
+        self.ask(dict(IS_TASK, on_answer={"A": [{"op": "order", "section": "やる", "refs": []}]}))
+        self.assertIn("skip: bad on_answer title:z の件", git(self.repo, "log", "-1", "--format=%b"))
+        self.answer("A")
+        self.assert_untouched(self.run_answers(), self.head())
+
     def test_nvim_editing_propagates_apply_exit_and_logs(self):
         self.ask(IS_TASK)
         self.answer("A")

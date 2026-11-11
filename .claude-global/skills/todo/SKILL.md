@@ -187,7 +187,7 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 
 ユーザーが確認待ちに選択肢の文字1つ（`A`・`Ｂ`・` b ` 等）だけを書いてポップアップを閉じると、`answers.py` が AI なしで、問いを出したときに保存した変更案をそのまま適用する（apply が `todo-pending.json` に保存し、同じコミットに入れる）。文の回答は次の `/todo` に回る。
 
-- 問いを出すときは、可能な限り `"on_answer": {"A": [ops...], "B": [ops...]}` を付ける。ops の形は通常の op と同じで、`by_answer` は付けない（answers.py が付ける）。何もしない選択肢は `[]`。中身は今回の候補の `key`・`url`・`title`・`next` から作り、題と next は下の「題と next の書き方」に沿って縮める
+- 問いを出すときは、可能な限り `"on_answer": {"A": [ops...], "B": [ops...]}` を付ける。ops の形は通常の op と同じで、使える op は `add` `move` `set_next` `attach` `edit_title` `delete` だけ（`order` は不可）。`by_answer` は付けない（answers.py が付ける）。何もしない選択肢は `[]`。中身は今回の候補の `key`・`url`・`title`・`next` から作り、題と next は下の「題と next の書き方」に沿って縮める
   - is_task（規則 7）: A `追加する（<やる|待ち>）` → `[{"op": "add", "section": <やる|待ち>, "title", "next", "key"・"url"（両方あるときだけ）}]`、B → `[]`
   - is_task（規則 4b の1件）: A `同じ` → `[{"op": "attach", "ref": <行の ref>, "key", "url", "next"（行の next が null のときだけ）}]`、B `別の作業` → その add、C → `[]`
   - is_task（規則 4b の傘の行）: A `足す` → 各候補の add、B → `[]`
@@ -195,13 +195,13 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
   - conflict（規則 8）: A → `[]`、B `自分でやるに戻す` → `[{"op": "move", "ref": <行の ref>, "to": "やる"}]`。意図との食い違いの conflict は A → `[]`、B → 一次データに沿った op
   - policy / before_share / manual: 選択肢が決まった op に対応するときだけ。対応しなければ付けない
 - 回答の反映で触れる行は、問いの ref の行か、問い・事実に『』で題をそのまま引用した行だけ（apply が `skip: out of answer scope` で止める）。人の行を直す選択肢があるなら、その行の題を『』で問いに入れる
-- `on_answer` の形が違う（選択肢に無い文字・配列でない・op の中に `by_answer`）と、apply はその問いの変更案だけ保存せず `skip: bad on_answer <ref>` を残す（問いは出る）
+- `on_answer` の形が違う（選択肢に無い文字・配列でない・上の6つ以外の op・op の中に `by_answer`）と、apply はその問いの変更案だけ保存せず `skip: bad on_answer <ref>` を残す（問いは出る）
 
 #### 回答の反映
 
 - 回答の記録は apply が回答欄とタグから行う。`answered` キーは入れない（入れる場合は `answered_now` と完全に一致しないと exit 2）
 - 回答したブロックは `confirm` に写さない（写しても apply が、回答欄が埋まっている・判断記録にある (ref, kind) の問いを `skip: answered` で落とす）
-- 選択肢の文字1つの回答で `on_answer` があったものは、ポップアップを閉じたときに `answers.py` が反映済みで、確認待ちから消えている。`/todo` に残るのは、文の回答・変更案の無い問いへの回答・閉じた後の反映が止まった（`~/.local/log/todo-ai/<日付>/answers-<HHMMSS>.err`）回答
+- 選択肢の文字1つの回答で `on_answer` があったものは、ポップアップを閉じたときに `answers.py` が反映済みで、確認待ちから消えている。`/todo` に残るのは、文の回答・変更案の無い問いへの回答・conflict の問いが残っていて閉じても反映しなかった回答・閉じた後の反映が止まった（`~/.local/log/todo-ai/<日付>/answers-<HHMMSS>.err`）回答
 - 回答の内容に沿った op を作る。回答は選択の `label`（A/B/C）か `text` の言葉で読む。問いの中身は `confirm_blocks` の同じ ref・kind のブロック（回答済みも載っている）の `question`・`facts` で見る。回答が読み取れない自由文なら op は作らず、記録だけして報告に書く
 - **回答で人の行を直す（by_answer）**: 自由文の回答が既存の行への指示（消す・完了にする・題を直す・移す・next を変える。例「既存行を削除して」「これは対応済み」「坂西さんの対応も完了」）を含むときは、その op に `"by_answer": {"ref": <ブロックの ref>, "kind": <ブロックの kind>}` を付けて実行する。付けた op だけ、人の行にも `delete`・`edit_title`・完了からの `move`・`set_next` ができ、apply が意図（回答の文に基づく、by human）を残す（`delete` した行は以後足し直さない。完了から出した行は自動で完了に戻さない）
   - 対象にできるのは、そのブロックの `scope` に出ている行だけ。回答の文に別の行の題が出ていても、`scope` に無い行には作らない（apply も `skip: out of answer scope <ref>` で飛ばす）。`scope` に無い行への指示は op にせず報告に書く

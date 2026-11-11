@@ -4,6 +4,7 @@
 nvim のポップアップを閉じたときに裏で起動される。対象は、回答が選択肢の文字1つ（前後の空白・全角・小文字可）で、
 その文字がブロックの選択肢にあり、todo-pending.json にそのブロック（問い・選択肢の行が書いたときと同じもの）の
 その文字の ops があるブロックだけ。文の回答・pending の無いブロック・選択肢に無い文字は回答欄ごと残し、次の /todo に回す。
+反映しない conflict の問いが残るとき（回答が古くなったかの基準が動く）は、何もせず全部を次の /todo に回す。
 対象の ops に by_answer を付けた source ai の変更案を作り、apply.py に渡す。
 
 使い方: answers.py [--todo PATH] [--decisions PATH] [--log-dir DIR] [--today YYYY-MM-DD]
@@ -74,6 +75,9 @@ def plan(todo: Path, dpath: Path) -> "tuple[dict | None, str]":
     if not targets:
         return None, "選択肢の文字1つで変更案のある回答が無い"
     chosen = [b for b, _ in targets]
+    # 書き直した確認待ちが conflict の回答の古さの基準になるので、問いの後に記録された意図を見落とさないよう持ち越さない
+    if any(kind == "conflict" and all(b is not c for c in chosen) for b, (_, kind) in zip(blocks, tags)):
+        return None, "持ち越す conflict の問いがある"
     ops = [dict(op, by_answer={"ref": ref, "kind": kind})
            for b, todo_ops in targets for op in todo_ops
            for kind, ref in [apply.parse_tag(b["question"])]]

@@ -298,7 +298,8 @@ def _bad_on_answer(e: dict) -> bool:
     on = e.get("on_answer")
     labels = {o.get("label") for o in e.get("options") or []}
     return not (isinstance(on, dict) and all(
-        k in labels and isinstance(v, list) and all(isinstance(op, dict) and "by_answer" not in op for op in v)
+        k in labels and isinstance(v, list)
+        and all(isinstance(op, dict) and op.get("op") in ANSWER_OPS and "by_answer" not in op for op in v)
         for k, v in on.items()))
 
 
