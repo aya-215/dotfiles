@@ -106,7 +106,60 @@ local function new_task(above)
   return ("<Cmd>lua require('todo')._insert_task(%s)<CR>"):format(tostring(above))
 end
 
+M.ns = vim.api.nvim_create_namespace("todo_conceal")
+
+-- 表示だけを変える（ファイルの中身は変えない）。カーソル行には付けず生の文字を見せる。
+-- render-markdown が通常モードで conceallevel を 3 にし cchar が消えるため、→ は cchar ではなくインラインの仮想文字で出す
+function M.decorate(buf)
+  vim.api.nvim_buf_clear_namespace(buf, M.ns, 0, -1)
+  local win = vim.api.nvim_get_current_win()
+  local cursor = vim.api.nvim_win_get_buf(win) == buf and vim.api.nvim_win_get_cursor(win)[1] or -1
+  local core = require("todo.core")
+  for lnum, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+    if lnum ~= cursor then
+      for _, r in ipairs(core.conceal_ranges(line)) do
+        local opts = { end_col = r[2], conceal = "" }
+        if r[3] then
+          opts.virt_text = { { r[3], "Comment" } }
+          opts.virt_text_pos = "inline"
+        end
+        vim.api.nvim_buf_set_extmark(buf, M.ns, lnum - 1, r[1], opts)
+      end
+    end
+  end
+end
+
+local function set_view_options(win)
+  vim.api.nvim_set_option_value("conceallevel", 2, { scope = "local", win = win })
+  vim.api.nvim_set_option_value("concealcursor", "", { scope = "local", win = win })
+end
+
+local function attach_view(buf)
+  local group = vim.api.nvim_create_augroup("todo_md_view", { clear = false })
+  vim.api.nvim_clear_autocmds({ group = group, buffer = buf })
+  vim.api.nvim_create_autocmd("BufWinEnter", {
+    group = group,
+    buffer = buf,
+    callback = function()
+      set_view_options(vim.api.nvim_get_current_win())
+      M.decorate(buf)
+    end,
+  })
+  vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved", "CursorMovedI" }, {
+    group = group,
+    buffer = buf,
+    callback = function()
+      M.decorate(buf)
+    end,
+  })
+  for _, win in ipairs(vim.fn.win_findbuf(buf)) do
+    set_view_options(win)
+  end
+  M.decorate(buf)
+end
+
 local function attach(buf)
+  attach_view(buf)
   local function map(lhs, rhs, desc, expr)
     vim.keymap.set("n", lhs, rhs, { buffer = buf, silent = true, desc = desc, expr = expr })
   end
