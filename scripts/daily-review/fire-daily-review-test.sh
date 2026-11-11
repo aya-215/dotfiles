@@ -123,6 +123,22 @@ check "c8 exit 0" 0 "$RC"
 has "c8 payload は作られる" "$C/slices/2026-11-04/payload.txt" "TIMEOUT_FALLBACK_BODY"
 has "c8 timeout ログ" "$C/fire.log" "slice: timeout"
 
+# ---- ケース8b: 候補はあったが全件見送り（written=0 failed=0 candidates=3）→ 旧方式へ戻さない ----
+printf '#!/bin/bash\necho "slices: written=0 failed=0 candidates=3"\n' > "$TMP/slice-allskip.sh"
+C="$TMP/c8b"; mkdir -p "$C/home"
+mk_md "$C/sessions/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "OUTOFWINDOW_BODY"
+SLICE_BIN="$TMP/slice-allskip.sh" run_fire "$C" --dry-run --date 2026-11-04
+check "c8b exit 0" 0 "$RC"
+check "c8b payload は作られない" "no" "$([ -e "$C/slices/2026-11-04/payload.txt" ] && echo yes || echo no)"
+check "c8b skipped マーカー" "yes" "$([ -e "$C/slices/2026-11-04/skipped" ] && echo yes || echo no)"
+has "c8b 見送りログ" "$C/fire.log" "候補は全件見送り"
+
+# ---- ケース8c: candidates=0（jsonl が無い）→ 旧方式 ----
+C="$TMP/c8c"; mkdir -p "$C/home"
+mk_md "$C/sessions/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "NOJSONL_BODY"
+run_fire "$C" --dry-run --date 2026-11-04
+has "c8c candidates=0 は旧方式で送る" "$C/slices/2026-11-04/payload.txt" "NOJSONL_BODY"
+
 # ---- ケース9: 切り出しが異常終了／存在しない ----
 printf '#!/bin/bash\necho boom >&2\nexit 5\n' > "$TMP/slice-fail.sh"
 C="$TMP/c9"; mkdir -p "$C/home"

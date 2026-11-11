@@ -79,7 +79,9 @@ body_lines="$(printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | gr
 
 # 切り出しモード: User の発言が1つも無い区切り（assistant の続きと tool_result だけ）は切り出さない
 if [ -n "$slice_date" ]; then
-  printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | grep -q '^\*\*User:\*\*' || exit 0
+  # grep -q は早期終了で上流が SIGPIPE になり pipefail で大きい入力が誤って skip されるため、here-string で全量を読ませる
+  window_body="$(printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2)"
+  grep -q '^\*\*User:\*\*' <<<"$window_body" || exit 0
 fi
 
 # ガードA: 薄いセッション（ツール使用なし＆本文が極端に短い）は要約しない
@@ -93,7 +95,7 @@ fi
 header="$(printf '%s\n' "$extracted" | sed -n '1,/^---$/p')"
 get_header() {
   local key="$1"
-  printf '%s\n' "$header" | sed -n "s/^${key}: //p" | head -1
+  printf '%s\n' "$header" | sed -n "/^${key}: /{s///p;q}"
 }
 proj_name="$(get_header project)"
 [ -z "$proj_name" ] && proj_name="unknown"
@@ -154,7 +156,7 @@ if [ -n "$slice_date" ]; then
   for i in $(seq 1 14); do
     d="$(date -d "$slice_date -$i day" +%Y-%m-%d 2>/dev/null)" || break
     [ -d "$SLICES_ROOT/$d" ] || continue
-    prev_file="$(find "$SLICES_ROOT/$d" -maxdepth 1 -type f -name "*-${sid_short}.md" 2>/dev/null | sort | head -1)"
+    prev_file="$(find "$SLICES_ROOT/$d" -maxdepth 1 -type f -name "*-${sid_short}.md" 2>/dev/null | sort | sed -n 1p)"
     [ -n "$prev_file" ] && break
   done
   if [ -n "$prev_file" ]; then
@@ -230,8 +232,7 @@ for attempt in 1 2; do
   fi
   # 前置き除去（frontmatter・フェンス開始行の混入をここで捨てる）→ 残ったフェンス行を除去
   cand="$(printf '%s\n' "$raw" | sed -n '/^## 意図/,$p' | sed '/^```/d')"
-  if printf '%s\n' "$cand" | grep -q '^## 作業内容' \
-     && printf '%s\n' "$cand" | grep -q '^## 結論'; then
+  if grep -q '^## 作業内容' <<<"$cand" && grep -q '^## 結論' <<<"$cand"; then
     body="$cand"
     break
   fi

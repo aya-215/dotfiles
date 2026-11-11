@@ -384,10 +384,10 @@ else
 fi
 
 # ==== case10c: 前の切り出しが別の SLICES_ROOT にしか無ければ文脈ブロックなし ====
-mkdir -p "$TMP/case10c/stub"
-good_body > "$TMP/case10c/stub/out"
+# 前の切り出しは other 側にだけ置く。SLICES_ROOT=slices で呼ぶと文脈なし、SLICES_ROOT=other で呼ぶと文脈あり（対照）。
 put_prev_slice case10b 2026-07-12
-mkdir -p "$TMP/case10c/other"
+mkdir -p "$TMP/case10c/stub" "$TMP/case10c/other"
+good_body > "$TMP/case10c/stub/out"
 cp -R "$TMP/case10b/slices/2026-07-12" "$TMP/case10c/other/"
 run_slice case10c
 if [ -f "$TMP/case10c/stub/prompt.1" ] && ! grep -q 'CONTEXT_START' "$TMP/case10c/stub/prompt.1"; then
@@ -395,6 +395,44 @@ if [ -f "$TMP/case10c/stub/prompt.1" ] && ! grep -q 'CONTEXT_START' "$TMP/case10
 else
   echo "NG: case10c: 文脈ブロックが入っている、または claude が呼ばれていない"; fails=$((fails + 1))
 fi
+mkdir -p "$TMP/case10c2/stub" "$TMP/case10c2/sessions"
+good_body > "$TMP/case10c2/stub/out"
+CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$TMP/case10c2/stub" \
+SESSIONS_ROOT="$TMP/case10c2/sessions" SLICES_ROOT="$TMP/case10c/other" \
+  bash "$SCRIPT_DIR/summarize.sh" "$TMP/case10c/transcript.jsonl" "$SID" \
+    --slice 2026-07-14 --since 2026-07-13T22:10:00+09:00 --until 2026-07-14T22:10:00+09:00 \
+    > "$TMP/case10c2/log" 2>&1 || true
+if [ -f "$TMP/case10c2/stub/prompt.1" ] && grep -q 'CONTEXT_START' "$TMP/case10c2/stub/prompt.1"; then
+  echo "ok: case10c2: 対照（SLICES_ROOT を前の切り出しの場所にすると文脈が入る）"
+else
+  echo "NG: case10c2: 対照で文脈が入らない（case10c が何も検証できていない）"; fails=$((fails + 1))
+fi
+
+# ==== case10f: 範囲内の抽出が 200KB 超でも User 発言ありなら切り出す（SIGPIPE で黙って捨てない） ====
+mkdir -p "$TMP/case10f/stub"
+good_body > "$TMP/case10f/stub/out"
+python3 - "$TMP/case10f/transcript.jsonl" "$SID" <<'PY'
+import json, sys
+path, sid = sys.argv[1], sys.argv[2]
+rows = [{"type": "user", "sessionId": sid, "cwd": "/home/aya/testproj", "timestamp": "2026-07-13T13:11:00.000Z",
+         "message": {"content": "LINE-FIRST-USER 範囲内の最初の発言"}}]
+for i in range(400):
+    rows.append({"type": "assistant", "sessionId": sid, "cwd": "/home/aya/testproj",
+                 "timestamp": "2026-07-13T13:12:%02d.000Z" % (i % 60),
+                 "message": {"content": [{"type": "text", "text": "BIG-%d " % i + "x" * 900},
+                                         {"type": "tool_use", "name": "Edit", "input": {"file_path": "/home/aya/testproj/a.conf"}}]}})
+with open(path, "w") as f:
+    for r in rows:
+        f.write(json.dumps(r) + "\n")
+PY
+run_slice case10f
+if [ "$slice_rc" -eq 0 ]; then echo "ok: case10f: 終了コード 0"; else echo "NG: case10f: 終了コード $slice_rc"; fails=$((fails + 1)); fi
+if [ -f "$TMP/case10f/stub/prompt.1" ] && [ "$(wc -c < "$TMP/case10f/stub/prompt.1")" -gt 200000 ]; then
+  echo "ok: case10f: 200KB 超の入力で claude が呼ばれた"
+else
+  echo "NG: case10f: claude が呼ばれていない、または入力が 200KB 以下"; fails=$((fails + 1))
+fi
+assert_contains "case10f: 大きい区切りでも md が書かれる" "$TMP/case10f/slices/2026-07-14/testproj-$SID_SHORT.md" '^## 意図'
 
 # ==== case10d: 範囲内に User の発言が無い（assistant と tool_result だけ）→ 何も書かず 0 ====
 mkdir -p "$TMP/case10d/stub"

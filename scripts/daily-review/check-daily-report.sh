@@ -157,7 +157,7 @@ attempt=0
 while :; do
   attempt=$((attempt + 1))
   summary="$(fetch_issue_body | extract_summary || true)"
-  if printf '%s\n' "$summary" | grep -qE '^[[:space:]]*[-*] '; then break; fi
+  if grep -qE '^[[:space:]]*[-*] ' <<<"$summary"; then break; fi
   if [ "$NO_WAIT" -eq 1 ] || [ "$attempt" -ge "$WAIT_MAX" ]; then
     finish_simple report_missing "日報のサマリーが空（${attempt}回確認）"
   fi

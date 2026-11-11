@@ -133,8 +133,7 @@ rocketchat_log="$(bash "$ROCKETCHAT_BIN" \
 # HEAD のみを見る（--all は worktree 間の重複と entire-cli のチェックポイント
 # コミットを拾ってしまうため使わない）。
 # worktree は ../<略称>-<ブランチ名> という兄弟ディレクトリに作られる（worktree スキルの規約）ため、
-# glob では本体と別リポジトリに見えてしまう。--git-common-dir は worktree でも本体の .git を指すので、
-# その親ディレクトリ名を正規リポジトリ名として集約キーに使う。
+# glob では本体と別リポジトリに見えてしまう。同じリポジトリを1見出しに集約するため正規名を決める（下の canonical_repo_name）。
 # 正規名は origin の末尾要素（.git 抜き。GitBucket は <group>/<repo>）。clone 名や worktree 名が違っても同じリポジトリを1見出しにまとめる。
 # origin が無ければ共通 .git の親ディレクトリ名、それも取れなければ自身のディレクトリ名。
 canonical_repo_name() {
@@ -267,12 +266,18 @@ $(printf '%s' "${bodies[$j]}" | sort)
 # 日次の切り出し要約を作る。失敗・タイムアウトでも続行する（失敗した sid は既存要約で埋める）。
 # claude -p が固まっても日報の送信を止めないため時間を区切る
 slice_rc=0
+slice_all_skipped=0
 # 出力は pipe ではなくファイルで受ける（孫プロセスが pipe を握ると timeout 後も待たされるため）
 slice_out_file="$(mktemp /tmp/fire-daily-review-slice-XXXX.log)"
 trap 'rm -f "$slice_out_file"' EXIT
 timeout --kill-after=30 "${SLICE_TIMEOUT:-1800}" bash "$SLICE_BIN" "$target_date" > "$slice_out_file" 2>&1 || slice_rc=$?
 while IFS= read -r line; do
   [ -n "$line" ] && log "slice: $line"
+  # 候補はあったが全件「User 発言なし」で見送られた場合（旧方式へ戻すと区切り外の作業が混ざる）
+  case "$line" in
+    "slices: written=0 failed=0 candidates="*)
+      if [ "${line#*candidates=}" != "0" ]; then slice_all_skipped=1; fi ;;
+  esac
 done < "$slice_out_file"
 rm -f "$slice_out_file"
 case "$slice_rc" in
@@ -306,7 +311,11 @@ if [ "${#material_files[@]}" -gt 0 ]; then
     done < "$slice_dir/.failed"
   fi
 else
-  while IFS= read -r f; do [ -n "$f" ] && material_files+=("$f"); done < <(list_md "$SESSIONS_ROOT/$target_date")
+  if [ "$slice_rc" -eq 0 ] && [ "$slice_all_skipped" -eq 1 ] && [ ! -s "$slice_dir/.failed" ]; then
+    log "slice: 候補は全件見送り（User 発言なし）。区切り外の作業を混ぜないため全期間の要約には戻さない"
+  else
+    while IFS= read -r f; do [ -n "$f" ] && material_files+=("$f"); done < <(list_md "$SESSIONS_ROOT/$target_date")
+  fi
 fi
 
 # 材料が1件も無い日は送信しない（PCを使わない日＝作業していない日）。
@@ -366,7 +375,7 @@ build_sessions() {
   # 終了時刻（epoch）で並べる。切り出しと失敗 sid の既存要約が混ざるため、ファイル名順は使えない
   while IFS= read -r sf; do files+=("$sf"); done < <(
     for sf in "${material_files[@]}"; do
-      end_ts="$(sed -n 's/^end: //p' "$sf" | head -1)"
+      end_ts="$(sed -n '/^end: /{s///p;q}' "$sf")"
       # date -d "" は今日の 0 時を返し最新扱いになるため、end が無ければ epoch 0 にする
       printf '%s\t%s\n' "$([ -n "$end_ts" ] && date -d "$end_ts" +%s 2>/dev/null || echo 0)" "$sf"
     done | sort -n -k1,1 | cut -f2-
@@ -377,9 +386,9 @@ build_sessions() {
   [ "$start" -gt 0 ] && out="（※ 容量制限のため古い ${start} セッションを省略）
 "
   for sf in "${files[@]:$start}"; do
-    proj="$(sed -n 's/^project: //p' "$sf" | head -1)"
+    proj="$(sed -n '/^project: /{s///p;q}' "$sf")"
     [ -z "$proj" ] && proj="unknown"
-    end_ts="$(sed -n 's/^end: //p' "$sf" | head -1)"
+    end_ts="$(sed -n '/^end: /{s///p;q}' "$sf")"
     end_hm="$(TZ=Asia/Tokyo date -d "$end_ts" +%H:%M 2>/dev/null || echo "??:??")"
     # frontmatter は「project: 行より後の最初の ---」で終わる（先頭に余分な --- ブロックが
     # 付くファイルと標準形の両方に対応する。--- の個数には依存しない）
