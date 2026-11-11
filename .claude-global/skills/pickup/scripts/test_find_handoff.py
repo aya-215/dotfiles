@@ -41,6 +41,46 @@ class MatchesTest(unittest.TestCase):
         self.assertFalse(matches("阪急 アイコン 修正", ["阪急", "ロゴ"]))
 
 
+class TermFormsTest(unittest.TestCase):
+    NOTE = "PR: https://github.com/aya/ebase-portal-chat/pull/1210 と 課題 No00007400 を待っている"
+
+    def test_pr_forms(self):
+        for term in ["https://github.com/aya/ebase-portal-chat/pull/1210/files",
+                     "https://github.com/aya/ebase-portal-chat/pull/1210#issuecomment-1",
+                     "PR#1210", "PR-1210", "epc#1210", "1210。", "１２１０"]:
+            self.assertTrue(matches(self.NOTE, [term]), term)
+
+    def test_issue_forms(self):
+        for term in ["No.7400", "No.00007400", "Ｎｏ７４００"]:
+            self.assertTrue(matches(self.NOTE, [term]), term)
+
+    def test_other_numbers_in_a_url_do_not_widen_the_match(self):
+        self.assertFalse(matches("pull/1210", ["https://github.com/aya/x/pull/99"]))
+
+
+class FrontMatterTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def write(self, name: str, front: str) -> Path:
+        path = self.root / "work-in-progress" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"---\n{front}---\n\nbody\n", encoding="utf-8")
+        return path
+
+    def test_quoted_tags_block_list_and_trailing_comment_are_open_handoffs(self):
+        a = self.write("a.md", 'summary: "a"\ncreated: 2026-11-10\nstatus: blocked\ntags: ["handoff", "x"]\n')
+        b = self.write("b.md", 'summary: "b"\ncreated: 2026-11-09\nstatus: blocked\ntags:\n  - handoff\n  - y\n')
+        c = self.write("c.md", 'summary: "c"\ncreated: 2026-11-08\nstatus: blocked  # waiting\ntags: [handoff]\n')
+        result = search(self.root, [])
+        self.assertEqual(result["stage"], "handoff-open")
+        self.assertEqual([h["path"] for h in result["hits"]], [str(a), str(b), str(c)])
+
+
 class SearchTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

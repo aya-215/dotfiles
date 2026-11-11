@@ -12,17 +12,22 @@ import argparse
 import json
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 DEFAULT_ROOT = Path.home() / ".claude/skills/agent-memory/memories"
-NUMBER_TERM = re.compile(r"^(?:#|pr|no)?0*(\d+)$", re.IGNORECASE)
+NUMBER_TERM = re.compile(r"^(?:#|pr|no)?[-.#]?0*(\d+)$", re.IGNORECASE)
+# A PR or issue reference inside a longer term: a URL (pull/1210/files), "epc#1210".
+EMBEDDED_NUMBER = re.compile(r"(?:pull/|issues/|#|\bpr[-.#]?|\bno[-.#]?)0*(\d+)", re.IGNORECASE)
 
 
 def matches(text: str, terms: list[str]) -> bool:
     """True when every term appears in text: numbers as whole numbers ignoring leading zeros, words case-insensitively."""
+    text = unicodedata.normalize("NFKC", text)
     lowered = text.lower()
-    for term in terms:
-        number = NUMBER_TERM.match(term)
+    for raw in terms:
+        term = re.sub(r"^\W+|\W+$", "", unicodedata.normalize("NFKC", raw))
+        number = NUMBER_TERM.match(term) or EMBEDDED_NUMBER.search(term)
         if number:
             if not re.search(rf"(?<!\d)0*{number.group(1)}(?!\d)", text):
                 return False
@@ -35,11 +40,21 @@ def _front_matter(text: str) -> dict[str, str]:
     if not text.startswith("---"):
         return {}
     end = text.find("\n---", 3)
-    fields = {}
+    fields: dict[str, str] = {}
+    block_tags: list[str] = []
+    key = None
     for line in text[3:end if end != -1 else len(text)].splitlines():
         m = re.match(r"^(summary|created|status|tags):\s*(.*)$", line)
         if m:
-            fields[m.group(1)] = m.group(2).strip().strip('"')
+            key = m.group(1)
+            value = m.group(2) if key == "summary" else re.sub(r"\s+#.*$", "", m.group(2))
+            fields[key] = value.strip().strip('"')
+        elif key == "tags" and re.match(r"^\s+-\s*", line):
+            block_tags.append(re.sub(r"^\s+-\s*", "", line))
+        elif not line.startswith(" "):
+            key = None
+    if block_tags:
+        fields["tags"] = ",".join(block_tags)
     return fields
 
 
@@ -50,7 +65,7 @@ def _notes(root: Path):
         except (OSError, UnicodeDecodeError):
             continue
         meta = _front_matter(text)
-        tags = [t.strip() for t in meta.get("tags", "").strip("[]").split(",")]
+        tags = [t.strip().strip("'\"") for t in meta.get("tags", "").strip("[]").split(",")]
         yield path, text, meta, "handoff" in tags
 
 
