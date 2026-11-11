@@ -135,7 +135,6 @@ def fetch_pr(repo: str, number: int, token: str) -> dict:
         if isinstance(c, dict) and c.get("created_at"):
             events.append({"user": _login(c) or "ghost", "ts": c["created_at"], "kind": "comment", "state": None})
     reviewers = list(dict.fromkeys(r for r in reviewers if isinstance(r, str) and r != author))
-    events.sort(key=lambda e: _ts(e["ts"]))
     return {"state": state, "author": author or "", "reviewers": reviewers, "events": events}
 
 
@@ -155,12 +154,14 @@ def run_github(ref: str, me: "set[str]") -> dict:
         return unknown(ref, f"gh auth token --user {sync_github.ACCOUNT} に失敗")
     try:
         pr = fetch_pr(repo, int(num), token)
+        err = validate(pr)
+        if err:
+            return unknown(ref, f"取得結果が不正: {err}")
+        return {"ref": ref, **decide(pr, me)}
     except FetchError as e:
         return unknown(ref, f"取得失敗: {e}")
-    err = validate(pr)
-    if err:
-        return unknown(ref, f"取得結果が不正: {err}")
-    return {"ref": ref, **decide(pr, me)}
+    except Exception as e:  # 想定外の応答でも JSON を出して落ちない
+        return unknown(ref, f"想定外のエラー: {type(e).__name__}: {e}")
 
 
 def run_json(text: str, me: "set[str]") -> dict:

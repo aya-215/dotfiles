@@ -142,6 +142,20 @@ class TestGithub(unittest.TestCase):
             r = pr_ball.run_github("epc#5", ME)
         self.assertEqual(r["ball"], "mine")
 
+    def test_mixed_bad_timestamps_unknown(self):
+        for bad in ("2026-01-04T00:00:00", 12345):
+            a = self.answers()
+            a["/issues/5/comments"] = [[{"user": {"login": "x"}, "created_at": bad}]]
+            with mock.patch.object(pr_ball, "get_token", return_value="t"), \
+                 mock.patch("subprocess.run", side_effect=self.run_gh(a)):
+                r = pr_ball.run_github("epc#5", ME)
+            self.assertEqual(r["ball"], "unknown", bad)
+
+    def test_unexpected_exception_unknown(self):
+        with mock.patch.object(pr_ball, "get_token", return_value="t"), \
+             mock.patch.object(pr_ball, "fetch_pr", side_effect=TypeError("x")):
+            self.assertEqual(pr_ball.run_github("epc#5", ME)["ball"], "unknown")
+
     def test_merged(self):
         a = self.answers()
         a["/pulls/5"]["state"] = "closed"
