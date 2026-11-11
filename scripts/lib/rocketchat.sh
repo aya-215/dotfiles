@@ -395,6 +395,21 @@ for m in sorted(sel, key=lambda x: x.get("ts", "")):
     mid = m.get("_id", "")
     idtag = f" {{id:{mid}}}" if with_ids else ""
     print(f"  {tstr} {u}: {body}{idtag}")
+# 出力に現れたユーザーの表示名を末尾の制御行で呼び出し側へ渡す（呼び出し側が取り除く）
+shown = set()
+for m in sel:
+    shown.add(m.get("u", {}).get("username", "?"))
+    p = by_id.get(m.get("tmid"))
+    if p:
+        shown.add(p.get("u", {}).get("username", "?"))
+names = {}
+for m in msgs:
+    u = m.get("u", {})
+    un, dn = u.get("username"), " ".join(str(u.get("name") or "").split())
+    if un in shown and dn and dn != un:
+        names[un] = dn
+if names:
+    print("@@RC_NAMES@@" + json.dumps(names, ensure_ascii=False))
 '
 }
 
@@ -438,10 +453,15 @@ collect_blocks() {
     # Task 4 で追加した expand_threads を必ず通す（外すとスレッド返信が欠落する）
     block="$(room_history "$rid" "$t" | expand_threads "$rid" | render_room "$name" "$t" "$rid")"
     [ -n "$block" ] || continue
+    local names_b64=""
+    if grep -q '^@@RC_NAMES@@' <<<"$block"; then
+      names_b64="$(grep '^@@RC_NAMES@@' <<<"$block" | head -n1 | sed 's/^@@RC_NAMES@@//' | base64 -w0)"
+      block="$(grep -v '^@@RC_NAMES@@' <<<"$block")"
+    fi
     if grep -q '\[発言' <<<"$block"; then prio=1
     elif grep -q '\[@me' <<<"$block"; then prio=2
     else prio=3; fi
-    printf '%s\t%s\t%s\n' "$prio" "$name" "$(printf '%s' "$block" | base64 -w0)"
+    printf '%s\t%s\t%s\t%s\n' "$prio" "$name" "$(printf '%s' "$block" | base64 -w0)" "$names_b64"
   done <<<"$rooms"
 }
 
@@ -473,20 +493,43 @@ blocks="$(collect_blocks)"
 # を保つため、少なくとも実行のたびに結果が変わることはない。
 mapfile -t sorted_blocks < <(printf '%s\n' "$blocks" | sort -t$'\t' -k1,1n -s)
 
+# 採用ブロックの表示名（JSON を1行ずつ）から凡例1行を作る。表示名が無ければ空
+build_legend() {
+  python3 -c '
+import sys, json
+names = {}
+for line in sys.stdin:
+    line = line.strip()
+    if line:
+        names.update(json.loads(line))
+if names:
+    print("（表示名: " + ", ".join(f"{u}={names[u]}" for u in sorted(names)) + "）")
+'
+}
+
+count_chars() {
+  python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8", "replace")))'
+}
+
 dropped=()
 out=""
+names_acc=""
 budget_hit=0
 for line in "${sorted_blocks[@]}"; do
-  IFS=$'\t' read -r _ name b64 <<<"$line"
+  IFS=$'\t' read -r _ name b64 names_b64 <<<"$line"
   [ -n "$b64" ] || continue
   if [ "$budget_hit" -eq 1 ]; then
     dropped+=("$name")
     continue
   fi
   block="$(printf '%s' "$b64" | base64 -d)"
+  cand_names="$names_acc"
+  [ -z "${names_b64:-}" ] || cand_names="${cand_names}$(printf '%s' "$names_b64" | base64 -d)"$'\n'
   if [ "$budget" -gt 0 ]; then
     candidate="${out}${block}"$'\n\n'
-    candidate_chars="$(printf '%s' "$candidate" | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8", "replace")))')"
+    # 凡例は先頭に置き、予算にも数える
+    legend="$(printf '%s' "$cand_names" | build_legend)"
+    candidate_chars="$(printf '%s%s' "${legend:+$legend$'\n'}" "$candidate" | count_chars)"
     if [ "$candidate_chars" -gt "$budget" ] && [ -n "$out" ]; then
       dropped+=("$name")
       budget_hit=1
@@ -494,8 +537,11 @@ for line in "${sorted_blocks[@]}"; do
     fi
   fi
   out="${out}${block}"$'\n\n'
+  names_acc="$cand_names"
 done
 
+legend="$(printf '%s' "$names_acc" | build_legend)"
+[ -z "$legend" ] || printf '%s\n' "$legend"
 printf '%s' "$out"
 if [ "${#dropped[@]}" -gt 0 ]; then
   printf '（※ 容量制限のため %d ルームを省略: %s）\n' \

@@ -793,6 +793,47 @@ assert_grep "字数予算: 3ルーム目が省略マーカーに載る" "1 ル�
 out="$(run_rc_jp --from 2026-07-21 --to 2026-07-28 2>/dev/null)"
 assert_eq "字数予算: 予算なしなら3ルームとも残る" "3" "$(grep -c '^===== jp-' <<<"$out")"
 
+# ===== 表示名の凡例（u.name があるユーザーだけ。出力の先頭に1行） =====
+mkdir -p "$TMP/fx-nm"
+cat > "$TMP/fx-nm/rooms.json" <<'EOF2'
+{"update":[
+ {"_id":"room-own","t":"p","name":"nm-a","lm":"2026-07-22T05:00:00.000Z"},
+ {"_id":"room-other","t":"p","name":"nm-b","lm":"2026-07-22T06:00:00.000Z"}
+]}
+EOF2
+python3 - "$TMP/fx-nm" <<'EOF2'
+import json, sys
+d = sys.argv[1]
+def msgs(i, other, name):
+    o = {"username": other}
+    if name: o["name"] = name
+    return {"messages": [
+      {"_id": "m" + i, "ts": "2026-07-22T00:42:00.000Z", "u": {"username": "mori.a"}, "msg": "日" * 2000},
+      {"_id": "r" + i, "ts": "2026-07-22T00:43:00.000Z", "u": o, "msg": "返信"}]}
+json.dump(msgs("a", "tamaki.s", "玉木 聡"), open(f"{d}/hist-own.json", "w"), ensure_ascii=False)
+json.dump(msgs("b", "matsumoto.h", "松本 博"), open(f"{d}/hist-other.json", "w"), ensure_ascii=False)
+EOF2
+run_rc_nm() {
+  RC_ENV_FILE="$TMP/env.local" RC_CURL="$TMP/bin/curl-stub.sh" \
+    RC_FIXTURE_DIR="$TMP/fx-nm" RC_ME=mori.a bash "$SCRIPT_DIR/rocketchat.sh" "$@"
+}
+out="$(run_rc_nm --from 2026-07-21 --to 2026-07-28 2>/dev/null)"
+assert_eq "凡例が先頭行に出る（username順・name有りのみ）" \
+  "（表示名: matsumoto.h=松本 博, tamaki.s=玉木 聡）" "$(head -n1 <<<"$out")"
+assert_eq "凡例は1行だけ" "1" "$(grep -c '^（表示名:' <<<"$out")"
+assert_grep "発言行の書式は変わらない" "^  00:43 tamaki.s: 返信$" "$out"
+out="$(run_rc_jp --from 2026-07-21 --to 2026-07-28 2>/dev/null)"
+assert_absent "name が無ければ凡例なし" "表示名:" "$out"
+out="$(run_rc --from 2026-07-21 --to 2026-07-28 2>/dev/null)"
+assert_absent "name が無い既存fixtureでは凡例なし" "表示名:" "$out"
+# 凡例も字数予算に数える。凡例なしなら2ルーム入る予算で、凡例ぶん超えて2ルーム目が落ちる
+out="$(run_rc_nm --from 2026-07-21 --to 2026-07-28 --budget 4150 2>/dev/null)"
+assert_eq "凡例込みの予算で2ルーム目が落ちる" "1" "$(grep -c '^===== nm-' <<<"$out")"
+assert_eq "落としたルームの表示名は凡例に出ない" "（表示名: tamaki.s=玉木 聡）" "$(head -n1 <<<"$out")"
+assert_grep "省略マーカーは残る" "1 ルームを省略: nm-b" "$out"
+body_chars="$(grep -v '^（※' <<<"$out" | python3 -c 'import sys; print(len(sys.stdin.read().rstrip("\n")))')"
+if [ "$body_chars" -le 4150 ]; then echo "ok: 凡例込みで予算内"; else echo "NG: 凡例込みで予算超過 $body_chars"; fails=$((fails + 1)); fi
+
 # 予算未指定なら省略マーカーは出ない
 out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm)"
 assert_absent "予算未指定なら省略マーカーなし" "容量制限のため" "$out"
