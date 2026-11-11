@@ -18,9 +18,8 @@ Neovim 側から開く導線は意図的に持たない（tmux のどこから�
 # TODO
 
 ## 確認待ち
-1. 方針を決める [policy epc#1202]
-   事実: PR が2本
-   選択: A まとめる（おすすめ） / B 分ける
+1. 方針を決める（PR が2本） [policy epc#1202]
+   A まとめる★ / B 分ける
    回答:
 
 ## やる
@@ -68,6 +67,17 @@ nvim から直接書いた変更が長く未コミットのまま残る問題が
 
 すべての移動操作で、カーソルは移動した項目に追従する。移動のたびに即保存される。
 
+## 表示（ファイルの中身は変えない）
+
+`todo.md` を開いた窓だけ `conceallevel=2`・`concealcursor=`（空）にし、extmark の conceal で次を隠す。カーソル行には付けないので、カーソルを置いた行は生の文字が見え、そのまま編集できる。
+
+- リンク `[text](url)` は `text` だけ見せる（AI の key のリンクも人の行のリンクも）
+- 確認待ちの問いの末尾タグ ` [<kind> <ref>]` を隠す
+- タスク行の ` — next: ` を ` → ` で見せる
+
+render-markdown が通常モードで `conceallevel` を 3 にし conceal の代わりの文字（cchar）が出なくなるため、→ はインラインの仮想文字で出している。
+隠した文字も折り返しの幅には数えられる（Neovim の挙動）ので、長い URL のある行は折り返し位置がずれることがある。行を短くするのは `/todo` の題・next の書き方（`docs/todo-ai.md`）の役割。
+
 ## 安全装置
 
 - `<CR>` / `<Tab>` の結果で**非空行が減る変更は反映しない**（移動操作で行が減ることは無いため、減る = バグと断定できる）。検出時はエラー通知だけ出して何もしない
@@ -78,8 +88,8 @@ nvim から直接書いた変更が長く未コミットのまま残る問題が
 
 | ファイル | 役割 |
 |---|---|
-| `config/nvim/lua/todo/core.lua` | 行操作の純関数（パース・セクション検索・移動）。バッファに触らない |
-| `config/nvim/lua/todo/init.lua` | `BufRead`/`BufNewFile` でバッファローカルのキーを付ける薄い層。`init.lua` から `require("todo").setup()` |
+| `config/nvim/lua/todo/core.lua` | 行操作の純関数（パース・セクション検索・移動・表示で隠す範囲 `conceal_ranges`）。バッファに触らない |
+| `config/nvim/lua/todo/init.lua` | `BufRead`/`BufNewFile` でバッファローカルのキーと表示の conceal を付ける薄い層。`init.lua` から `require("todo").setup()` |
 | `config/nvim/tests/todo_core_spec.lua` | core のテスト |
 | `modules/tmux.nix` | `bind t display-popup ...` |
 
