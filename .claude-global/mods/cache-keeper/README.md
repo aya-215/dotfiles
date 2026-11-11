@@ -1,5 +1,11 @@
 # cache-keeper
 
+> **Local modifications (dotfiles copy of upstream commit `46570fd`).** Where this README and the list below disagree, the list wins.
+> - The idle limit (`maxIdleHours`) is gone. Pinging is bounded by a calendar rule instead: a session idle since Monday–Thursday is kept warm until noon the next day, since Friday before 17:00 until 17:00 that day, and not at all when left on Friday from 17:00 or at the weekend (local time). `/keepwarm for|until` overrides it.
+> - At most `maxPings` (20) automatic pings per idle stretch; a manual `/keepwarm now` does not count. `/keepwarm for|until` overrides the cap.
+> - No ping, automatic or manual, until the current process has answered two main-loop requests on the current prefix (the count restarts after a compaction or a model switch): on Claude Code 2.1.322 a fork right after the first request read only part of the context, and a miss benches automatic pings in every session.
+> - Design: `docs/superpowers/specs/2026-11-10-cache-keepwarm-and-handoff-design.md` in the dotfiles repo.
+
 A Claude Code mod (function-hook plugin) that keeps an idle session's prompt cache warm. Just before the cache TTL lapses (default: 55 minutes after the last request), it sends a `$.model.fork` ping. The ping is served from the cache and adds nothing to the conversation.
 
 On Opus 5.5, one cache read costs about 1/35–1/40 as much as re-caching the same prefix, measured against subscription usage. Pinging through a workday therefore costs much less than one cold restart.

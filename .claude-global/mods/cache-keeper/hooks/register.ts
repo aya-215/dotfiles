@@ -305,6 +305,8 @@ async function catchUp(
       probe: null,
       ...(isCompacted ? { isCompacted: true } : {}),
       ...(isSwitched ? { lastRequestAt: null } : {}),
+      // The new prefix is as fresh as a new process's: wait for two requests on it again.
+      requests: 0,
     }))
   } catch {
     return s
@@ -525,12 +527,12 @@ export const register: Register = (on, options) => {
       isRequestRunning: false,
       turnId: null,
       // A turn an API error ended refreshed nothing past its last good request
-      // (which its step recorded); it still counts as activity for the idle limit.
+      // (which its step recorded); it still counts as activity for the calendar rule.
       lastRequestAt: e.reason === 'error' ? s.lastRequestAt : now,
       lastTurnAt: now,
       pings: 0,
       pingErrors: 0,
-      requests: s.turnRequests === 0 && e.reason !== 'error' ? s.requests + 1 : s.requests,
+      requests: s.turnRequests === 0 && e.reason !== 'error' && !e.isAborted ? s.requests + 1 : s.requests,
       turnRequests: 0,
       untilMs: s.untilMs !== null && s.untilMs <= now ? null : s.untilMs,
     }))
@@ -547,7 +549,7 @@ export const register: Register = (on, options) => {
   on('session.compact', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId !== undefined || e.trigger === 'precompute' || result.messages === undefined) return result
-    await update($, sessionAtom, s => ({ ...s, isCompacted: true, probe: null }))
+    await update($, sessionAtom, s => ({ ...s, isCompacted: true, probe: null, requests: 0 }))
     await schedule($)
     return result
   }).catch(($, e, next) => next(e))
@@ -561,7 +563,7 @@ export const register: Register = (on, options) => {
     await update($, sessionAtom, s => ({
       ...s,
       cacheTtl: e.cache_ttl,
-      ...(isNewModel ? { lastRequestAt: null, probe: null } : {}),
+      ...(isNewModel ? { lastRequestAt: null, probe: null, requests: 0 } : {}),
     }))
     await schedule($)
     return result
@@ -588,6 +590,9 @@ export const register: Register = (on, options) => {
         const s = await catchUp($, await $.session.usage())
         if (s.lastRequestAt === null || s.isCompacted) {
           return { text: 'Nothing cached to keep warm yet: the next turn caches the conversation.' }
+        }
+        if (s.requests < 2) {
+          return { text: 'Not pinging yet: one more turn is needed before a ping can hit the cache.' }
         }
         cancelTimer()
         const r = await ping($, true)

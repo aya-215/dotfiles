@@ -93,12 +93,12 @@ describe('decide', () => {
     expect(decide(s, now, facts, config)).toEqual({ action: 'ping' })
   })
 
-  test('an until window that has passed falls back to the idle limit', () => {
+  test('an until window that has passed falls back to the calendar rule', () => {
     const s = session({ lastRequestAt: 10 * HOUR, lastTurnAt: 10 * HOUR, untilMs: 2 * HOUR })
     expect(decide(s, 10 * HOUR + 56 * MIN, facts, config)).toEqual({ action: 'ping' })
   })
 
-  test('an until window never shortens the idle limit', () => {
+  test('an until window never shortens the calendar rule', () => {
     expect(decide(session({ untilMs: 30 * MIN }), 56 * MIN, facts, config)).toEqual({ action: 'ping' })
   })
 

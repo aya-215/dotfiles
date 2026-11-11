@@ -580,6 +580,7 @@ describe('cache-keeper', () => {
     await step($, w, 't2', 0, MISS)
     await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
     expect(w.logLines().some(l => l.kind === 'verify')).toBe(false)
+    await turnWithStep($, w, 't2b') // a second request on the new prefix before pings resume
     await w.clock.advance(55 * MIN)
     expect(w.forks.length).toBe(2)
   })
@@ -614,6 +615,7 @@ describe('cache-keeper', () => {
     await $.turn.start({ text: 'back', turnId: 't2' })
     await step($, w, 't2', 0, MISS)
     await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+    await turnWithStep($, w, 't2b') // a second request on the new prefix before pings resume
     await w.clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
   })
@@ -631,6 +633,7 @@ describe('cache-keeper', () => {
     await $.turn.start({ text: 'back', turnId: 't2' })
     await step($, w, 't2', 0, MISS)
     await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+    await turnWithStep($, w, 't2b') // a second request on the new prefix before pings resume
     await w.clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
   })
@@ -663,6 +666,37 @@ describe('cache-keeper', () => {
     await step($, w, 't1', 0, HIT)
     await step($, w, 't1', 1, HIT)
     await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+    await w.clock.advance(56 * MIN)
+    expect(w.forks.length).toBe(1)
+  })
+
+  test('an aborted turn with no answered request does not count as a request', async ($, on) => {
+    const w = world(on)
+    await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await $.turn.start({ text: 'hi', turnId: 't0' })
+    await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't0', reason: 'answer' })
+    await turnWithStep($, w, 't1')
+    await w.clock.advance(56 * MIN)
+    expect(w.forks.length).toBe(0)
+  })
+
+  test('/keepwarm now after only one main request sends no fork', async ($, on) => {
+    const w = world(on)
+    await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await turnWithStep($, w, 't1')
+    const r = await $.command.run({ command: 'keepwarm', args: 'now', ...COMMAND })
+    expect(w.forks.length).toBe(0)
+    expect(r.text).toContain('one more turn')
+  })
+
+  test('a compaction restarts the request count', async ($, on) => {
+    const w = world(on)
+    await startAndTurn($)
+    w.compacted()
+    await turnWithStep($, w, 't2') // the first request on the compacted conversation
+    await w.clock.advance(56 * MIN)
+    expect(w.forks.length).toBe(0)
+    await turnWithStep($, w, 't3')
     await w.clock.advance(56 * MIN)
     expect(w.forks.length).toBe(1)
   })
@@ -709,6 +743,7 @@ describe('cache-keeper', () => {
     await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
     expect(w.logLines().some(l => l.kind === 'verify')).toBe(false)
     expect(w.store.has('refreshFail')).toBe(false)
+    await turnWithStep($, w, 't2b') // a second request on the new prefix before pings resume
     await w.clock.advance(55 * MIN)
     expect(w.forks.length).toBe(2)
   })
@@ -748,6 +783,7 @@ describe('cache-keeper', () => {
     await $.turn.start({ text: 'back', turnId: 't2' })
     await step($, w, 't2', 0, MISS)
     await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+    await turnWithStep($, w, 't2b') // a second request on the new prefix before pings resume
     await w.clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)
   })
@@ -768,6 +804,7 @@ describe('cache-keeper', () => {
     await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
     expect(w.logLines().some(l => l.kind === 'verify')).toBe(false)
     // the new model is the one cached now: pings resume on it
+    await turnWithStep($, w, 't2b') // a second request on the new prefix before pings resume
     await w.clock.advance(55 * MIN)
     expect(w.forks.length).toBe(2)
     expect(w.logLines().at(-1)).toEqual(expect.objectContaining({ kind: 'ping', outcome: 'hit' }))
@@ -848,7 +885,7 @@ describe('cache-keeper', () => {
     expect(w.logLines().filter(l => l.reason === 'off').length).toBe(1)
   })
 
-  test('/keepwarm for: an ended window leaves the usual idle limit in place', async ($, on) => {
+  test('/keepwarm for: an ended window leaves the usual calendar rule in place', async ($, on) => {
     const w = world(on)
     await startAndTurn($)
     await $.command.run({ command: 'keepwarm', args: 'for 1h', ...COMMAND })
