@@ -1,0 +1,42 @@
+{
+  "name": "cache-keeper",
+  "version": "0.5.0",
+  "description": "Keeps an idle session's prompt cache warm with a cache-served fork just before the TTL lapses, within limits you set.",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "enabled": {
+      "type": "boolean",
+      "title": "Keep caches warm",
+      "description": "Ping idle sessions before their prompt cache expires. /keepwarm on|off overrides per session.",
+      "default": true
+    },
+    "ttlMinutes": {
+      "type": "number",
+      "title": "Cache TTL (minutes)",
+      "description": "Prompt-cache lifetime of the main conversation: 60 on a subscription within plan usage.",
+      "default": 60
+    },
+    "leadMinutes": {
+      "type": "number",
+      "title": "Ping lead (minutes)",
+      "description": "How long before the cache would expire to ping.",
+      "default": 5
+    },
+    "maxPings": {
+      "type": "number",
+      "title": "Max pings per idle stretch",
+      "default": 20,
+      "description": "Stop after this many automatic pings since your last real turn (manual /keepwarm now pings do not count). Pinging also stops at noon the next day (Mon-Thu) or 17:00 on Friday, and never starts after Friday 17:00 or at the weekend; /keepwarm for|until overrides both."
+    },
+    "minContextTokens": {
+      "type": "number",
+      "title": "Minimum context (tokens)",
+      "description": "Skip sessions whose context is smaller than this; they are cheap to re-cache.",
+      "default": 60000
+    }
+  },
+  "author": {
+    "name": "Chris Vaillancourt"
+  },
+  "license": "MIT"
+}

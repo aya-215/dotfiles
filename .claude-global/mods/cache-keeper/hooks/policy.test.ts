@@ -1,0 +1,233 @@
+import { describe, expect, test } from 'claude-code/testing'
+
+import { classifyPing, decide, parseKeepwarmArgs, retryAt, warmDeadline } from './policy'
+import type { Config, Session } from '../types'
+
+const MIN = 60_000
+const HOUR = 60 * MIN
+
+const config: Config = {
+  enabled: true,
+  ttlMs: HOUR,
+  leadMs: 5 * MIN,
+  maxPings: 20,
+  minContextTokens: 60_000,
+}
+
+const session = (over: Partial<Session> = {}): Session => ({
+  mode: 'auto',
+  untilMs: null,
+  lastRequestAt: 0,
+  lastTurnAt: 0,
+  isRequestRunning: false,
+  turnId: null,
+  cacheTtl: null,
+  isCompacted: false,
+  pings: 0,
+  pingErrors: 0,
+  lastPing: null,
+  stopReason: null,
+  probe: null,
+  model: null,
+  requests: 2,
+  turnRequests: 0,
+  ...over,
+})
+
+// Epoch 0 is Thursday 1970-01-01 09:00 in JST, so the tests below that count from 0 sit on a Thursday.
+const facts = { contextTokens: 200_000, tzOffsetMinutes: -540 }
+const jst = (iso: string) => Date.parse(`${iso}+09:00`)
+
+describe('decide', () => {
+  test('waits until the lead before expiry', () => {
+    expect(decide(session(), 10 * MIN, facts, config)).toEqual({ action: 'wait', at: 55 * MIN })
+  })
+
+  test('pings inside the lead window', () => {
+    expect(decide(session(), 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('stops once the cache has already expired, e.g. after sleep', () => {
+    expect(decide(session(), 61 * MIN, facts, config)).toEqual({ action: 'stop', reason: 'expired' })
+  })
+
+  test('counts from the last ping, not the last turn', () => {
+    const s = session({ lastRequestAt: 3 * HOUR, pings: 3 })
+    expect(decide(s, 3 * HOUR + 20 * MIN, facts, config)).toEqual({
+      action: 'wait',
+      at: 3 * HOUR + 55 * MIN,
+    })
+  })
+
+  test('stops past the calendar deadline after the last real turn', () => {
+    const last = jst('2026-11-12T15:00:00')
+    const now = jst('2026-11-13T12:01:00')
+    const s = session({ lastRequestAt: now - 56 * MIN, lastTurnAt: last })
+    expect(decide(s, now, facts, config)).toEqual({ action: 'stop', reason: 'calendar' })
+  })
+
+  test('does not keep warm a session left on Friday evening', () => {
+    const last = jst('2026-11-13T17:30:00')
+    const s = session({ lastRequestAt: last, lastTurnAt: last })
+    expect(decide(s, last + 56 * MIN, facts, config)).toEqual({ action: 'stop', reason: 'calendar' })
+  })
+
+  test('stops after maxPings pings in one idle stretch', () => {
+    const last = jst('2026-11-12T10:00:00')
+    const now = jst('2026-11-12T20:00:00')
+    const s = (pings: number) => session({ lastRequestAt: now - 56 * MIN, lastTurnAt: last, pings })
+    expect(decide(s(20), now, facts, config)).toEqual({ action: 'stop', reason: 'ping-limit' })
+    expect(decide(s(19), now, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('an explicit until overrides the calendar rule', () => {
+    const last = jst('2026-11-13T17:30:00')
+    const s = session({ lastRequestAt: last, lastTurnAt: last, untilMs: last + 3 * HOUR })
+    expect(decide(s, last + 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('inside an explicit until window the ping limit does not apply', () => {
+    const last = jst('2026-11-12T10:00:00')
+    const now = jst('2026-11-12T20:00:00')
+    const s = session({ lastRequestAt: now - 56 * MIN, lastTurnAt: last, pings: 25, untilMs: now + HOUR })
+    expect(decide(s, now, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('an until window that has passed falls back to the calendar rule', () => {
+    const s = session({ lastRequestAt: 10 * HOUR, lastTurnAt: 10 * HOUR, untilMs: 2 * HOUR })
+    expect(decide(s, 10 * HOUR + 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('an until window never shortens the calendar rule', () => {
+    expect(decide(session({ untilMs: 30 * MIN }), 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('an until window keeps warm while the mode is off, and only until it ends', () => {
+    const s = session({ mode: 'off', untilMs: 2 * HOUR })
+    expect(decide(s, 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+    expect(decide({ ...s, lastRequestAt: 2 * HOUR }, 2 * HOUR + 56 * MIN, facts, config)).toEqual({
+      action: 'stop',
+      reason: 'off',
+    })
+  })
+
+  test('stops when the engine reports a five-minute cache TTL', () => {
+    expect(decide(session({ cacheTtl: '5m' }), 56 * MIN, facts, config)).toEqual({ action: 'stop', reason: 'short-ttl' })
+    expect(decide(session({ cacheTtl: '1h' }), 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('off mode and disabled config stop', () => {
+    expect(decide(session({ mode: 'off' }), 56 * MIN, facts, config)).toEqual({ action: 'stop', reason: 'off' })
+    expect(decide(session(), 56 * MIN, facts, { ...config, enabled: false })).toEqual({
+      action: 'stop',
+      reason: 'off',
+    })
+  })
+
+  test('on mode overrides a disabled config', () => {
+    expect(decide(session({ mode: 'on' }), 56 * MIN, facts, { ...config, enabled: false })).toEqual({
+      action: 'ping',
+    })
+  })
+
+  test('skips small contexts', () => {
+    expect(decide(session(), 56 * MIN, { ...facts, contextTokens: 10_000 }, config)).toEqual({
+      action: 'stop',
+      reason: 'small-context',
+    })
+  })
+
+  test('does not ping a session with only one main request in this process', () => {
+    expect(decide(session({ requests: 1 }), 56 * MIN, facts, config)).toEqual({ action: 'idle' })
+    expect(decide(session({ requests: 1, untilMs: 2 * HOUR }), 56 * MIN, facts, config)).toEqual({ action: 'idle' })
+    expect(decide(session({ requests: 2 }), 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('waits for a running request', () => {
+    expect(decide(session({ isRequestRunning: true }), 56 * MIN, facts, config)).toEqual({ action: 'idle' })
+  })
+
+  test('nothing to do before the first turn', () => {
+    expect(decide(session({ lastRequestAt: null, lastTurnAt: null }), 56 * MIN, facts, config)).toEqual({
+      action: 'idle',
+    })
+  })
+})
+
+describe('warmDeadline', () => {
+  test('Mon-Thu: until noon the next day', () => {
+    expect(warmDeadline(jst('2026-11-12T23:59:00'), -540)).toBe(jst('2026-11-13T12:00:00'))
+    expect(warmDeadline(jst('2026-11-10T09:00:00'), -540)).toBe(jst('2026-11-11T12:00:00'))
+  })
+
+  test('Friday before 17:00: until 17:00 that day', () => {
+    expect(warmDeadline(jst('2026-11-13T16:59:00'), -540)).toBe(jst('2026-11-13T17:00:00'))
+  })
+
+  test('Friday from 17:00, Saturday and Sunday: not at all', () => {
+    expect(warmDeadline(jst('2026-11-13T17:00:00'), -540)).toBeNull()
+    expect(warmDeadline(jst('2026-11-14T10:00:00'), -540)).toBeNull()
+    expect(warmDeadline(jst('2026-11-15T10:00:00'), -540)).toBeNull()
+  })
+})
+
+describe('retryAt', () => {
+  test('two minutes after a failed ping', () => {
+    expect(retryAt(session(), 55 * MIN, config)).toBe(57 * MIN)
+  })
+
+  test('sooner when the cache would lapse first, and not at all when it nearly has', () => {
+    expect(retryAt(session(), 59 * MIN, config)).toBe(59 * MIN + 30_000)
+    expect(retryAt(session(), 59 * MIN + 45_000, config)).toBe(null)
+  })
+})
+
+describe('classifyPing', () => {
+  test('a mostly-cached fork is a hit', () => {
+    expect(
+      classifyPing({ input_tokens: 3, cache_read_input_tokens: 200_000, cache_creation_input_tokens: 40, output_tokens: 5 }),
+    ).toBe('hit')
+  })
+
+  test('a fork that paid for the prefix is a miss', () => {
+    expect(
+      classifyPing({ input_tokens: 3, cache_read_input_tokens: 0, cache_creation_input_tokens: 200_000, output_tokens: 5 }),
+    ).toBe('miss')
+  })
+})
+
+describe('parseKeepwarmArgs', () => {
+  const now = Date.UTC(2026, 9, 6, 15, 0) // 15:00 UTC
+
+  test('plain words', () => {
+    expect(parseKeepwarmArgs('', now, 0)).toEqual({ kind: 'status' })
+    expect(parseKeepwarmArgs('status', now, 0)).toEqual({ kind: 'status' })
+    expect(parseKeepwarmArgs('on', now, 0)).toEqual({ kind: 'mode', mode: 'on' })
+    expect(parseKeepwarmArgs('OFF', now, 0)).toEqual({ kind: 'mode', mode: 'off' })
+    expect(parseKeepwarmArgs('auto', now, 0)).toEqual({ kind: 'mode', mode: 'auto' })
+    expect(parseKeepwarmArgs('now', now, 0)).toEqual({ kind: 'now' })
+  })
+
+  test('for a duration', () => {
+    expect(parseKeepwarmArgs('for 3h', now, 0)).toEqual({ kind: 'until', untilMs: now + 3 * HOUR })
+    expect(parseKeepwarmArgs('for 90m', now, 0)).toEqual({ kind: 'until', untilMs: now + 90 * MIN })
+    expect(parseKeepwarmArgs('for 1.5h', now, 0)).toEqual({ kind: 'until', untilMs: now + 90 * MIN })
+  })
+
+  test('until a local clock time, rolling to tomorrow when past', () => {
+    // offset: local = UTC - 240 minutes (EDT)
+    expect(parseKeepwarmArgs('until 18:00', now, 240)).toEqual({
+      kind: 'until',
+      untilMs: Date.UTC(2026, 9, 6, 22, 0),
+    })
+    expect(parseKeepwarmArgs('until 9:30', now, 240)).toEqual({
+      kind: 'until',
+      untilMs: Date.UTC(2026, 9, 7, 13, 30),
+    })
+  })
+
+  test('rejects garbage', () => {
+    expect(parseKeepwarmArgs('for ever', now, 0)).toEqual({ kind: 'error', message: expect.any(String) })
+    expect(parseKeepwarmArgs('until 25:00', now, 0)).toEqual({ kind: 'error', message: expect.any(String) })
+  })
+})
