@@ -73,5 +73,25 @@ class OriginTest(unittest.TestCase):
         self.assertEqual(origin_of(self.repo, "todo.md", "zzz"), "human")
 
 
+    def test_asked_in_confirm_then_added_is_ai(self):
+        self.commit("## 確認待ち\n1. 『見積もり送付』を足す？ [is_task title:見積もり送付]\n   回答:\n\n## やる\n", "todo(ai): 確認待ち1")
+        self.commit("## 確認待ち\n1. 『見積もり送付』を足す？ [is_task title:見積もり送付]\n   回答: A\n\n## やる\n",
+                    "todo: 2026-01-02 10:00")
+        self.commit("## 確認待ち\n\n## やる\n- [ ] 見積もり送付\n", "todo(ai): 追加1 確認待ち0")
+        self.assertEqual(origin_of(self.repo, "todo.md", "見積もり送付"), "ai")
+
+    def test_ai_and_sync_hits_only_are_ai(self):
+        self.commit("- [ ] ai one\n", "todo(ai): add")
+        self.commit("", "todo(sync): archive")
+        self.commit("- [ ] ai one\n", "todo(ai): add again")
+        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "ai")
+
+    def test_user_commit_hit_is_human(self):
+        self.commit("- [ ] ai one\n", "todo(ai): add")
+        self.commit("- [ ] ai one\n- [ ] x\n", "todo(user): 足す")
+        self.commit("- [ ] x\n", "todo(user): 消す")
+        self.commit("- [ ] x\n- [ ] ai one\n", "todo(ai): add")
+        self.assertEqual(origin_of(self.repo, "todo.md", "ai one"), "human")
+
 if __name__ == "__main__":
     unittest.main()

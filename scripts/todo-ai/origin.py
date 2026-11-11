@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+AI_SUBJECTS = ("todo(ai):", "todo(sync):")
+
 
 def _git(repo: Path, *args: str) -> str:
     r = subprocess.run(
@@ -15,7 +17,7 @@ def _git(repo: Path, *args: str) -> str:
 
 
 def origin_of(repo: Path, path: str, title: str) -> str:
-    """title を最初に入れたコミットが `todo(ai):` なら "ai"。曖昧なときは保護側の "human"。"""
+    """title の出現数を変えたコミットがすべて `todo(ai):` / `todo(sync):` なら "ai"。曖昧なときは保護側の "human"。"""
     if not title:
         return "human"
     # 作業ツリーを優先し、部分一致の別行も数えて、同名・包含タイトルは human 側に倒す
@@ -33,7 +35,7 @@ def origin_of(repo: Path, path: str, title: str) -> str:
     except ValueError:
         return "human"
     subjects = out.splitlines()
-    # 出現数が複数回変わった（消して打ち直し等）なら最初のコミットは信用しない
-    if len(subjects) != 1:
+    # 確認待ちの問い・タグに題が出ても出現数は変わるので、件数ではなく人のコミットが混ざるか（消して打ち直し等）で見る
+    if not subjects or not all(s.startswith(AI_SUBJECTS) for s in subjects):
         return "human"
-    return "ai" if subjects[0].startswith("todo(ai):") else "human"
+    return "ai"
