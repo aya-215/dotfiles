@@ -6,8 +6,8 @@ intent はユーザー指示（source user）の意図で、key の無い行の�
 "op" は意図を残した op（delete / edit_title 等。古い記録には無い）。
 revert_move は戻された AI/同期の移動を "from"→"to" で持つ（value は人が戻した先 = from）。
 "to" の無い古い記録は、戻し先以外への移動をすべて止める。
-alias は apply が key の無い行に key を付けた印（{"ts", "ref": <key>, "kind": "alias", "prev_ref": <旧 title: ref>,
-"by": "ai"}）。人の判断ではなく、行の系譜をつなぐだけ。
+alias は apply が key の無い行に key を付けた・source ai が key の無い行の題を変えた印（{"ts", "ref": <key か新しい
+title: ref>, "kind": "alias", "prev_ref": <旧 title: ref>, "by": "ai"}）。人の判断ではなく、行の系譜をつなぐだけ。
 確認待ちの回答（kind が確認待ちの kind）の "stale": true は、問いを書いた後に同じ行の意図が記録されていたもの。
 行の系譜: ref の記録に、alias と intent の prev_ref を後ろ向きに辿った旧 ref の、つないだ時点より前の記録を足したもの。
 """

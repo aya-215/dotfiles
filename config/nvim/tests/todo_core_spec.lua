@@ -201,6 +201,90 @@ do
   vim.fn.delete(dir, "rf")
 end
 
+-- 表示の conceal: 範囲を当てた後に見える文字列で確かめる
+local function shown(line)
+  local out, pos = {}, 1
+  for _, r in ipairs(core.conceal_ranges(line)) do
+    table.insert(out, line:sub(pos, r[1]))
+    table.insert(out, r[3] or "")
+    pos = r[2] + 1
+  end
+  table.insert(out, line:sub(pos))
+  return table.concat(out)
+end
+
+eq(shown("- [ ] 再レビュー [epc#1210](https://github.com/x/pull/1210) — next: 修正を確認"),
+  "- [ ] 再レビュー epc#1210 → 修正を確認", "conceal link and next on a task line")
+eq(shown("- [ ] [officeのteams資料修正](https://somu.example/Disp.do?volumeName=00467&itemID=t1)"),
+  "- [ ] officeのteams資料修正", "conceal human link")
+eq(shown("- [x] 済 [gb:ebase-web#96](http://192.168.0.1:8080/gitbucket/x/pull/96) (done: 2026-11-11)"),
+  "- [x] 済 gb:ebase-web#96 (done: 2026-11-11)", "conceal link on a done line")
+eq(shown("1. 「パイロット」に足す？（3件） [is_task title:パイロット(P.1、2)]"),
+  "1. 「パイロット」に足す？（3件）", "conceal confirm tag")
+eq(shown("12. q [still_needed rc:abc#2]"), "12. q", "conceal confirm tag with 2-digit number")
+eq(shown("1. q [is_task title:[資料](https://x/y)]"), "1. q", "conceal tag that contains a link")
+eq(shown("1. 『X [a] の件』を足す？ [is_task title:X [a] の件]"), "1. 『X [a] の件』を足す？", "conceal tag after brackets in question")
+eq(shown("1. q [foo epc#1]"), "1. q [foo epc#1]", "unknown kind is not a tag")
+eq(shown("1. q [policy epc#1] あと"), "1. q [policy epc#1] あと", "tag must end the line")
+eq(shown("- [ ] q [policy epc#1]"), "- [ ] q [policy epc#1]", "tag only on numbered lines")
+eq(shown("1. a — next: b"), "1. a — next: b", "next arrow only on task lines")
+eq(shown("- [ ] a — next: b — next: c"), "- [ ] a — next: b → c", "next arrow on the last separator")
+eq(shown("- [ ] [x](has space)"), "- [ ] [x](has space)", "link url with space is not concealed")
+eq(shown("   A 足す★ / B 足さない"), "   A 足す★ / B 足さない", "options line untouched")
+eq(core.conceal_ranges("- [ ] plain"), {}, "plain task has no ranges")
+
+-- 表示の conceal はファイルを変えず、カーソル行は生の文字を見せる
+do
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  vim.env.TODO_MD_PATH = dir .. "/todo.md"
+  package.loaded["todo"] = nil
+  local todo = require("todo")
+  local content = {
+    "# TODO", "", "## 確認待ち", "1. 足す？（3件） [is_task title:x]", "   A 足す★ / B 足さない", "   回答:", "",
+    "## やる", "- [ ] a [epc#1](https://g/1) — next: b", "", "## 待ち", "", "## 完了",
+  }
+  vim.fn.writefile(content, todo.path)
+  todo.setup()
+  vim.cmd.edit(todo.path)
+  local buf = vim.api.nvim_get_current_buf()
+  eq(vim.wo.conceallevel, 2, "todo window conceallevel")
+  eq(vim.wo.concealcursor, "", "todo window concealcursor")
+  local function marked_rows()
+    local rows = {}
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, {})) do
+      rows[m[2] + 1] = true
+    end
+    return rows
+  end
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  eq({ marked_rows()[4], marked_rows()[9] }, { true, true }, "conceal marks on tag and task rows")
+  vim.api.nvim_win_set_cursor(0, { 9, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  eq({ marked_rows()[4], marked_rows()[9] }, { true, nil }, "cursor row shows raw text")
+  local function arrows()
+    local n = 0
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
+      if m[4].virt_text then
+        n = n + 1
+      end
+    end
+    return n
+  end
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  eq(arrows(), 1, "arrow shown while conceallevel > 0")
+  vim.wo.conceallevel = 0
+  eq(arrows(), 0, "no arrow when conceallevel is 0 (render-markdown in insert mode)")
+  vim.wo.conceallevel = 3
+  eq(arrows(), 1, "arrow back when conceallevel returns")
+  vim.cmd("silent write")
+  eq(vim.fn.readfile(todo.path), content, "conceal does not change file contents")
+  vim.cmd("bwipeout!")
+  vim.fn.delete(dir, "rf")
+end
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)

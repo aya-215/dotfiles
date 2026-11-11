@@ -55,7 +55,8 @@ class OptionsTest(unittest.TestCase):
         again = apply._render_confirm([{k: b[k] for k in ("ref", "kind", "question", "facts", "options")}
                                        for b in blocks])
         self.assertEqual(again, lines)
-        self.assertEqual(lines[0], "1. 相談する？ [policy epc#1]")
+        self.assertEqual(lines[:3], ["1. 相談する？（710件） [policy epc#1]", "   A 相談する★ / B そのまま", "   回答:"])
+        self.assertEqual(lines[3:], ["2. やった？ [manual rc:x]", "   回答:"])
         self.assertEqual((blocks[0]["question"], blocks[0]["ref"], blocks[0]["kind"]), ("相談する？", "epc#1", "policy"))
         self.assertEqual(blocks[0]["options"][0], {"label": "A", "text": "相談する", "recommended": True})
         self.assertEqual(blocks[1]["options"], [])
@@ -69,6 +70,21 @@ class OptionsTest(unittest.TestCase):
         self.assertEqual(opts, entries[0]["options"])
         self.assertEqual(apply._render_confirm([{"ref": "epc#1", "kind": "policy", "question": "q", "facts": "",
                                                  "options": opts}]), lines)
+
+
+    def test_old_and_new_formats_read_the_same(self):
+        old = ["1. 『X（11/14）』を足す？ [is_task title:X]", "   事実: ball: mine（期限あり）",
+               "   選択: A 追加する（やる）（おすすめ） / B タスクではない（追加しない）", "   回答: A"]
+        new = ["1. 『X（11/14）』を足す？（ball: mine（期限あり）） [is_task title:X]",
+               "   A 追加する（やる）★ / B タスクではない（追加しない）", "   回答: A"]
+        a, = context.confirm_blocks(old)
+        b, = context.confirm_blocks(new)
+        self.assertEqual(a, b)
+        self.assertEqual((a["question"], a["facts"], a["answer"]), ("『X（11/14）』を足す？", "ball: mine（期限あり）", "A"))
+        self.assertEqual(a["options"], [{"label": "A", "text": "追加する（やる）", "recommended": True},
+                                        {"label": "B", "text": "タスクではない（追加しない）", "recommended": False}])
+        again = apply._render_confirm([{k: a[k] for k in ("ref", "kind", "question", "facts", "options")}])
+        self.assertEqual(again, [*new[:2], "   回答:"])
 
 
 class BuildTest(unittest.TestCase):

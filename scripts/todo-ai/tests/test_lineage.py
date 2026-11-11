@@ -103,20 +103,20 @@ class ConflictReask(Flow):
         self.assertIn("skip: answered conflict epc#9", self.ai(confirm=conflict("q1")))
         self.user({"op": "set_next", "ref": "epc#9", "next": "すぐ依頼", "intent": "新しい指示: すぐ依頼"})
         self.apply({"source": "ai", "ops": [], "confirm": conflict("q2")})
-        self.assertIn("q2 [conflict epc#9]", self.todo.read_text(encoding="utf-8"))
+        self.assertIn("q2（f） [conflict epc#9]", self.todo.read_text(encoding="utf-8"))
 
     def test_answer_still_in_block_when_intent_came_is_stale(self):
         self.user({"op": "set_next", "ref": "epc#9", "next": "すぐ依頼", "intent": "新しい指示: すぐ依頼"})
         self.apply({"source": "ai", "ops": [], "confirm": conflict("q2")})
         text = self.todo.read_text(encoding="utf-8")
-        self.assertIn("q2 [conflict epc#9]", text)
+        self.assertIn("q2（f） [conflict epc#9]", text)
         self.assertNotIn("q1", text)
         ans = [r for r in self.records() if r.get("kind") == "conflict"]
         self.assertEqual([(r["ref"], r["value"], r.get("stale")) for r in ans], [("epc#9", "A", True)])
         self.assertEqual(self.item(self.ctx(), "epc#9")["answers"][0]["superseded"], True)
         # 書いた問いを写し直しても、古い回答で落ちない
         self.apply({"source": "ai", "ops": [], "confirm": conflict("q2")})
-        self.assertIn("q2 [conflict epc#9]", self.todo.read_text(encoding="utf-8"))
+        self.assertIn("q2（f） [conflict epc#9]", self.todo.read_text(encoding="utf-8"))
 
     def test_fresh_block_answer_still_skips(self):
         self.apply({"source": "ai", "ops": [], "confirm": conflict("q1")})

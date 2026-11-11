@@ -24,11 +24,12 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import decisions
 import todo_md
-from origin import origin_of
+from origin import origin_of, title_written_by
 from todo_md import TASK_SECTIONS, Doc, Item
 
 SOURCES = ("ai", "sync", "user")
 USER_OPS = ("edit_title", "delete", "note")
+AI_OPS = ("edit_title",)
 CLEANUP_PREFIX = decisions.CLEANUP_PREFIX
 OPEN_SECTIONS = ("やる", "待ち")
 ARCHIVE_DAYS = 30
@@ -37,9 +38,12 @@ OP_LABELS = {
     "edit_title": "タイトル変更", "delete": "削除", "note": "意図",
     "order": "並べ替え", "confirm": "確認待ち", "archive": "アーカイブ",
 }
-CONFIRM_FIELDS = ("事実", "選択", "回答")
 _CONFIRM_Q = re.compile(r"(\d+)\. (.+)\Z")
 _CONFIRM_FIELD = re.compile(r"\s+(事実|選択|回答)[:：] ?(.*)\Z")
+_CONFIRM_OPTIONS = re.compile(r"\s+(\S.*)\Z")
+RECOMMENDED = "★"
+OLD_RECOMMENDED = "（おすすめ）"
+_OPTION = re.compile(r"(\S+) (.*?)(" + RECOMMENDED + "|" + OLD_RECOMMENDED + r")?\Z")
 KINDS = ("policy", "before_share", "manual", "conflict", "is_task", "still_needed")
 _TAG = re.compile(r" \[(" + "|".join(KINDS) + r") (.+)\]\Z")
 GIT_RETRIES = 10
@@ -56,7 +60,8 @@ class Effects:
     intents は記録する意図（{"ref", "value", "op", 任意で "prev_ref"}）。deleted / retitled は適用前から
     あった行のうち delete で消した行・edit_title で題を変えた行（変更前の状態）で、validate の免除に使う。
     reopened は完了から出した行の (ref, 今の節)。完了へ戻さない pin として記録する。
-    aliases は key の無い行に key を付けた (key, 旧 ref)。source を問わず集め、alias として記録する。
+    aliases は key の無い行に key を付けた (key, 旧 ref) と、source ai が key の無い行の題を変えた (新 ref, 旧 ref)。
+    source を問わず集め、alias として記録する。
     """
 
     intents: "list[dict]" = field(default_factory=list)
@@ -98,10 +103,31 @@ def _note(op: dict, head: str, url: "str | None") -> str:
     return s
 
 
-def parse_confirm(lines: "list[str]") -> "list[dict]":
-    """確認待ちを「問い・事実・選択・回答」の4行ブロックの列として厳密に読む。崩れていれば ChangeError。
+def split_facts(text: str) -> "tuple[str, str]":
+    """タグを外した問いの行を (問い, 事実) に分ける。事実は末尾の釣り合った（…）。問いの途中の括弧は事実にしない。"""
+    if not text.endswith("）"):
+        return text, ""
+    depth = 0
+    for i in range(len(text) - 1, 0, -1):
+        if text[i] == "）":
+            depth += 1
+        elif text[i] == "（":
+            depth -= 1
+            if depth == 0:
+                return text[:i], text[i + 1:-1]
+    return text, ""
 
-    各ブロックは {"question", "事実", "選択", "回答", "lines"}。ブロックの間の空行だけ許す。
+
+def _field(lines: "list[str]", i: int, name: str) -> "str | None":
+    f = _CONFIRM_FIELD.match(lines[i]) if i < len(lines) else None
+    return f.group(2) if f and f.group(1) == name else None
+
+
+def parse_confirm(lines: "list[str]") -> "list[dict]":
+    """確認待ちをブロックの列として厳密に読む。崩れていれば ChangeError。
+
+    新書式は「問い（事実） [タグ]・選択肢・回答」の3行（選択肢が無ければ2行）、旧書式は「問い [タグ]・事実・選択・回答」の4行。
+    各ブロックは {"question"（事実を外しタグは残した問い）, "事実", "選択", "回答", "lines"}。ブロックの間の空行だけ許す。
     """
     blocks = []
     i = 0
@@ -112,15 +138,46 @@ def parse_confirm(lines: "list[str]") -> "list[dict]":
         m = _CONFIRM_Q.match(lines[i])
         if not m:
             raise ChangeError(f"確認待ちに解釈できない行がある（全置換すると消える）: {lines[i]!r}")
-        block = {"question": m.group(2), "lines": lines[i:i + 4]}
-        for j, name in enumerate(CONFIRM_FIELDS, 1):
-            f = _CONFIRM_FIELD.match(lines[i + j]) if i + j < len(lines) else None
-            if not f or f.group(1) != name:
-                raise ChangeError(f"確認待ちのブロックが崩れている（{name} の行が無い）: {lines[i]!r}")
-            block[name] = f.group(2)
-        blocks.append(block)
-        i += 4
+        head = m.group(2)
+        if _field(lines, i + 1, "事実") is not None:
+            facts, opts, ans = _field(lines, i + 1, "事実"), _field(lines, i + 2, "選択"), _field(lines, i + 3, "回答")
+            if opts is None or ans is None:
+                raise ChangeError(f"確認待ちのブロックが崩れている（選択・回答の行が無い）: {lines[i]!r}")
+            n = 4
+        else:
+            body = strip_tag(head)
+            q, facts = split_facts(body)
+            head = q + head[len(body):]
+            opts, n = "", 2
+            ans = _field(lines, i + 1, "回答")
+            if ans is None:
+                o = _CONFIRM_OPTIONS.match(lines[i + 1]) if i + 1 < len(lines) else None
+                ans = _field(lines, i + 2, "回答") if o else None
+                if ans is None:
+                    raise ChangeError(f"確認待ちのブロックが崩れている（回答の行が無い）: {lines[i]!r}")
+                opts, n = o.group(1), 3
+        blocks.append({"question": head, "事実": facts, "選択": opts, "回答": ans, "lines": lines[i:i + n]})
+        i += n
     return blocks
+
+
+def parse_options(s: str) -> "list[dict]":
+    """選択肢の行を {label, text, recommended} の列に読む。おすすめは ★（旧書式は（おすすめ））。"""
+    out = []
+    for part in s.split(" / ") if s else []:
+        m = _OPTION.match(part)
+        # 空白の無い断片は選択肢の文中の " / " で割れたものなので、前の選択肢に戻す
+        if out and (not m or not m.group(2)):
+            prev = out[-1]
+            prev["text"] += " / " + part
+            for mark in (RECOMMENDED, OLD_RECOMMENDED):
+                if prev["text"].endswith(mark):
+                    prev["text"], prev["recommended"] = prev["text"][: -len(mark)], True
+        elif m:
+            out.append({"label": m.group(1), "text": m.group(2), "recommended": bool(m.group(3))})
+        else:
+            out.append({"label": part, "text": part, "recommended": False})
+    return out
 
 
 def with_tag(question: str, kind: str, ref: str) -> str:
@@ -164,6 +221,14 @@ def _check_answers(blocks: "list[dict]", answered: list) -> None:
         raise ChangeError("answered が確認待ちの回答欄と食い違う")
 
 
+def _confirm_key(block: dict) -> tuple:
+    """書式（新旧・★/（おすすめ））によらず、同じ問い・事実・選択なら同じになる比較用の値。"""
+    body = strip_tag(block["question"])
+    head = body + (f"（{block['事実']}）" if block["事実"] else "")
+    opts = tuple((o["label"], o["text"], o["recommended"]) for o in parse_options(block["選択"]))
+    return head, block["question"][len(body):], opts
+
+
 def confirm_edit_errors(current: "list[str]", written: "list[str]") -> "list[str]":
     """確認待ちの問い・事実・選択が、apply が最後に書いた内容から変わっていれば違反を返す。
 
@@ -177,10 +242,10 @@ def confirm_edit_errors(current: "list[str]", written: "list[str]") -> "list[str
         prev = parse_confirm(written)
     except ChangeError:
         prev = []
-    pool = Counter((b["question"], b["事実"], b["選択"]) for b in prev)
+    pool = Counter(_confirm_key(b) for b in prev)
     errs = []
     for b in cur:
-        k = (b["question"], b["事実"], b["選択"])
+        k = _confirm_key(b)
         if pool[k] <= 0:
             errs.append(f"確認待ちの問い・事実・選択が apply の書いた内容と違う（人の追記が消える）: {b['lines'][0]!r}")
         else:
@@ -196,8 +261,8 @@ def _render_confirm(entries: list) -> "list[str]":
         ref = _str(e, "ref")
         if e.get("kind") not in KINDS:
             raise ChangeError(f"confirm の kind が不正: {e.get('kind')!r}")
-        q = with_tag(strip_tag(_str(e, "question")), e["kind"], ref)
         facts = _str(e, "facts", required=False) or ""
+        q = with_tag(strip_tag(_str(e, "question")) + (f"（{facts}）" if facts else ""), e["kind"], ref)
         opts = []
         options = e.get("options") or []
         if not isinstance(options, list) or not all(isinstance(o, dict) for o in options):
@@ -205,14 +270,15 @@ def _render_confirm(entries: list) -> "list[str]":
         for o in options:
             label = _str(o, "label")
             text = _str(o, "text")
-            opts.append(f"{label} {text}" + ("（おすすめ）" if o.get("recommended") else ""))
-        out += [f"{n}. {q}", f"   事実: {facts}", f"   選択: {' / '.join(opts)}", "   回答:"]
+            opts.append(f"{label} {text}" + (RECOMMENDED if o.get("recommended") else ""))
+        out += [f"{n}. {q}", *([f"   {' / '.join(opts)}"] if opts else []), "   回答:"]
     return out
 
 
 def apply_changes(
     doc: Doc, changes: dict, origins: Callable[[str], str], today: str, records: "list[dict]" = (),
     effects: "Effects | None" = None, asked_at: "int | None" = None,
+    retitle_origins: "Callable[[str], str] | None" = None,
 ) -> "tuple[Doc, list[str]]":
     """変更案を適用した新しい Doc とコミット本文の行を返す（doc は変更しない）。
 
@@ -225,9 +291,10 @@ def apply_changes(
     後片付けは題の前方一致）の add/attach も飛ばす。
     source user（ユーザー指示）は例外: 戻し・却下の記録に縛られず、完了から戻せ、edit_title / delete / note を
     使える。各 op に intent が必須で、op を1つでも飛ばすなら全体を ChangeError にする（承認された変更を欠かさない）。
+    source ai も edit_title を使えるが、retitle_origins（省けば origins）が "ai" の行（この実行で足した行を含む）だけ。
+    人の行・完了の行・後片付けの行・key の無い行の題の重なりになる edit_title は飛ばす。
     effects を渡すと、source user の意図と validate の免除対象をそこに集める。
     変更案の形が不正なら ChangeError。人のタイトル保護などの結果の検証は validate が行う。
-    origins は現状の op では使わない。
     """
     if not isinstance(changes, dict):
         raise ChangeError("変更案が object でない")
@@ -242,6 +309,7 @@ def apply_changes(
         # 確認待ちの基準は ai/sync のコミットから取るので、user が書き換えると以後の ai 実行が止まる
         raise ChangeError("user は確認待ちを書き換えられない")
     fx = effects if effects is not None else Effects()
+    retitle_origins = retitle_origins or origins
     doc = copy.deepcopy(doc)
     body: "list[str]" = []
     fresh: "list[Item]" = []
@@ -280,7 +348,7 @@ def apply_changes(
         intent = _str(op, "intent", required=user)
         if user and not intent.strip():
             raise ChangeError(f"{kind}: intent が空白だけ")
-        if kind in USER_OPS and not user:
+        if kind in USER_OPS and not user and not (source == "ai" and kind in AI_OPS):
             raise ChangeError(f"{kind} は user だけが使える")
         refs_out: "list[tuple[str, str]]" = []
         if kind == "add":
@@ -376,9 +444,26 @@ def apply_changes(
                 continue
             it = doc.sections[loc[0]][loc[1]]
             if title != it.title:
+                if not user:
+                    # validate は題の数で比べるので、人の行の改名と同じ題の add の組を見逃す。ここで行ごとに飛ばす
+                    if all(it is not f for f in fresh) and retitle_origins(it.title) != "ai":
+                        skip(f"human title {ref}")
+                        continue
+                    if loc[0] == "完了":
+                        skip(f"done {ref}")
+                        continue
+                    if it.title.startswith(CLEANUP_PREFIX) or title.startswith(CLEANUP_PREFIX):
+                        skip(f"cleanup {ref}")
+                        continue
                 if not it.key and _find(doc, "title:" + title):
+                    if not user:
+                        skip(f"duplicate title {ref}")
+                        continue
                     raise ChangeError(f"edit_title: 同じ題の key の無い行が既にあり ref が重なる: {title!r}")
-                if all(it is not f for f in fresh):
+                if not user:
+                    if not it.key:
+                        fx.aliases.append(("title:" + title, ref))
+                elif all(it is not f for f in fresh):
                     fx.retitled.append(copy.deepcopy(it))
                 it.title = title
                 body.append(_note(op, f"edit_title {ref} → {title}", it.url))
@@ -464,6 +549,13 @@ def apply_changes(
                     body.append(f"answer: {b['lines'][0]}")
                     body.extend(b["lines"][1:])
     return doc, body
+
+
+def _retitle_origin(repo: Path, name: str, title: str) -> str:
+    """AI が題を変えてよい行か。出現数でも、題をちょうどその文字列にしたコミットでも ai のときだけ "ai"。"""
+    if origin_of(repo, name, title) != "ai":
+        return "human"
+    return title_written_by(repo, name, title)
 
 
 def stale_answer(records: "list[dict]", ref: str, kind: str, asked_at: "int | None") -> bool:
@@ -731,7 +823,8 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
                         if any(kind == "conflict" for _, kind, _ in blocks_now) else None)
             fx = Effects()
             after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today,
-                                        old_records + new_records, effects=fx, asked_at=asked_at)
+                                        old_records + new_records, effects=fx, asked_at=asked_at,
+                                        retitle_origins=lambda t: _retitle_origin(repo, name, t))
         except ValueError as e:
             print(f"apply: 未適用: {e}", file=sys.stderr)
             return 2

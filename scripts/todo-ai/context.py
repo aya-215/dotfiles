@@ -10,7 +10,8 @@
                   その行を移してはいけないセクション。pinned_to・intents・answers は行の系譜（key を付ける前・
                   改名する前の ref の記録）も含める
   confirm_blocks  確認待ちの各ブロック（number, ref, kind, question, facts, options, answer）。
-                  ref/kind は apply.py が書いた問い末尾のタグから読み、question はタグを外したもの。
+                  ref/kind は apply.py が書いた問い末尾のタグから読み、question はタグと末尾の（事実）を外したもの。
+                  旧書式（問い・事実・選択・回答の4行）のブロックも同じ形で読む。
                   ref, kind, question, facts, options をそのまま confirm に写せば同じ行に戻る
   confirm_errors  確認待ちを全置換できない理由（空でなければ /todo は confirm を出さない）
   answered_now    回答欄が埋まったブロックの (ref, kind, answer, superseded)。apply.py も同じものを記録する
@@ -33,7 +34,6 @@ import argparse
 import datetime
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -72,33 +72,13 @@ def _answers(records: "list[dict]", ref: str) -> "list[dict]":
              "superseded": decisions.superseded(records, i)} for i, r in decisions.answers(records, ref, KINDS)]
 
 
-_OPTION = re.compile(r"(\S+) (.*?)(（おすすめ）)?\Z")
-
-
-def _parse_options(s: str) -> "list[dict]":
-    out = []
-    for part in s.split(" / ") if s else []:
-        m = _OPTION.match(part)
-        # 空白の無い断片は選択肢の文中の " / " で割れたものなので、前の選択肢に戻す
-        if out and (not m or not m.group(2)):
-            prev = out[-1]
-            prev["text"] += " / " + part
-            if prev["text"].endswith("（おすすめ）"):
-                prev["text"], prev["recommended"] = prev["text"][: -len("（おすすめ）")], True
-        elif m:
-            out.append({"label": m.group(1), "text": m.group(2), "recommended": bool(m.group(3))})
-        else:
-            out.append({"label": part, "text": part, "recommended": False})
-    return out
-
-
 def confirm_blocks(lines: "list[str]") -> "list[dict]":
     """確認待ちの行を apply.py と同じ厳密さで読む。崩れていれば apply.ChangeError。"""
     out = []
     for n, b in enumerate(apply.parse_confirm(lines), 1):
         kind, ref = apply.parse_tag(b["question"])
         out.append({"number": n, "ref": ref, "kind": kind, "question": apply.strip_tag(b["question"]),
-                    "facts": b["事実"], "options": _parse_options(b["選択"]), "answer": b["回答"].strip()})
+                    "facts": b["事実"], "options": apply.parse_options(b["選択"]), "answer": b["回答"].strip()})
     return out
 
 

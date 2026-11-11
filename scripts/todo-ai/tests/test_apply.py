@@ -12,7 +12,9 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(HERE))
 import apply
+import decisions
 import todo_md
+from origin import origin_of
 from apply import ChangeError, apply_changes, confirm_edit_errors, split_archive, validate
 
 APPLY = str(HERE / "apply.py")
@@ -189,13 +191,11 @@ class ApplyChangesTest(unittest.TestCase):
              "facts": "依頼あり", "options": [{"label": "A", "text": "はい"}]},
         ])
         self.assertEqual(new.confirm, [
-            "1. 方針を決める [policy epc#1202]",
-            "   事実: PR が2本",
-            "   選択: A まとめる（おすすめ） / B 分ける",
+            "1. 方針を決める（PR が2本） [policy epc#1202]",
+            "   A まとめる★ / B 分ける",
             "   回答:",
-            "2. タスク？ [is_task title:インターン資料修正]",
-            "   事実: 依頼あり",
-            "   選択: A はい",
+            "2. タスク？（依頼あり） [is_task title:インターン資料修正]",
+            "   A はい",
             "   回答:",
         ])
 
@@ -313,7 +313,7 @@ class ApplyChangesTest(unittest.TestCase):
     def test_confirm_entry_answered_in_this_run_is_dropped(self):
         entries = self.answered_doc()
         new, body = self.run_ops([], confirm=entries)
-        self.assertEqual(new.confirm, ["1. 方針？ [policy epc#1202]", "   事実: g", "   選択: A x（おすすめ）", "   回答:"])
+        self.assertEqual(new.confirm, ["1. 方針？（g） [policy epc#1202]", "   A x★", "   回答:"])
         self.assertIn("skip: answered is_task title:見積もり", body)
         self.assertIn("confirm: 1 件", body)
 
@@ -325,7 +325,7 @@ class ApplyChangesTest(unittest.TestCase):
             {"ref": "epc#1163", "kind": "policy", "question": "別？", "options": [{"label": "A", "text": "y"}]}]},
             human, TODAY, recs)
         self.assertEqual(new.confirm[0], "1. 別？ [policy epc#1163]")
-        self.assertEqual(len(new.confirm), 4)
+        self.assertEqual(len(new.confirm), 3)
         self.assertIn("skip: answered policy epc#1202", body)
 
     def test_title_with_unicode_line_separator_roundtrips(self):
@@ -676,6 +676,9 @@ class UserSourceTest(unittest.TestCase):
             for op in ({"op": "edit_title", "ref": "epc#1163", "title": "x", "intent": "i"},
                        {"op": "delete", "ref": "epc#1163", "intent": "i"},
                        {"op": "note", "ref": "epc#1163", "intent": "i"}):
+                if source == "ai" and op["op"] == "edit_title":
+                    self.assertIn("skip: human title epc#1163", self.run_ops([op], source=source)[1])
+                    continue
                 with self.assertRaises(ChangeError):
                     self.run_ops([op], source=source)
 
@@ -963,6 +966,216 @@ class InProcessRunTest(RepoMixin, unittest.TestCase):
         with self.assertRaises(RuntimeError):
             apply.run(self.changes_file(self.move_1202()), self.todo, TODAY)
         self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+
+
+OLD_BLOCK = ["1. 『X（11/14）への対応』を足す？ [is_task title:X（11/14）への対応]",
+             "   事実: ball: mine / 期限（金）",
+             "   選択: A 追加する（やる）（おすすめ） / B タスクではない（追加しない）",
+             "   回答:"]
+NEW_BLOCK = ["1. 『X（11/14）への対応』を足す？（ball: mine / 期限（金）） [is_task title:X（11/14）への対応]",
+             "   A 追加する（やる）★ / B タスクではない（追加しない）",
+             "   回答:"]
+
+
+class ConfirmFormatTest(unittest.TestCase):
+    def test_new_block_parsed_with_trailing_balanced_facts(self):
+        b, = apply.parse_confirm(NEW_BLOCK)
+        self.assertEqual(b["question"], "『X（11/14）への対応』を足す？ [is_task title:X（11/14）への対応]")
+        self.assertEqual(b["事実"], "ball: mine / 期限（金）")
+        self.assertEqual(b["選択"], "A 追加する（やる）★ / B タスクではない（追加しない）")
+        self.assertEqual(b["回答"], "")
+        self.assertEqual(b["lines"], NEW_BLOCK)
+
+    def test_old_block_still_parsed(self):
+        b, = apply.parse_confirm(OLD_BLOCK)
+        self.assertEqual(b["question"], "『X（11/14）への対応』を足す？ [is_task title:X（11/14）への対応]")
+        self.assertEqual(b["事実"], "ball: mine / 期限（金）")
+        self.assertEqual(b["lines"], OLD_BLOCK)
+
+    def test_question_without_facts_keeps_inner_parens(self):
+        b, = apply.parse_confirm(["1. 『X（11/14）』を足す？ [is_task rc:a]", "   A はい", "   回答: A"])
+        self.assertEqual((b["question"], b["事実"], b["回答"]), ("『X（11/14）』を足す？ [is_task rc:a]", "", "A"))
+
+    def test_block_without_options_is_two_lines(self):
+        lines = apply._render_confirm([{"ref": "rc:a", "kind": "manual", "question": "やった？", "options": []}])
+        self.assertEqual(lines, ["1. やった？ [manual rc:a]", "   回答:"])
+        b, = apply.parse_confirm(lines)
+        self.assertEqual((b["事実"], b["選択"], b["lines"]), ("", "", lines))
+
+    def test_mixed_old_and_new_blocks_and_answers(self):
+        lines = [*OLD_BLOCK[:3], "   回答: A", "", "2. 要る？ [still_needed rc:b]", "   A 要る / B 不要", "   回答: B"]
+        blocks = apply.parse_confirm(lines)
+        self.assertEqual([len(b["lines"]) for b in blocks], [4, 3])
+        self.assertEqual(apply.answer_records(blocks),
+                         [("title:X（11/14）への対応", "is_task", "A"), ("rc:b", "still_needed", "B")])
+
+    def test_free_text_inside_new_block_rejected(self):
+        for bad in ([NEW_BLOCK[0], NEW_BLOCK[1], "   人の補足", "   回答:"],
+                    [NEW_BLOCK[0], NEW_BLOCK[1]],
+                    [NEW_BLOCK[0], "人の補足", "   回答:"]):
+            with self.assertRaises(ChangeError, msg=bad):
+                apply.parse_confirm(bad)
+
+    def test_old_and_new_rendering_of_same_block_compare_equal(self):
+        self.assertEqual(confirm_edit_errors(NEW_BLOCK, OLD_BLOCK), [])
+        self.assertEqual(confirm_edit_errors(OLD_BLOCK, NEW_BLOCK), [])
+        self.assertEqual(confirm_edit_errors([*OLD_BLOCK[:3], "   回答: A"], OLD_BLOCK), [])
+
+    def test_human_edit_of_new_block_detected(self):
+        self.assertTrue(confirm_edit_errors([NEW_BLOCK[0].replace("足す？", "足す？急ぎ"), *NEW_BLOCK[1:]], NEW_BLOCK))
+        self.assertTrue(confirm_edit_errors([NEW_BLOCK[0], "   A 追加する（やる） / B 様子を見る", NEW_BLOCK[2]], NEW_BLOCK))
+        self.assertTrue(confirm_edit_errors([NEW_BLOCK[0], NEW_BLOCK[1].replace("★", ""), NEW_BLOCK[2]], NEW_BLOCK))
+
+    def test_reasking_old_block_writes_new_format_and_keeps_answer_in_body(self):
+        doc = todo_md.parse(BASE)
+        doc.confirm = [*OLD_BLOCK[:3], "   回答: A", "",
+                       "2. 要る？ [still_needed rc:b]", "   事実: 20日", "   選択: A 要る（おすすめ） / B 不要", "   回答:"]
+        new, body = apply_changes(doc, {"source": "ai", "ops": [], "confirm": [
+            {"ref": "rc:b", "kind": "still_needed", "question": "要る？", "facts": "20日",
+             "options": [{"label": "A", "text": "要る", "recommended": True}, {"label": "B", "text": "不要"}]}]},
+            human, TODAY)
+        self.assertEqual(new.confirm, ["1. 要る？（20日） [still_needed rc:b]", "   A 要る★ / B 不要", "   回答:"])
+        self.assertIn("answer: " + OLD_BLOCK[0], body)
+        self.assertIn("   回答: A", body)
+        self.assertEqual(apply.roundtrip_errors(new), [])
+
+
+AI_TITLE = "PR #1210 車両候補の選択肢バブル（彌永さん）の再レビュー"
+
+
+class AiEditTitleTest(unittest.TestCase):
+    def setUp(self):
+        self.doc = todo_md.parse(BASE.replace(
+            "- [ ] インターン資料修正\n",
+            f"- [ ] インターン資料修正\n- [ ] {AI_TITLE} [epc#1210](https://g/1210) — next: 見る\n"
+            "- [ ] AI の鍵なし行\n"))
+
+    def origins(self, title):
+        return "ai" if title in (AI_TITLE, "AI の鍵なし行", "済んだ") else "human"
+
+    def run_ops(self, ops, source="ai", effects=None):
+        return apply_changes(self.doc, {"source": source, "ops": ops}, self.origins, TODAY, effects=effects)
+
+    def test_ai_can_shorten_ai_line_without_intent(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "epc#1210", "title": "車両候補バブルの再レビュー",
+                                   "reason": "長い"}])
+        it = new.sections["やる"][1]
+        self.assertEqual((it.title, it.key, it.next), ("車両候補バブルの再レビュー", "epc#1210", "見る"))
+        self.assertTrue(any(l.startswith("edit_title epc#1210") for l in body))
+        self.assertEqual(validate(self.doc, new, self.origins, "ai"), [])
+
+    def test_ai_retitle_of_human_line_skipped(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "title:インターン資料修正", "title": "短く"},
+                                  {"op": "edit_title", "ref": "epc#1163", "title": "短く"},
+                                  {"op": "set_next", "ref": "epc#1202", "next": "続ける"}])
+        self.assertEqual(titles(new, "やる")[0], "インターン資料修正")
+        self.assertEqual(new.sections["やる"][3].title, "PR レビュー")
+        self.assertIn("skip: human title title:インターン資料修正", body)
+        self.assertIn("skip: human title epc#1163", body)
+        self.assertEqual(new.sections["やる"][4].next, "続ける")
+
+    def test_retitle_human_and_readd_its_title_changes_nothing(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "title:インターン資料修正", "title": "別"},
+                                  {"op": "add", "section": "やる", "title": "インターン資料修正"}])
+        self.assertEqual(new.sections, self.doc.sections)
+        self.assertIn("skip: human title title:インターン資料修正", body)
+
+    def test_ai_retitle_collisions_are_skipped_not_fatal(self):
+        new, body = self.run_ops([
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "坂西さんの対応"},
+            {"op": "edit_title", "ref": "title:AI の鍵なし行", "title": "インターン資料修正"},
+            {"op": "set_next", "ref": "epc#1202", "next": "続ける"}])
+        self.assertIn("skip: human title title:インターン資料修正", body)
+        self.assertIn("skip: duplicate title title:AI の鍵なし行", body)
+        self.assertEqual(titles(new, "やる")[:3], ["インターン資料修正", AI_TITLE, "AI の鍵なし行"])
+        self.assertEqual(new.sections["やる"][4].next, "続ける")
+
+    def test_sync_still_cannot_edit_title(self):
+        with self.assertRaises(ChangeError):
+            self.run_ops([{"op": "edit_title", "ref": "epc#1210", "title": "短く"}], source="sync")
+
+    def test_ai_retitle_of_done_row_skipped(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "epc#1100", "title": "短く"}])
+        self.assertEqual(new.sections["完了"][0].title, "済んだ")
+        self.assertIn("skip: done epc#1100", body)
+
+    def test_ai_retitle_of_keyless_line_links_lineage(self):
+        fx = apply.Effects()
+        new, _ = self.run_ops([{"op": "edit_title", "ref": "title:AI の鍵なし行", "title": "鍵なし行"}], effects=fx)
+        self.assertEqual(new.sections["やる"][2].ref, "title:鍵なし行")
+        self.assertEqual(fx.aliases, [("title:鍵なし行", "title:AI の鍵なし行")])
+        self.assertEqual(fx.retitled, [])
+
+    def test_ai_cannot_retitle_cleanup_line(self):
+        self.doc.sections["やる"].append(todo_md.Item("後片付け（2026-11-01）", next="x"))
+        origins = lambda t: "ai"
+        new, body = apply_changes(self.doc, {"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "title:後片付け（2026-11-01）", "title": "片付け"}]}, origins, TODAY)
+        self.assertEqual(new.sections["やる"][-1].title, "後片付け（2026-11-01）")
+        self.assertIn("skip: cleanup title:後片付け（2026-11-01）", body)
+
+
+class AiEditTitleCliTest(RepoMixin, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.text = BASE.replace("- [ ] インターン資料修正\n",
+                                 f"- [ ] インターン資料修正\n- [ ] {AI_TITLE} [epc#1210](https://g/1210)\n")
+        self.commit(self.text, "todo(ai): 追加1")
+
+    def retitle(self, title):
+        r = self.run_apply({"source": "ai", "ops": [{"op": "edit_title", "ref": "epc#1210", "title": title}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.head("%s").startswith("todo(ai): "))
+
+    def test_origin_stays_ai_after_shortening_to_a_substring(self):
+        self.retitle("車両候補の選択肢バブル")
+        self.assertEqual(origin_of(self.repo, "todo.md", "車両候補の選択肢バブル"), "ai")
+        self.retitle("選択肢バブル")
+        self.assertEqual(origin_of(self.repo, "todo.md", "選択肢バブル"), "ai")
+
+    def test_origin_stays_ai_after_rewording(self):
+        self.retitle("車両候補バブルの再レビュー")
+        self.assertEqual(origin_of(self.repo, "todo.md", "車両候補バブルの再レビュー"), "ai")
+
+    def test_human_line_skipped_and_other_ops_applied(self):
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "資料修正"},
+            {"op": "set_next", "ref": "epc#1202", "next": "続ける"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = self.todo.read_text(encoding="utf-8")
+        self.assertIn("- [ ] インターン資料修正\n", text)
+        self.assertIn("— next: 続ける", text)
+        self.assertIn("skip: human title title:インターン資料修正", self.head("%b"))
+
+    SHORT = "PR #1210 車両候補の選択肢バブル"
+
+    def assert_human_shortening_kept(self):
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "epc#1210", "title": "車両候補バブルの再レビュー"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"- [ ] {self.SHORT} [epc#1210]", self.todo.read_text(encoding="utf-8"))
+
+    def test_human_shortening_in_nvim_is_not_overwritten(self):
+        self.commit(self.text.replace(AI_TITLE, self.SHORT), "todo: 2026-11-10 12:00")
+        self.assert_human_shortening_kept()
+
+    def test_human_shortening_by_todo_edit_is_not_overwritten(self):
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "edit_title", "ref": "epc#1210", "title": self.SHORT, "intent": "題を短く"}]},
+            extra=("--allow-user",))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.head("%s").startswith("todo(user): "))
+        self.assert_human_shortening_kept()
+
+    def test_keyless_rename_records_alias(self):
+        self.commit(self.text.replace("- [ ] 坂西さんの対応\n", "- [ ] 坂西さんの対応\n- [ ] AI の長い鍵なし行\n"),
+                    "todo(ai): 追加1")
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "title:AI の長い鍵なし行", "title": "鍵なし行"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        recs = decisions.load(self.repo / decisions.DECISIONS_NAME)
+        self.assertEqual([(x["ref"], x["kind"], x["prev_ref"]) for x in recs],
+                         [("title:鍵なし行", "alias", "title:AI の長い鍵なし行")])
 
 
 if __name__ == "__main__":
