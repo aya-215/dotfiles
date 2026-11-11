@@ -17,7 +17,7 @@ description: 業務TODO（~/memo/todo.md）を一次データから AI が更新
 - 過去の実行ログ（`~/.local/log/todo-ai/` のうち今回の `<RUN>` 以外のファイル）・過去の `/my-tasks` 出力を読む。AI の過去の推測が事実として戻ってくるため（例外は `review` モードの review.py だけ）
 - todo.md をタスクの根拠にする。台帳は重複検出と人の行の把握にだけ使い、それも context-<RUN>.json 経由で見る
 - 人が完了にした行を未完了に戻す・人の行のタイトルを書き換える（apply.py も止めるが、案にも入れない）
-- ユーザーの意図（context の `intents`）に反して行を完了・移動する、next を上書きする。人が `/todo-edit` で消した行（`intent_refs`）を足し直す
+- ユーザーの意図（context の `intents`）に反して行を完了・移動する、next を上書きする。人が `/todo-edit` で消した行（`deleted_refs`）を足し直す
 
 ## 準備
 
@@ -80,7 +80,9 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 | フィールド | 使い方 |
 |---|---|
 | `items[]` | 台帳の各行。`ref` `section` `title` `key` `url` `next` `done` `origin`（ai/human）`added_date` `age_days` `pinned_to`（人が AI/同期の移動を戻したため、その行を移してはいけないセクション。空なら制限なし）`intents`（ユーザーが `/todo-edit` で残したその行の意図。新しい順で最大5件の `{ts, value}`。下の「意図の扱い」） |
-| `intent_refs[]` | 意図の記録がある全 ref（改名前の ref、todo.md から消えた行も含む）。`items` に無い ref は人が消した・改名した行なので足し直さない |
+| `intent_refs[]` | 意図の記録がある全 ref（改名前の ref、todo.md から消えた行も含む）。意図の中身は `items[].intents` と `other_intents` で読む |
+| `deleted_refs[]` | ユーザーが `/todo-edit` の delete で消した ref と、edit_title で変わる前の ref。**足し直さない**（apply も source ai の add/attach を `skip: intent_deleted` で飛ばす） |
+| `other_intents[]` | 台帳に行が無く `deleted_refs` にも無い ref の意図（`{ref, intents}`。まだ台帳に無い key へのメモ等）。その ref の候補を扱うときに意図として従う |
 | `confirm_blocks[]` | 今の確認待ち（回答済みのものも含む）。`ref` `kind` `question`（タグを外した問い）`facts` `options` `answer` |
 | `confirm_errors[]` | 確認待ちを書き換えられない理由。空でなければ下の「確認待ちが壊れているとき」 |
 | `answered_now[]` | 回答欄が埋まった分（ref, kind, answer）。apply が回答欄から同じものを記録する。Claude はこれを見て回答に沿った op を作る |
@@ -114,7 +116,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 
 **まず候補をふるい分ける（規則 1〜10 より前に、上から順に見る）。** 落とした候補は op にも確認待ちにもせず、報告の「足さなかった候補」に key（無ければ title）と理由を1行で書く。
 
-- **意図で消された ref**: 候補の key（key が無ければ `title:<候補の title>`）が `intent_refs` にあり、`items` に同じ ref の行が無い → 落とす。人が `/todo-edit` で消した・改名した行で、足し直すと人の判断を覆すため（後片付けにも入れない）
+- **ユーザーが消した ref**: 候補の key（key が無ければ `title:<候補の title>`）が `deleted_refs` にある → 落とす。人が `/todo-edit` で消した・改名した行で、足し直すと人の判断を覆すため（後片付けにも入れない）。候補の ref が `other_intents` にあれば、その意図に従って扱う（例「来たら待ちへ」なら待ちへ add）
 - **他人の担当（F2）**: `evidence`・`title`・`next` に、担当・assignee・依頼先が自分以外だと書かれている（他人に割り当てられた Issue/課題DB の課題、他人の PR で自分へのレビュー依頼が無い、他人への依頼を横で見ているだけ等）→ 落とす。`theirs` の候補は、自分の作業（自分の質問・依頼・提出物・自分の PR・自分が出したレビュー（Request Changes 等）への相手の修正）が相手の返答を待っていると `evidence` から読めるときだけ残す。読めなければ落とす。ただし同じ key の行が既にあれば落とさず、その行として規則 2〜5 にかける（足さないだけで、台帳の行の更新は止めない）
 - **後片付け（F4）**: 成果物を作らず、終わった作業の残りを片付けるだけの `mine`/`theirs` の候補（worktree・ブランチ・stash・一時ファイル・検証用のデータや環境の削除、不要になった PR/Issue のクローズ等）を、`title`・`next`・`evidence` の文言で判断する → 規則 1・4・7 にかけず、下の「後片付けの行」に回す。ただし同じ key の行が既にあれば後片付けにせず、その行として規則 2〜5 にかける。迷ったら後片付けにしない（通常の規則にかける）
 - **自分の PR の ball**: 自分の PR の候補の `ball` は `/my-tasks` が `pr_ball.py` で決めた値なので、そのまま使う（`evidence`・`next` の文言から mine/theirs を決め直さない。レビュー依頼済みで相手の反応が無い PR は `theirs` で、待ちに入る）。`evidence` に pr_ball の `unknown`（取得失敗等）が書かれている候補は、その ball を根拠に既存の行をやる⇄待ちへ動かさない
@@ -123,13 +125,13 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 2. **move → 完了**: `maybe_done` の候補で、同じ key の行がやる/待ちにあり、`evidence` に決着（マージ・クローズ・「対応しました」・送信済み等）が読めるもの。決着が読めなければ動かさない
 3. **move やる⇄待ち**: 候補の `ball`（mine/theirs）と行の section が食い違うとき。2・3 とも、移動先が行の `pinned_to` に入っていれば動かさない（人が戻した行と取り合わない。apply も `skip: pinned` で飛ばす）。`pinned_to` に無い移動先へは動かしてよい（例: 人が待ち→やるに戻した PR がマージされたら完了へ）
 4. **attach**: `key` が null の行（やる/待ち）と、同じ作業だと言い切れる候補（`key` と `url` あり、その key の行がまだ無い）。行の `next` が null のときだけ候補の `next` も付ける。`origin: human` の行で「言い切れる」のは、候補の title が行の title と表記揺れ（助詞・「の」・空白・全角半角）しか違わず、同じ作業らしい候補が他に無いときだけ。それ以外の人の行は 4b。`origin: ai` の行で言い切れなければ何もしない
-4b. **人の行と同じ作業らしい候補**: `key` と `url` がある `mine`/`theirs` の候補が、`origin: human` のやる/待ちの行と同じ作業らしい（4 の「言い切れる」に届かない）とき、add せず `confirm kind=is_task` を出す（人の行に key を付けると同期がその行を自動で完了にしうるので、人が決める）。1つの行に key は1つしか付かないので、同じ行に当たる候補が複数あるときは、行の作業を最もよく表す1つを代表にし、残りも同じ実行でそれぞれ問いにする
-   - 代表: ref=候補の key、question=`既存の『<行の title>』と同じ作業？`、facts=`候補: <候補の title> <url> / ball: <候補の ball> / 既存行: <行の ref>`（ほかの候補があれば ` / 同じ行に当たる他の候補: <key>, ...` を足す）、options=A `同じ（既存の行に紐付ける）`（おすすめ）/ B `別の作業（新しく足す）`/ C `足さない`
-   - 代表以外: ref=候補の key、question=`既存の『<行の title>』と同じ作業？（紐付けは <代表の key>）`、facts は代表と同じ形、options=A `同じ（足さない）`（おすすめ）/ B `別の作業（新しく足す）`
-   - 行に既に key がある（前に紐付けた）ときも、候補ごとに代表以外の形で問う。回答は判断記録に残り、規則 1 がその key を以後足さない
+4b. **人の行と同じ作業らしい候補**: `key` と `url` がある `mine`/`theirs` の候補が、`origin: human` のやる/待ちの行と同じ作業らしい（4 の「言い切れる」に届かない）とき、add せず確認待ち（`kind=is_task`）を出す（人の行に key を付けると、その PR/Issue が閉じたとき同期が行ごと完了にするので、人が決める）。当たる候補の数で問いを変える
+   - **1件だけ**: ref=候補の key、question=`既存の『<行の title>』と同じ作業？`、facts=`候補: <候補の title> <url> / ball: <候補の ball> / 既存行: <行の ref>`、options=A `同じ（既存の行に紐付ける）`（おすすめ）/ B `別の作業（<やる|待ち>に足す）` / C `足さない`。B の括弧は候補の ball（mine→やる、theirs→待ち）
+   - **2件以上（行が複数の作業をまとめた傘の行）**: 紐付けを勧めない（1件だけ紐付けると、その PR が閉じた時点で行ごと完了になり残りを追えなくなる）。問いは1つだけ: ref=行の ref、question=`既存の『<行の title>』に含まれる作業。別の行で足す？`、facts=`既存行: <行の ref> / 候補: <key1> <ball1>, <key2> <ball2>, ...`、options=A `別の行で足す（候補ごとに ball でやる/待ち）`（おすすめ）/ B `足さない（既存の行で追う）`
+   - 傘の行の ref に is_task の回答が `answered_refs` にあれば、その行に当たる候補は問わず回答に従う（A なら規則 1 で add、B なら足さない）。後から当たった新しい候補も同じ
 5. **set_next**: 行の `next` と候補の `next` が違うとき。ただし `origin: human` で `next` が既にある行は上書きしない。自分の PR に未対応のレビュー指摘があるときの next は `N1,N2 残` の形で始める
 6. **still_needed**: やる/待ちの行で、key が `rc:` か `mail:` で始まり、`age_days` が 14 より大きく（null は対象外）、同じ key の候補が今回の `my-tasks-<RUN>.json` に無く、`answered_refs` に `(ref, still_needed)` が無いもの。ただし `my-tasks-<RUN>.json` の `sources_failed` に `rocketchat` があれば `rc:` の行、`mail` があれば `mail:` の行には適用しない（取れなかったことを「進展なし」と扱わない） → `confirm kind=still_needed`（選択: 要る / 不要＝完了にする）
-7. **is_task**: `mine`/`theirs` の候補で、`key` が null のもの、または `key` はあるが `url` が null のもの（`wt:` 等。apply は url の無い key を受け付けない）で、同じ作業の行が無いもの → `confirm kind=is_task`。**`maybe_done` の候補は出さない**（足す作業が残っていないので雑音になる）。ref は key があれば key、無ければ `title:<候補の title>`。`facts` に `ball: <候補の ball>` を必ず入れる（回答の反映で待ちかやるかを決めるため）。`answered_refs` に同じ ref の is_task があれば出さない。ref の表記が違っても同じ作業への回答が `answered_refs` にあれば出さない
+7. **is_task**: `mine`/`theirs` の候補で、`key` が null のもの、または `key` はあるが `url` が null のもの（`wt:` 等。apply は url の無い key を受け付けない）で、同じ作業の行が無いもの → `confirm kind=is_task`。**`maybe_done` の候補は出さない**（足す作業が残っていないので雑音になる）。ref は key があれば key、無ければ `title:<候補の title>`。`facts` に `ball: <候補の ball>` を入れる。options は文言を固定する: A `追加する（<やる|待ち>）`（括弧は ball が mine ならやる、theirs なら待ち）/ B `タスクではない（追加しない）`。おすすめは evidence から選び、迷えば B（表示した追加先と反映先を一致させるため、文言を変えない）。`answered_refs` に同じ ref の is_task があれば出さない。ref の表記が違っても同じ作業への回答が `answered_refs` にあれば出さない
 8. **conflict**: 完了にある行と同じ key の候補が `mine`/`theirs`（元がまだ開いている）→ `confirm kind=conflict`。選択は「完了のまま（おすすめ）」と「自分でやるに戻す」。**AI は完了から動かせない**ので、戻す op は作らない
 9. **order**（やる）: 並べ替え後の順を `{"op": "order", "section": "やる", "refs": [...]}` で出す。順位は ① 対応する候補に `waiting_person` がある ② `deadline` が早い（null は後）③ `blocks` が多い ④ 元の順。候補の無い行は元の順のまま後ろ（人の行が下に回るのは今の挙動どおりでよい）。**refs は前の op を適用した後の ref**（attach した行は付けた key、add した行はその key）。順が変わらなければ出さない
 10. **policy / before_share / manual**: 候補の next が「方針を決める」「人に見せる前の確認」「ユーザーにしかできない手作業」のときだけ。多用しない
@@ -138,9 +140,10 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 
 ふるい分けで後片付けにした候補は、1行にまとめる。
 
-- 対象の行: やる/待ちにある、title が `後片付け` か `後片付け（` で始まる `origin: ai` の行。複数あれば最初の1つ。`origin: human` の同名の行は人の行として扱い、作り直し・完了にしない
+- 題は常に日付付きの `後片付け（<追加した日 YYYY-MM-DD>）`（完了に同じ題の行が残ると ref が2つに当たり、apply が以後の set_next・move を `ambiguous` で飛ばすため）
+- 対象の行: やる/待ちにある、title が `後片付け（` で始まる `origin: ai` の行。複数あれば最初の1つ。`origin: human` の行は人の行として扱い、作り直し・完了にしない
 - 中身: 今回の後片付けの候補ごとに短い名前（例 `epc-1163 の worktree 削除`）を作り、候補の並び順に `; ` でつないで `next` にする。名前に改行・` — next: `・`](` を入れない
-- 行が無く、中身が1つ以上 → `add`（section `やる`、`key` なし、title `後片付け`、next は中身）。ただし `items` のどこか（完了も含む）に ref `title:後片付け` の行があれば title を `後片付け（<今日 YYYY-MM-DD>）` にする（同じ題の完了行があると ref が2つに当たり、apply が以後の set_next・move を `ambiguous` で飛ばすため）。その title の ref も `items` にあれば足さず報告に書く。`title:後片付け` が `rejected_refs` にある、または `intent_refs` にあって `items` に無いとき（人が消した）は、日付付きの題にもせず足さない
+- 行が無く、中身が1つ以上 → `add`（section `やる`、`key` なし、title `後片付け（<今日>）`、next は中身）。ただし次のときは足さず報告に書く: `rejected_refs` か `deleted_refs` に `title:後片付け（` で始まる ref がある（人が一度消したら、別の日の後片付けも足さない。apply も同じ前方一致で飛ばす）／`items`（完了も含む）に `title:後片付け（<今日>）` が既にある（同じ日に完了にした。翌日に足す）
 - 行があり、中身が今の `next` と違う → `set_next`。中身が0件 → `move → 完了`
 - `sources_failed` が空でないときは、今の `next` の項目を残したまま新しい項目を後ろに足すだけにし、項目を消す・完了にすることはしない（取れなかったことを「片付いた」と扱わない）
 - 行に `intents` があれば下の「意図の扱い」が優先する
@@ -152,7 +155,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 - 意図のある行には、意図に反する op を作らない: 完了への `move`（手順5の GitBucket のマージ・クローズも含む）、やる⇄待ちの `move`、`set_next`（意図が next の中身・順番を指定しているとき）、`order` での位置。例: 「eas#60 のマージ後にレビュー依頼する」の行は、eas#60 がマージされるまで完了にも待ちにもせず、next をその指示と違う文に変えない
 - 一次データ（候補の `evidence`・PR/Issue の状態）が意図と食い違う（意図は「残す」なのに決着している、意図の待ち条件が満たされた等）ときは、その行に op を作らず `confirm kind=conflict`（ref は行の ref）で聞く。question に意図と事実の食い違いを1行で書き、facts に意図の文と一次データの引用、options は A `意図どおりにする`（おすすめ）/ B `<一次データに沿った op の内容>`。`answered_refs` にその行の `(ref, conflict)` があり、その `ts` が最新の意図の `ts` より新しければ、その回答に従う
 - 意図に反しない op（意図が指示していない側面の更新）はふつうに作ってよい。意図が読み取れないときは op を作らず報告に書く
-- `intent_refs` にあって `items` に無い ref は、`add`・`attach`・確認待ちの問いのどれにも使わない（ふるい分けで落とす）
+- `deleted_refs` の ref は、`add`・`attach`・確認待ちの問いのどれにも使わない（ふるい分けで落とす）。`other_intents` の意図は、その ref の候補を足すときの指示として従う
 
 #### 確認待ちの書き方
 
@@ -167,10 +170,11 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 - 回答したブロックは `confirm` に写さない（写しても apply が、回答欄が埋まっている・判断記録にある (ref, kind) の問いを `skip: answered` で落とす）
 - 回答の内容に沿った op を作る。回答は選択の `label`（A/B/C）か `text` の言葉で読む。問いの中身は `confirm_blocks` の同じ ref・kind のブロック（回答済みも載っている）の `question`・`facts` で見る。回答が読み取れない自由文なら op は作らず、記録だけして報告に書く
   - still_needed に「不要」→ `move → 完了`
-  - is_task に「追加」→ `add`。`section` は今回の候補（同じ ref）の `ball` が `theirs` なら `待ち`、`mine` ならやる（F3）。候補が今回の JSON に無ければ、問いの `facts` の `ball:` に従い、それも無ければやる。候補に `url` が無ければ `key` も入れず `title` だけ（`wt:` も同じ）
-  - `既存の『…』と同じ作業？`（規則 4b）に「同じ（既存の行に紐付ける）」→ `facts` の `既存行:` の ref へ、問いの ref の key と候補の `url`（今回の候補に無ければ `facts` の url）で `attach`（行の `next` が null のときだけ候補の `next` も付ける）。その行に既に key があれば attach せず報告に書く。「同じ（足さない）」「足さない」→ op なし（回答の記録が以後の add を止める）。「別の作業」→ 上の「追加」と同じく `ball` で section を決めて `add`
+  - is_task に `A 追加する（<やる|待ち>）` → 括弧のセクションへ `add`（F3: 相手ボールは待ち）。候補に `url` が無ければ `key` も入れず `title` だけ（`wt:` も同じ）。`B タスクではない` → op なし
+  - `既存の『…』と同じ作業？`（規則 4b の1件）に「同じ（既存の行に紐付ける）」→ `facts` の `既存行:` の ref へ、問いの ref の key と候補の `url`（今回の候補に無ければ `facts` の url）で `attach`（行の `next` が null のときだけ候補の `next` も付ける）。その行に既に key があれば attach せず報告に書く。「別の作業」→ 括弧のセクションへ `add`。「足さない」→ op なし（回答の記録が以後の add を止める）
+  - `既存の『…』に含まれる作業。別の行で足す？`（規則 4b の傘の行）に「別の行で足す」→ `facts` の各候補を、今回の候補の ball（今回の JSON に無ければ facts の ball）でやる/待ちへ `add`（`key` と `url` は今回の候補から。今回に無い候補は足さず報告に書く）。「足さない」→ op なし
   - conflict（意図との食い違い）に回答 → 選ばれた側の op を作る。「意図どおり」なら op なし
-- 回答に沿った op にも「意図の扱い」を当てる（回答の ts が行の最新の意図より新しければ回答に従う）。`intent_refs` にあって `items` に無い ref は、回答が何であっても `add`・`attach` しない（`intent_refs` には ts が無く、消した後に答えたかを確かめられないため。報告に書く）
+- 回答に沿った op にも「意図の扱い」を当てる（回答の ts が行の最新の意図より新しければ回答に従う）。`deleted_refs` の ref は、回答が何であっても `add`・`attach` しない（apply も飛ばす。報告に書く）
 
 #### 確認待ちが壊れているとき（`confirm_errors` が空でない）
 
@@ -189,7 +193,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 - `title`・`next` に ` — next: ` や `](` を含める、`title` の前後に空白がある、`url` に空白や括弧がある（書き出すと別の行に読めてしまうため全体が止まる）
 - `options` の要素に `label`/`text` が無い・空、`confirm` の要素に `ref` が無い・`kind` が上の6種以外
 
-存在しない ref への op は apply がその op だけ飛ばす（`skip:` としてコミット本文に残る）。
+存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` としてコミット本文に残る）。
 
 ### 7. 適用
 

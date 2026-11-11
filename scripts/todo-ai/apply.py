@@ -29,6 +29,7 @@ from todo_md import TASK_SECTIONS, Doc, Item
 
 SOURCES = ("ai", "sync", "user")
 USER_OPS = ("edit_title", "delete", "note")
+CLEANUP_PREFIX = "後片付け（"
 OPEN_SECTIONS = ("やる", "待ち")
 ARCHIVE_DAYS = 30
 OP_LABELS = {
@@ -52,7 +53,7 @@ class ChangeError(ValueError):
 class Effects:
     """apply_changes が source user の op について集める副産物。
 
-    intents は記録する意図（{"ref", "value", 任意で "prev_ref"}）。deleted / retitled は適用前から
+    intents は記録する意図（{"ref", "value", "op", 任意で "prev_ref"}）。deleted / retitled は適用前から
     あった行のうち delete で消した行・edit_title で題を変えた行（変更前の状態）で、validate の免除に使う。
     reopened は完了から出した行の (ref, 今の節)。完了へ戻さない pin として記録する。
     """
@@ -216,6 +217,7 @@ def apply_changes(
     存在しない・複数に当たる ref への op はその op だけ飛ばし `skip: ...` を本文に残す。
     records（判断記録。未記録の戻しも含めて渡す）に従い、人が消した key の add/attach、
     人が戻した移動先への move、回答済みの (ref, kind) の確認待ちも飛ばす。
+    source ai では、ユーザー指示で消えた ref（decisions.deleted_refs。後片付けは題の前方一致）の add/attach も飛ばす。
     source user（ユーザー指示）は例外: 戻し・却下の記録に縛られず、完了から戻せ、edit_title / delete / note を
     使える。各 op に intent が必須で、op を1つでも飛ばすなら全体を ChangeError にする（承認された変更を欠かさない）。
     effects を渡すと、source user の意図と validate の免除対象をそこに集める。
@@ -245,6 +247,19 @@ def apply_changes(
             raise ChangeError(f"user の変更を適用できない: {msg}")
         body.append(f"skip: {msg}")
 
+    deleted = set(decisions.deleted_refs(records)) if source == "ai" else set()
+    gone_cleanup = sorted(r for r in deleted | {x.get("ref") for x in records if x.get("kind") == "reject_add"}
+                          if isinstance(r, str) and r.startswith("title:" + CLEANUP_PREFIX))
+
+    def deleted_by_user(ref: str, title: "str | None" = None) -> "str | None":
+        """source ai が足し直そうとしている、ユーザーが消した ref（無ければ None）。"""
+        if ref in deleted:
+            return ref
+        # 後片付けは日付で題が変わるので、一度消されたら別の日の行も足さない
+        if source == "ai" and title is not None and title.startswith(CLEANUP_PREFIX) and gone_cleanup:
+            return gone_cleanup[0]
+        return None
+
     def locate(ref: str) -> "tuple[str, int] | None":
         hits = _find(doc, ref)
         if len(hits) == 1:
@@ -272,6 +287,10 @@ def apply_changes(
             it = Item(title, key, op.get("url") if key else None, nxt or None)
             if key and not user and decisions.is_rejected(records, key):
                 skip(f"rejected {key}")
+                continue
+            gone = deleted_by_user(it.ref, title)
+            if gone:
+                skip(f"intent_deleted {gone}")
                 continue
             # key の無い行は is_task の「追加」の回答で足すので、同じ題の完了行があっても新しい作業として足す
             if any(s in (TASK_SECTIONS if key else OPEN_SECTIONS) for s, _ in _find(doc, it.ref)):
@@ -328,6 +347,9 @@ def apply_changes(
                 continue
             if not user and decisions.is_rejected(records, key):
                 skip(f"rejected {key}")
+                continue
+            if deleted_by_user(key):
+                skip(f"intent_deleted {key}")
                 continue
             if _find(doc, key):
                 skip(f"duplicate {key}")
@@ -393,7 +415,8 @@ def apply_changes(
             raise ChangeError(f"未知の op: {kind!r}")
         if user:
             for now, prev in refs_out:
-                fx.intents.append({"ref": now, "value": intent, **({"prev_ref": prev} if prev != now else {})})
+                fx.intents.append({"ref": now, "value": intent, "op": kind,
+                                   **({"prev_ref": prev} if prev != now else {})})
     # 後の op で改名・再移動されうるので、最後の状態で取る
     for it in reopened:
         sec = next((s for s in OPEN_SECTIONS if any(x is it for x in doc.sections[s])), None)
@@ -684,7 +707,7 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
             new_records.append({"ts": ts, "ref": ref, "kind": kind, "value": ans, "by": "human"})
         for i in fx.intents:
             new_records.append({"ts": ts, "ref": i["ref"], "kind": "intent", "value": i["value"], "by": "human",
-                                **({"prev_ref": i["prev_ref"]} if "prev_ref" in i else {})})
+                                "op": i["op"], **({"prev_ref": i["prev_ref"]} if "prev_ref" in i else {})})
         for ref, sec in fx.reopened:
             new_records.append({"ts": ts, "ref": ref, "kind": "revert_move", "value": sec, "from": sec,
                                 "to": "完了", "by": "human"})

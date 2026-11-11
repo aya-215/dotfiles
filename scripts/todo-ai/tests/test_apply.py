@@ -86,6 +86,29 @@ class ApplyChangesTest(unittest.TestCase):
         self.assertFalse(it.done)
         self.assertTrue(any("PR が来た" in l and "pull/1300" in l for l in body))
 
+    def test_ai_add_and_attach_of_user_deleted_ref_are_skipped(self):
+        recs = [{"ref": "epc#1300", "kind": "intent", "value": "不要", "op": "delete"},
+                {"ref": "title:手書き", "kind": "intent", "value": "不要", "op": "delete"},
+                {"ref": "title:後片付け（2026-11-01）", "kind": "intent", "value": "要らない", "op": "delete"},
+                {"ref": "epc#1301", "kind": "intent", "value": "来たらやる", "op": "note"}]
+        url = "https://github.com/x/epc/pull/"
+        changes = {"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "key": "epc#1300", "url": url + "1300", "title": "a"},
+            {"op": "add", "section": "やる", "title": "手書き"},
+            {"op": "add", "section": "やる", "title": "後片付け（2026-11-10）", "next": "x"},
+            {"op": "attach", "ref": "title:インターン資料修正", "key": "epc#1300", "url": url + "1300"},
+            {"op": "add", "section": "やる", "key": "epc#1301", "url": url + "1301", "title": "b"}]}
+        new, body = apply_changes(self.doc, changes, human, TODAY, recs)
+        self.assertEqual([l for l in body if l.startswith("skip:")], [
+            "skip: intent_deleted epc#1300", "skip: intent_deleted title:手書き",
+            "skip: intent_deleted title:後片付け（2026-11-01）", "skip: intent_deleted epc#1300"])
+        self.assertEqual([it.ref for it in new.sections["やる"]][-1], "epc#1301")
+        # user は消した ref でも足し直せる
+        new, body = apply_changes(self.doc, {"source": "user", "ops": [
+            {"op": "add", "section": "やる", "key": "epc#1300", "url": url + "1300", "title": "a", "intent": "戻す"}]},
+            human, TODAY, recs)
+        self.assertEqual(new.sections["やる"][-1].ref, "epc#1300")
+
     def test_add_duplicate_key_is_skipped(self):
         new, body = self.run_ops([{
             "op": "add", "section": "やる", "key": "epc#1163",
@@ -634,7 +657,7 @@ class UserSourceTest(unittest.TestCase):
         self.assertEqual((it.key, it.done, it.done_date), ("epc#1100", False, None))
         self.assertEqual(new.sections["完了"], [])
         self.assertEqual(validate(self.doc, new, human, "user", fx) + apply.roundtrip_errors(new), [])
-        self.assertEqual(fx.intents, [{"ref": "epc#1100", "value": "まだ終わっていない"}])
+        self.assertEqual(fx.intents, [{"ref": "epc#1100", "value": "まだ終わっていない", "op": "move"}])
 
     def test_ai_reopen_still_rejected(self):
         for source in ("ai", "sync"):
@@ -726,7 +749,7 @@ class UserSourceTest(unittest.TestCase):
         fx = apply.Effects()
         self.run_ops([{"op": "attach", "ref": "title:インターン資料修正", "key": "rc:abc",
                        "url": "https://chat.example/abc", "intent": "RC の依頼と同じ"}], effects=fx)
-        self.assertEqual(fx.intents, [{"ref": "rc:abc", "value": "RC の依頼と同じ",
+        self.assertEqual(fx.intents, [{"ref": "rc:abc", "value": "RC の依頼と同じ", "op": "attach",
                                        "prev_ref": "title:インターン資料修正"}])
 
 
@@ -799,8 +822,8 @@ class UserCliTest(RepoMixin, unittest.TestCase):
         recs = self.records()
         self.assertEqual([{k: v for k, v in x.items() if k != "ts"} for x in recs], [
             {"ref": "title:インターン資料の修正", "kind": "intent", "value": "資料は来週の研修用", "by": "human",
-             "prev_ref": "title:インターン資料修正"},
-            {"ref": "epc#1163", "kind": "intent", "value": "題を短く", "by": "human"}])
+             "op": "edit_title", "prev_ref": "title:インターン資料修正"},
+            {"ref": "epc#1163", "kind": "intent", "value": "題を短く", "by": "human", "op": "edit_title"}])
         self.assertTrue(all(x["ts"] for x in recs))
         self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=no").strip(), "")
 

@@ -17,7 +17,11 @@
   rejected_refs   人が消した AI の追加（reject_add）の ref
   archived_keys   todo-archive/*.md に移った完了行の key
   intents         （各 item）ユーザー指示の意図。新しい順で最大5件の {ts, value}
-  intent_refs     意図の記録がある全 ref（prev_ref 含む。todo.md から消えた行も）。/todo は足し直さない
+  intent_refs     意図の記録がある全 ref（prev_ref 含む。todo.md から消えた行も）
+  deleted_refs    ユーザー指示（delete・edit_title の旧 ref）で台帳から消えた ref。/todo は足し直さない
+                  （apply.py も source ai の add/attach を skip する）
+  other_intents   items に無く deleted_refs にも無い ref の意図（まだ台帳に無い key への note 等）。
+                  {ref, intents}。intents は items と同じ形
 pinned_to と rejected_refs には、まだ記録していない戻しも git 履歴から足す（ここでは書かない）。
 """
 import argparse
@@ -46,6 +50,12 @@ def _intent_refs(records: "list[dict]") -> "list[str]":
         if r.get("kind") == "intent":
             refs |= {x for x in (r.get("ref"), r.get("prev_ref")) if isinstance(x, str) and x}
     return sorted(refs)
+
+
+def _intents(records: "list[dict]", ref: str) -> "list[dict]":
+    return [{"ts": r.get("ts"), "value": r.get("value")} for r in decisions.intents(records, ref)[:MAX_INTENTS]]
+
+
 _OPTION = re.compile(r"(\S+) (.*?)(（おすすめ）)?\Z")
 
 
@@ -128,10 +138,11 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
                 "added_date": added,
                 "age_days": (t - datetime.date.fromisoformat(added)).days if added else None,
                 "pinned_to": decisions.pinned_sections(records, it.ref),
-                "intents": [{"ts": r.get("ts"), "value": r.get("value")}
-                            for r in decisions.intents(records, it.ref)[:MAX_INTENTS]],
+                "intents": _intents(records, it.ref),
             })
 
+    deleted = decisions.deleted_refs(records)
+    present = {i["ref"] for i in items}
     errors: "list[str]" = []
     try:
         blocks = confirm_blocks(doc.confirm)
@@ -159,6 +170,9 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
         "rejected_refs": sorted({r["ref"] for r in records if r.get("kind") == "reject_add" and r.get("ref")}),
         "archived_keys": archived_keys(repo),
         "intent_refs": _intent_refs(records),
+        "deleted_refs": deleted,
+        "other_intents": [{"ref": ref, "intents": _intents(records, ref)} for ref in _intent_refs(records)
+                          if ref not in deleted and ref not in present],
     }
 
 

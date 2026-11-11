@@ -167,6 +167,16 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(self.item(ctx, "title:手書き")["intents"], [])
         self.assertEqual(ctx["intent_refs"], ["epc#1", "epc#gone", "title:新", "title:旧"])
 
+    def test_deleted_refs_and_other_intents(self):
+        self.r.commit(doc(yaru="- [ ] 残す [epc#1](https://g/1)\n"), "todo(user): base")
+        ctx = self.build([
+            {"ts": "t1", "ref": "epc#gone", "kind": "intent", "value": "消した", "by": "human", "op": "delete"},
+            {"ts": "t2", "ref": "epc#7", "kind": "intent", "value": "来たら待ちへ", "by": "human", "op": "note"},
+            {"ts": "t3", "ref": "epc#1", "kind": "intent", "value": "残す", "by": "human", "op": "set_next"},
+        ])
+        self.assertEqual(ctx["deleted_refs"], ["epc#gone"])
+        self.assertEqual(ctx["other_intents"], [{"ref": "epc#7", "intents": [{"ts": "t2", "value": "来たら待ちへ"}]}])
+
     def test_decision_lists(self):
         self.r.commit(doc(), "todo: base")
         ctx = self.build([

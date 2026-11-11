@@ -176,6 +176,18 @@ class Records(unittest.TestCase):
         self.assertEqual([r["value"] for r in decisions.intents(recs, "title:旧")],
                          ["改名後に同名で作った別行", "改名前"])
 
+    def test_deleted_refs_only_from_delete_and_renamed_away(self):
+        recs = [{"ref": "epc#1", "kind": "intent", "value": "不要", "op": "delete"},
+                {"ref": "title:新", "kind": "intent", "value": "改名", "op": "edit_title", "prev_ref": "title:旧"},
+                {"ref": "rc:a", "kind": "intent", "value": "台帳に無い key へのメモ", "op": "note"},
+                {"ref": "rc:b", "kind": "intent", "value": "紐付け", "op": "attach", "prev_ref": "title:手書き"},
+                {"ref": "epc#2", "kind": "intent", "value": "古い記録（op 無し）"},
+                {"ref": "epc#3", "kind": "intent", "value": "消す", "op": "delete"},
+                {"ref": "epc#3", "kind": "intent", "value": "やっぱり要る", "op": "add"},
+                {"ref": "epc#1", "kind": "intent", "value": "消した後のメモ", "op": "note"},
+                {"ref": "epc#4", "kind": "reject_add", "value": "やる", "op": "delete"}]
+        self.assertEqual(decisions.deleted_refs(recs), ["epc#1", "title:旧"])
+
     def test_load_keeps_unicode_line_separators_inside_a_record(self):
         with tempfile.TemporaryDirectory() as t:
             p = Path(t) / "d.jsonl"

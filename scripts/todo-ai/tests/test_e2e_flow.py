@@ -208,45 +208,56 @@ class E2EFlow(unittest.TestCase):
                          "日程の返事待ち")
         self.assertEqual([(b["ref"], b["kind"]) for b in self.context()["confirm_blocks"]], [("rc:old1", "conflict")])
 
-    def test_user_deleted_ref_stays_in_intent_refs_and_is_not_readded(self):
+    def test_ai_readd_of_user_deleted_ref_is_skipped(self):
+        # 人が書いた行なので、消しても reject_add には残らない。意図の記録だけが足し直しを止める
         self.human_commit(migrate.migrate(OLD), "2026-10-01")
-        cands = json.loads(FIXTURE.read_text(encoding="utf-8"))
-        epc = next(c for c in cands["candidates"] if c["key"] == "epc#1163")
-        add = {"op": "add", "section": "やる", "key": epc["key"], "url": epc["url"], "title": epc["title"],
-               "next": epc["next"], "reason": "自分の PR に未対応指摘"}
-        self.assertEqual(self.apply({"source": "ai", "ops": [add]}, 1).returncode, 0)
         res = self.apply({"source": "user", "ops": [
-            {"op": "delete", "ref": "epc#1163", "intent": "epc#1163 は河合さんが引き取った"}]}, 2, "--allow-user")
+            {"op": "delete", "ref": "rc:old1", "intent": "坂西さんの件は河合さんが引き取った"}]}, 1, "--allow-user")
         self.assertEqual(res.returncode, 0, res.stderr)
 
         ctx = self.context()
-        self.assertIn("epc#1163", ctx["intent_refs"])
-        self.assertNotIn("epc#1163", [i["ref"] for i in ctx["items"]])
-        # 候補にはまだ出るが、intent_refs にあり items に無いので規則のふるい分けで落とし、他の op だけ出す
+        self.assertEqual(ctx["deleted_refs"], ["rc:old1"])
+        self.assertEqual(ctx["rejected_refs"], [])
+        self.assertNotIn("rc:old1", [i["ref"] for i in ctx["items"]])
+        # 規則を外れて足し直す案が来ても、apply がその op だけ飛ばし、他の op は通す
         res = self.apply({"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "key": "rc:old1", "url": "https://rc.example/direct/x?msg=old1",
+             "title": "坂西さんへの返信", "reason": "未返信"},
             {"op": "add", "section": "待ち", "key": "gb:tamaki-ai-training#42",
              "url": "https://gitbucket.example/AI_dev/tamaki-ai-training/pull/42",
-             "title": "研修PR#42 の再レビュー", "next": "玉木さんの修正待ち", "reason": "Request Changes 済み"}]}, 3)
+             "title": "研修PR#42 の再レビュー", "next": "玉木さんの修正待ち", "reason": "Request Changes 済み"}]}, 2)
         self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("skip: intent_deleted rc:old1", self.git("log", "-1", "--format=%b"))
         refs = [i["ref"] for i in self.context()["items"]]
-        self.assertNotIn("epc#1163", refs)
+        self.assertNotIn("rc:old1", refs)
         self.assertIn("gb:tamaki-ai-training#42", refs)
 
-    def test_cleanup_line_gets_dated_title_when_a_done_one_exists(self):
+    def test_cleanup_line_is_dated_and_not_readded_after_user_deletes_it(self):
         self.human_commit(migrate.migrate(OLD), "2026-10-01")
-        cleanup = {"op": "add", "section": "やる", "title": "後片付け", "next": "epc-1163 の worktree 削除", "reason": "r"}
-        self.assertEqual(self.apply({"source": "ai", "ops": [cleanup]}, 1).returncode, 0)
-        res = self.apply({"source": "ai", "ops": [{"op": "move", "ref": "title:後片付け", "to": "完了", "reason": "0件"}]}, 2)
-        self.assertEqual(res.returncode, 0, res.stderr)
-        # 完了に同じ題があると ref が2つに当たるので、新しい行は日付付きの題にする
-        dated = "後片付け（2026-11-10）"
-        res = self.apply({"source": "ai", "ops": [dict(cleanup, title=dated, next="a")]}, 3)
-        self.assertEqual(res.returncode, 0, res.stderr)
+        first = "後片付け（2026-11-10）"
         res = self.apply({"source": "ai", "ops": [
-            {"op": "set_next", "ref": f"title:{dated}", "next": "a; b", "reason": "r"}]}, 4)
+            {"op": "add", "section": "やる", "title": first, "next": "epc-1163 の worktree 削除", "reason": "r"}]}, 1)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        res = self.apply({"source": "ai", "ops": [{"op": "move", "ref": f"title:{first}", "to": "完了", "reason": "0件"}]}, 2)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        # 翌日の後片付けは別の題なので、完了の行と ref が重ならず set_next が通る
+        second = "後片付け（2026-11-11）"
+        res = self.apply({"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "title": second, "next": "a", "reason": "r"},
+            {"op": "set_next", "ref": f"title:{second}", "next": "a; b", "reason": "r"}]}, 3)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertNotIn("skip:", self.git("log", "-1", "--format=%b"))
-        self.assertEqual(next(it for it in self.section("やる") if it.title == dated).next, "a; b")
+        self.assertEqual(next(it for it in self.section("やる") if it.title == second).next, "a; b")
+
+        res = self.apply({"source": "user", "ops": [
+            {"op": "delete", "ref": f"title:{second}", "intent": "後片付けは自分で管理する"}]}, 4, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        head = self.git("rev-parse", "HEAD")
+        res = self.apply({"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "title": "後片付け（2026-11-12）", "next": "c", "reason": "r"}]}, 5)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertFalse(any(it.title.startswith("後片付け") for it in self.section("やる")))
 
 if __name__ == "__main__":
     unittest.main()

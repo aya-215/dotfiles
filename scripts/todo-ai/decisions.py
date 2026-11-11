@@ -3,6 +3,7 @@
 1行 = {"ts", "ref", "kind", "value", "by": "human"} と、任意の "commit"（検出元の AI/同期コミット）。
 kind は確認待ちの kind、または revert_move / reject_add / intent。
 intent はユーザー指示（source user）の意図で、key の無い行の改名では "prev_ref" に旧 ref を持つ。
+"op" は意図を残した op（delete / edit_title 等。古い記録には無い）。
 revert_move は戻された AI/同期の移動を "from"→"to" で持つ（value は人が戻した先 = from）。
 "to" の無い古い記録は、戻し先以外への移動をすべて止める。
 """
@@ -67,6 +68,26 @@ def is_pinned(records: "list[dict]", ref: str, to: str) -> bool:
 
 def is_rejected(records: "list[dict]", ref: str) -> bool:
     return any(r.get("ref") == ref and r.get("kind") == "reject_add" for r in records)
+
+
+def deleted_refs(records: "list[dict]") -> "list[str]":
+    """ユーザー指示で台帳から消えた ref（delete した ref と、edit_title で変わる前の ref）。
+
+    後で同じ ref を台帳に戻す指示（add 等）があれば外す。note は台帳を変えないので数えない。
+    """
+    out: "set[str]" = set()
+    for r in records:
+        if r.get("kind") != "intent" or not isinstance(r.get("ref"), str):
+            continue
+        op = r.get("op")
+        if op == "delete":
+            out.add(r["ref"])
+        elif op != "note":
+            out.discard(r["ref"])
+            prev = r.get("prev_ref")
+            if op == "edit_title" and isinstance(prev, str) and prev != r["ref"]:
+                out.add(prev)
+    return sorted(out)
 
 
 def already_answered(records: "list[dict]", ref: str, kind: str) -> "dict | None":
