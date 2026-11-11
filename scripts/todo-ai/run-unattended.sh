@@ -10,6 +10,8 @@
 set -euo pipefail
 
 export LANG=C.UTF-8
+# 無人の /todo が変更案に source user と書いても、apply.py が保護を外さないようにする
+export TODO_AI_DENY_USER=1
 # cron の PATH には claude（~/.local/bin）も Nix のコマンドも無い
 export PATH="$HOME/.local/bin:$HOME/.nix-profile/bin:/etc/profiles/per-user/${USER:-$(id -un)}/bin:$PATH"
 

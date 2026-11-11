@@ -393,11 +393,12 @@ class RepoMixin:
         git(self.repo, "add", "todo.md")
         git(self.repo, "commit", "-q", "-m", msg)
 
-    def run_apply(self, changes, wait=True):
+    def run_apply(self, changes, wait=True, extra=(), **env_extra):
         cf = self.repo / "changes.json"
         cf.write_text(json.dumps(changes, ensure_ascii=False), encoding="utf-8")
-        cmd = [sys.executable, APPLY, "--changes", str(cf), "--todo", str(self.todo), "--today", TODAY]
-        env = dict(os.environ, LANG="C.UTF-8")
+        cmd = [sys.executable, APPLY, "--changes", str(cf), "--todo", str(self.todo), "--today", TODAY, *extra]
+        env = {k: v for k, v in os.environ.items() if k != "TODO_AI_DENY_USER"}
+        env.update(LANG="C.UTF-8", **env_extra)
         if not wait:
             return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         return subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -730,6 +731,55 @@ class UserSourceTest(unittest.TestCase):
 
 
 class UserCliTest(RepoMixin, unittest.TestCase):
+    def run_apply(self, changes, wait=True, extra=("--allow-user",), **env_extra):
+        return super().run_apply(changes, wait, extra, **env_extra)
+
+    def test_user_source_needs_allow_user(self):
+        note = {"source": "user", "ops": [{"op": "note", "ref": "epc#1202", "intent": "i"}]}
+        r = self.run_apply(note, extra=())
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--allow-user", r.stderr)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+        r = self.run_apply(note, TODO_AI_DENY_USER="1")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("TODO_AI_DENY_USER", r.stderr)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+        self.assertEqual(self.run_apply(note).returncode, 0)
+
+    def test_allow_user_does_not_change_ai(self):
+        r = self.run_apply({"source": "ai", "ops": [{"op": "move", "ref": "epc#1100", "to": "やる"}]},
+                           TODO_AI_DENY_USER="1")
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(self.run_apply(self.move_1202(), TODO_AI_DENY_USER="1").returncode, 0)
+
+    def test_user_reopen_pins_against_done(self):
+        r = self.run_apply({"source": "user", "ops": [{"op": "move", "ref": "epc#1100", "to": "待ち",
+                                                       "intent": "相手の返事待ちに戻す"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        pins = [x for x in self.records() if x["kind"] == "revert_move"]
+        self.assertEqual([{k: v for k, v in x.items() if k != "ts"} for x in pins], [
+            {"ref": "epc#1100", "kind": "revert_move", "value": "待ち", "from": "待ち", "to": "完了", "by": "human"}])
+        for source in ("sync", "ai"):
+            r = self.run_apply({"source": source, "ops": [
+                {"op": "move", "ref": "epc#1100", "to": "完了"},
+                {"op": "set_next", "ref": "epc#1163", "next": f"{source} が来た"}]}, extra=())
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("- [ ] 済んだ [epc#1100]", self.todo.read_text(encoding="utf-8"))
+            self.assertIn("skip: pinned epc#1100", self.head("%b"))
+
+    def test_user_reopen_pin_follows_rename(self):
+        self.commit(BASE.replace("(done: 2026-11-01)\n", "(done: 2026-11-01)\n- [x] 鍵なし (done: 2026-11-02)\n"))
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "move", "ref": "title:鍵なし", "to": "やる", "intent": "i"},
+            {"op": "edit_title", "ref": "title:鍵なし", "title": "鍵なし（続き）", "intent": "i"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([x["ref"] for x in self.records() if x["kind"] == "revert_move"], ["title:鍵なし（続き）"])
+
+    def test_whitespace_intent_exit2(self):
+        r = self.run_apply({"source": "user", "ops": [{"op": "note", "ref": "epc#1202", "intent": "  　"}]})
+        self.assertEqual(r.returncode, 2)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+
     def records(self):
         p = self.repo / "todo-decisions.jsonl"
         if not p.exists():

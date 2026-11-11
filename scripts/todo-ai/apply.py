@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """todo.md の唯一の書き込み口。変更案 JSON を検証して適用し、git にコミットする。
 
-使い方: apply.py --changes <json> [--todo PATH] [--decisions PATH] [--today YYYY-MM-DD]
+使い方: apply.py --changes <json> [--todo PATH] [--decisions PATH] [--today YYYY-MM-DD] [--allow-user]
+source user（ユーザー指示の変更）は --allow-user のときだけ受け付け、環境変数 TODO_AI_DENY_USER=1 なら常に拒む。
 終了コード: 0 適用（変更なし含む） / 3 nvim で編集中のためスキップ / 2 検証違反で未適用 / 1 その他
 """
 import argparse
@@ -53,9 +54,11 @@ class Effects:
 
     intents は記録する意図（{"ref", "value", 任意で "prev_ref"}）。deleted / retitled は適用前から
     あった行のうち delete で消した行・edit_title で題を変えた行（変更前の状態）で、validate の免除に使う。
+    reopened は完了から出した行の (ref, 今の節)。完了へ戻さない pin として記録する。
     """
 
     intents: "list[dict]" = field(default_factory=list)
+    reopened: "list[tuple[str, str]]" = field(default_factory=list)
     deleted: "list[Item]" = field(default_factory=list)
     retitled: "list[Item]" = field(default_factory=list)
 
@@ -235,6 +238,7 @@ def apply_changes(
     doc = copy.deepcopy(doc)
     body: "list[str]" = []
     fresh: "list[Item]" = []
+    reopened: "list[Item]" = []
 
     def skip(msg: str) -> None:
         if user:
@@ -253,6 +257,8 @@ def apply_changes(
             raise ChangeError(f"op が object でない: {op!r}")
         kind = op.get("op")
         intent = _str(op, "intent", required=user)
+        if user and not intent.strip():
+            raise ChangeError(f"{kind}: intent が空白だけ")
         if kind in USER_OPS and not user:
             raise ChangeError(f"{kind} は user だけが使える")
         refs_out: "list[tuple[str, str]]" = []
@@ -290,6 +296,8 @@ def apply_changes(
                 if loc[0] == "完了" and not user:
                     raise ChangeError(f"{source} は完了から戻せない: {ref}")
                 it = doc.sections[loc[0]].pop(loc[1])
+                if loc[0] == "完了":
+                    reopened.append(it)
                 if to == "完了":
                     it.done, it.done_date = True, today
                     doc.sections[to].insert(0, it)
@@ -386,6 +394,11 @@ def apply_changes(
         if user:
             for now, prev in refs_out:
                 fx.intents.append({"ref": now, "value": intent, **({"prev_ref": prev} if prev != now else {})})
+    # 後の op で改名・再移動されうるので、最後の状態で取る
+    for it in reopened:
+        sec = next((s for s in OPEN_SECTIONS if any(x is it for x in doc.sections[s])), None)
+        if sec:
+            fx.reopened.append((it.ref, sec))
 
     if "confirm" in changes:
         entries = changes["confirm"]
@@ -621,13 +634,21 @@ def summarize(body: "list[str]") -> str:
     return " ".join(parts)
 
 
-def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None" = None) -> int:
+def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None" = None,
+        allow_user: bool = False) -> int:
     try:
         changes = json.loads(changes_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         print(f"apply: 変更案を読めない: {e}", file=sys.stderr)
         return 2
     source = changes.get("source") if isinstance(changes, dict) else None
+    # source は変更案の自己申告なので、無人の /todo が user を名乗っても保護が外れないよう呼び出し側で絞る
+    if source == "user" and os.environ.get("TODO_AI_DENY_USER", "") not in ("", "0"):
+        print("apply: 未適用: TODO_AI_DENY_USER が立っているので source user は受け付けない", file=sys.stderr)
+        return 2
+    if source == "user" and not allow_user:
+        print("apply: 未適用: source user は --allow-user を付けたときだけ受け付ける", file=sys.stderr)
+        return 2
     repo, name = todo.parent, todo.name
     dpath = (decisions_path or repo / decisions.DECISIONS_NAME).expanduser().absolute()
     if not todo.is_file():
@@ -664,6 +685,9 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
         for i in fx.intents:
             new_records.append({"ts": ts, "ref": i["ref"], "kind": "intent", "value": i["value"], "by": "human",
                                 **({"prev_ref": i["prev_ref"]} if "prev_ref" in i else {})})
+        for ref, sec in fx.reopened:
+            new_records.append({"ts": ts, "ref": ref, "kind": "revert_move", "value": sec, "from": sec,
+                                "to": "完了", "by": "human"})
         body += [f"record {r['kind']} {r['ref']}" for r in new_records]
         kept, archived = split_archive(after, today)
         new_text = todo_md.render(kept)
@@ -726,11 +750,12 @@ def main(argv=None) -> int:
     p.add_argument("--todo", type=Path)
     p.add_argument("--decisions", type=Path, help="判断記録（既定は todo.md と同じディレクトリの todo-decisions.jsonl）")
     p.add_argument("--today", default=datetime.date.today().isoformat())
+    p.add_argument("--allow-user", action="store_true", help="source user（/todo-edit のユーザー指示）を受け付ける")
     a = p.parse_args(argv)
     todo = a.todo or Path(os.environ.get("TODO_MD_PATH") or Path.home() / "memo" / "todo.md")
     try:
         datetime.date.fromisoformat(a.today)
-        return run(a.changes, todo.expanduser().absolute(), a.today, a.decisions)
+        return run(a.changes, todo.expanduser().absolute(), a.today, a.decisions, a.allow_user)
     except Exception as e:
         print(f"apply: {type(e).__name__}: {e}", file=sys.stderr)
         return 1
