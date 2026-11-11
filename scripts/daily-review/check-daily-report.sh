@@ -199,6 +199,28 @@ for try in 1 2; do
 done
 [ -n "$result" ] || finish_simple check_failed "claude の出力が JSON として読めない（または失敗・タイムアウト）"
 
+# pr_section — payload の【区切り内にマージされたPR】節の行を標準出力へ（節が無ければ何も出さない）
+pr_section() {
+  awk '/^【区切り内にマージされたPR】$/ {f=1; next} f && /^【/ {exit} f {print}' "$PAYLOAD_FILE"
+}
+
+# add_missing_prs — 節の各 PR 番号が日報に #N（前後が数字でない）で無ければ重大 missing に足す。標準入力は検証済み JSON
+add_missing_prs() {
+  local json line name num
+  json="$(cat)"
+  while IFS= read -r line; do
+    [[ "$line" =~ ^-\ (.*)\ \#([0-9]+)（ ]] || continue
+    name="${BASH_REMATCH[1]}"; num="${BASH_REMATCH[2]}"
+    if ! printf '%s\n' "$summary" | grep -qE "(^|[^0-9])#${num}([^0-9]|$)"; then
+      json="$(jq --arg t "区切り内にマージされた $name #$num が日報に無い" \
+        '.missing += [{text: $t, severity: "重大"}]' <<<"$json")"
+    fi
+  done < <(pr_section)
+  printf '%s\n' "$json"
+}
+
+result="$(printf '%s' "$result" | add_missing_prs)"
+
 # 通知判定は決定的に行う: 重大な取りこぼし、または確信度・高の根拠不明
 final="$(printf '%s' "$result" | jq '
   . + {notify: (any(.missing[]; .severity == "重大") or any(.unsupported[]; .confidence == "高")), status: "ok"}')"

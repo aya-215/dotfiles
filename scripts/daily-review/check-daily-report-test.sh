@@ -173,4 +173,48 @@ env -i HOME="$c/home" PATH=/usr/bin:/bin NIX_PROFILE_BIN="$(dirname "$(command -
   bash "$SCRIPT_DIR/check-daily-report.sh" --date "$DATE" --no-wait >/dev/null 2>&1
 check "cron: ログ1行が残る status=ok" grep -q "status=ok" "$c/check.log"
 
+# ---- ケース10: 区切り内にマージされた PR の決定的な照合 ----
+# set_pr_case <name> <PR 節の本文（改行区切り。空なら節なし）> <日報サマリーの箇条書き>
+set_pr_case() {
+  local c="$TMP/$1"
+  setup_case "$1" yes yes
+  { printf '【対象日】%s\n【区切り】a 〜 b\n' "$DATE"
+    if [ -n "$2" ]; then printf '【区切り内にマージされたPR】\n%s\n' "$2"; fi
+    printf '【次の節】\nx\n'
+  } > "$c/slices/$DATE/payload.txt"
+  { echo "## 📝 サマリー"; printf '%s\n' "$3"; echo "## 次の節"; echo "- 無関係"; } > "$c/body.md"
+  echo '{"missing":[],"unsupported":[],"misclassified":[],"format":[]}' > "$c/stub/out"
+  run_check "$1"
+}
+PR_LIST='- aya-215/dotfiles #1202（aya-215/feat-x、11/09 10:00）
+- hankyu_kitchenyell/ebase-web #128（aya/fix-y、11/09 11:00）'
+
+set_pr_case prmiss "$PR_LIST" '- Work: PR#1202 をマージ、#1280 も対応'
+check "pr: #128 だけ重大で足される" jq_has "$TMP/prmiss" '(.missing | length) == 1 and .missing[0].severity == "重大" and (.missing[0].text | contains("hankyu_kitchenyell/ebase-web #128 が日報に無い"))'
+check "pr: notify=true・トースト" jq_has "$TMP/prmiss" '.notify == true and .status == "ok"'
+check "pr: ログ件数は足した後" grep -q "status=ok missing=1(重大1).*notify=true$" "$TMP/prmiss/check.log"
+check "pr: ログは1行" test "$(wc -l < "$TMP/prmiss/check.log")" = 1
+
+set_pr_case prok "$PR_LIST" '- Work: PR #128 と #1202 をマージ'
+check "pr: 空白入りの PR #128 と #1202 は何も足さない" jq_has "$TMP/prok" '(.missing | length) == 0 and .notify == false'
+
+set_pr_case prnohash "$PR_LIST" '- Work: 1202 と 128 をマージ'
+check "pr: # 無しは足される(2件)" jq_has "$TMP/prnohash" '(.missing | length) == 2'
+
+set_pr_case prnone '(なし)' '- Work: 何か'
+check "pr: (なし) は何も足さない" jq_has "$TMP/prnone" '(.missing | length) == 0 and .notify == false'
+
+set_pr_case prabsent '' '- Work: 何か'
+check "pr: 節が無い payload は何も足さない" jq_has "$TMP/prabsent" '(.missing | length) == 0 and .notify == false'
+
+set_pr_case prllm2 "$PR_LIST" '- Work: PR#1202'
+echo '{"missing":[{"text":"#128 が無い","severity":"重大"}],"unsupported":[],"misclassified":[],"format":[]}' > "$TMP/prllm2/stub/out"
+run_check prllm2
+check "pr: LLM の missing と重ねて足される" jq_has "$TMP/prllm2" '(.missing | length) == 2'
+
+set_pr_case prfail "$PR_LIST" '- Work: 何か'
+echo 'JSONではない' > "$TMP/prfail/stub/out"
+run_check prfail
+check "pr: check_failed のときは照合しない" jq_has "$TMP/prfail" '.status == "check_failed" and (.missing | length) == 0'
+
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "$fails 件失敗"; exit 1; fi
