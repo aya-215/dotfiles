@@ -47,7 +47,8 @@ def human(_t):
     return "human"
 
 
-BA = {"ref": "title:坂西さんの対応", "kind": "is_task"}
+TAG = {"ref": "title:坂西さんの対応", "kind": "is_task"}
+BA = dict(TAG, answer="これは対応済み。インターン資料修正も要らない")
 KEEP2 = [{"ref": "epc#1163", "kind": "policy", "question": "方針は？", "facts": "",
           "options": [{"label": "A", "text": "x", "recommended": True}, {"label": "B", "text": "y"}]}]
 
@@ -70,7 +71,7 @@ class ByAnswerTest(unittest.TestCase):
         self.assertEqual(new.sections["完了"][0].title, "坂西さんの対応")
         self.assertEqual(validate(self.doc, new, human, "ai", fx), [])
         intent, = fx.answer_intents
-        self.assertEqual((intent["ref"], intent["op"], intent["by_answer"]), ("title:坂西さんの対応", "move", BA))
+        self.assertEqual((intent["ref"], intent["op"], intent["by_answer"]), ("title:坂西さんの対応", "move", TAG))
         self.assertIn("これは対応済み", intent["value"])
         self.assertIn("坂西さんの対応", intent["value"])
 
@@ -109,7 +110,7 @@ class ByAnswerTest(unittest.TestCase):
     def test_scope_is_fixed_before_ops_so_attach_cannot_launder_a_line(self):
         confirm = ["1. 『坂西さんの対応』と同じ作業？ [is_task ebpm:No1]", "   A 同じ★ / B 別", "   回答: A"]
         doc = todo_md.parse(text(confirm))
-        ba = {"ref": "ebpm:No1", "kind": "is_task"}
+        ba = {"ref": "ebpm:No1", "kind": "is_task", "answer": "A"}
         new, body, fx = self.run_ops([
             {"op": "attach", "ref": "title:インターン資料修正", "key": "ebpm:No1", "url": "https://e/1"},
             {"op": "delete", "ref": "ebpm:No1", "by_answer": ba}], confirm=[], doc=doc)
@@ -125,7 +126,7 @@ class ByAnswerTest(unittest.TestCase):
         confirm = ["1. 『坂西さん』の件は？ [policy rc:x]", "   A a★ / B b", "   回答: 消して"]
         doc = todo_md.parse(text(confirm))
         _, body, _ = self.run_ops([{"op": "delete", "ref": "title:坂西さんの対応",
-                                    "by_answer": {"ref": "rc:x", "kind": "policy"}}], confirm=[], doc=doc)
+                                    "by_answer": {"ref": "rc:x", "kind": "policy", "answer": "消して"}}], confirm=[], doc=doc)
         self.assertEqual(self.skips(body), ["skip: out of answer scope title:坂西さんの対応"])
 
     def test_quote_in_old_format_facts_counts(self):
@@ -133,7 +134,7 @@ class ByAnswerTest(unittest.TestCase):
                    "   回答: 不要"]
         doc = todo_md.parse(text(confirm))
         new, body, _ = self.run_ops([{"op": "move", "ref": "title:坂西さんの対応", "to": "完了",
-                                      "by_answer": {"ref": "rc:x", "kind": "still_needed"}}], confirm=[], doc=doc)
+                                      "by_answer": {"ref": "rc:x", "kind": "still_needed", "answer": "不要"}}], confirm=[], doc=doc)
         self.assertEqual(self.skips(body), [])
         self.assertEqual(new.sections["完了"][0].title, "坂西さんの対応")
 
@@ -161,7 +162,7 @@ class ByAnswerTest(unittest.TestCase):
         confirm = ["1. 完了にした件がまだ開いている。どうする？ [conflict epc#1100]", "   A 完了のまま★ / B 戻す",
                    "   回答: B"]
         doc = todo_md.parse(text(confirm))
-        ba = {"ref": "epc#1100", "kind": "conflict"}
+        ba = {"ref": "epc#1100", "kind": "conflict", "answer": "B"}
         op = {"op": "move", "ref": "epc#1100", "to": "やる", "by_answer": ba}
         recs = [{"ref": "epc#1100", "kind": "intent", "value": "残す", "op": "note"}]
         _, body, _ = self.run_ops([op], confirm=[], doc=doc, records=recs, asked_at=0)
@@ -196,7 +197,7 @@ class ByAnswerTest(unittest.TestCase):
         doc = todo_md.parse(text(["1. 戻す？ [conflict epc#1100]", "   A a★ / B 戻す", "   回答: B"]).replace(
             "## 完了\n", "## 完了\n- [x] 別 [epc#1101](https://g/1101) (done: 2026-11-02)\n"))
         new, _, fx = self.run_ops([{"op": "move", "ref": "epc#1100", "to": "やる",
-                                    "by_answer": {"ref": "epc#1100", "kind": "conflict"}}], confirm=[], doc=doc)
+                                    "by_answer": {"ref": "epc#1100", "kind": "conflict", "answer": "B"}}], confirm=[], doc=doc)
         self.assertEqual(validate(doc, new, human, "ai", fx), [])
         other = new.sections["完了"].pop(0)
         other.done, other.done_date = False, None
@@ -227,6 +228,29 @@ class ByAnswerTest(unittest.TestCase):
         recs = [{"ref": "ebpm:No1", "kind": "intent", "value": "不要", "op": "delete"}]
         _, body, _ = self.run_ops([dict(add, by_answer=BA)], records=recs)
         self.assertEqual(self.skips(body), ["skip: intent_deleted ebpm:No1"])
+
+    def test_changed_or_missing_answer_text_skips_and_holds_the_block(self):
+        op = {"op": "delete", "ref": "title:坂西さんの対応"}
+        for ba in (dict(TAG, answer="消して"), TAG):
+            new, body, fx = self.run_ops([dict(op, by_answer=ba)])
+            self.assertEqual(self.skips(body), ["skip: answer changed title:坂西さんの対応"], ba)
+            self.assertEqual(new.sections["待ち"][0].title, "坂西さんの対応")
+            self.assertEqual(fx.held_answers, {("title:坂西さんの対応", "is_task")})
+            # 今の回答は記録せず回答欄ごと残し、次の /todo が読み直す
+            self.assertEqual(new.confirm[3:], ["2. " + CONFIRM[0].split(". ", 1)[1], *CONFIRM[1:3]])
+            self.assertFalse(any(l.startswith("answer:") for l in body))
+        # 前後の空白の違いは同じ回答
+        _, body, _ = self.run_ops([dict(op, by_answer=dict(BA, answer="  " + BA["answer"] + " "))])
+        self.assertEqual(self.skips(body), [])
+        with self.assertRaises(ChangeError):
+            self.run_ops([dict(op, by_answer=dict(TAG, answer=3))])
+
+    def test_skipped_op_indices_are_reported(self):
+        _, _, fx = self.run_ops([
+            {"op": "set_next", "ref": "epc#1163", "next": "n"},
+            {"op": "set_next", "ref": "epc#9999", "next": "n"},
+            {"op": "delete", "ref": "title:インターン資料修正", "by_answer": BA}])
+        self.assertEqual(fx.skipped, [1, 2])
 
     def test_lines_added_in_the_same_run_are_out_of_scope(self):
         _, body, _ = self.run_ops([
@@ -330,13 +354,44 @@ class ByAnswerCliTest(RepoMixin, unittest.TestCase):
         recs = self.records()
         self.assertEqual([(x["kind"], x["ref"]) for x in recs],
                          [("intent", "title:坂西さんの対応"), ("is_task", "title:坂西さんの対応")])
-        self.assertEqual((recs[0]["by"], recs[0]["op"], recs[0]["by_answer"]), ("human", "delete", BA))
+        self.assertEqual((recs[0]["by"], recs[0]["op"], recs[0]["by_answer"]), ("human", "delete", TAG))
         self.assertEqual(decisions.deleted_refs(recs), ["title:坂西さんの対応"])
         self.assertIsNotNone(decisions.already_answered(recs, "title:坂西さんの対応", "is_task"))
         self.assertTrue(self.head("%s").startswith("todo(ai): "))
         r = self.run_apply({"source": "ai", "ops": [{"op": "add", "section": "待ち", "title": "坂西さんの対応"}]})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertNotIn("坂西さんの対応", self.todo.read_text(encoding="utf-8").split("## やる")[1])
+
+    def test_title_renamed_by_answer_stays_human(self):
+        r = self.run_apply({"source": "ai", "confirm": KEEP2, "ops": [
+            {"op": "edit_title", "ref": "title:坂西さんの対応", "title": "坂西さん対応済みの確認", "by_answer": BA}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        intent = self.records()[0]
+        self.assertEqual((intent["op"], intent["title"]), ("edit_title", "坂西さん対応済みの確認"))
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "title:坂西さん対応済みの確認", "title": "AIが勝手に縮めた"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("- [ ] 坂西さん対応済みの確認", self.todo.read_text(encoding="utf-8"))
+        origins = apply.origin_fn(self.repo, "todo.md", self.records())
+        self.assertEqual(origins("坂西さん対応済みの確認"), "human")
+        self.assertEqual(apply.retitle_fn(self.repo, "todo.md", self.records())("坂西さん対応済みの確認"), "human")
+        before = todo_md.parse(self.todo.read_text(encoding="utf-8"))
+        after = todo_md.parse(self.todo.read_text(encoding="utf-8"))
+        after.sections["待ち"][0].title = "AIが勝手に縮めた"
+        self.assertTrue(any("人が書いたタイトル" in e for e in validate(before, after, origins, "ai")))
+        ctx = context.build(self.todo, self.repo / "todo-decisions.jsonl", TODAY)
+        self.assertEqual([i["origin"] for i in ctx["items"] if i["title"] == "坂西さん対応済みの確認"], ["human"])
+
+    def test_answer_rewritten_after_todo_read_it_deletes_nothing(self):
+        self.commit(text(CONFIRM[:2] + ["   回答: やっぱり残す"] + CONFIRM[3:]))
+        r = self.run_apply({"source": "ai", "confirm": KEEP2, "ops": [
+            {"op": "delete", "ref": "title:坂西さんの対応", "by_answer": BA}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        t = self.todo.read_text(encoding="utf-8")
+        self.assertIn("- [ ] 坂西さんの対応", t)
+        self.assertIn("   回答: やっぱり残す", t)
+        self.assertEqual(self.records(), [])
+        self.assertIn("skip: answer changed title:坂西さんの対応", self.head("%b"))
 
     def test_out_of_scope_delete_changes_nothing(self):
         before = self.todo.read_text(encoding="utf-8")
@@ -351,7 +406,7 @@ class ByAnswerCliTest(RepoMixin, unittest.TestCase):
         self.commit(text(confirm), msg="todo(ai): 確認待ち1")
         self.commit(text(confirm[:2] + ["   回答: B"]))
         r = self.run_apply({"source": "ai", "confirm": [], "ops": [
-            {"op": "move", "ref": "epc#1100", "to": "やる", "by_answer": {"ref": "epc#1100", "kind": "conflict"}}]})
+            {"op": "move", "ref": "epc#1100", "to": "やる", "by_answer": {"ref": "epc#1100", "kind": "conflict", "answer": "B"}}]})
         self.assertEqual(r.returncode, 0, r.stderr)
         recs = self.records()
         self.assertEqual([x["kind"] for x in recs], ["intent", "conflict", "revert_move"])

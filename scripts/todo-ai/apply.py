@@ -72,6 +72,8 @@ class Effects:
     任意で "prev_ref"}）、answer_deleted / answer_retitled / answer_reopened は消した・題を変えた・完了から出した行の
     実行前の状態で、source ai の validate の免除に使う。
     pending は confirm を書いた実行での todo-pending.json の中身（on_answer のあるブロック）。confirm が無ければ None。
+    held_answers は by_answer の回答文が今の回答欄と違ったブロックの (ref, kind)。記録せず回答欄ごと確認待ちに残す。
+    skipped は飛ばした op の ops 内の位置（同じ op が2回入ることもある）。
     """
 
     intents: "list[dict]" = field(default_factory=list)
@@ -84,6 +86,8 @@ class Effects:
     answer_retitled: "list[Item]" = field(default_factory=list)
     answer_reopened: "list[Item]" = field(default_factory=list)
     pending: "list[dict] | None" = None
+    held_answers: "set[tuple[str, str]]" = field(default_factory=set)
+    skipped: "list[int]" = field(default_factory=list)
 
 
 def _str(op: dict, name: str, required: bool = True) -> "str | None":
@@ -438,10 +442,13 @@ def apply_changes(
             answer_blocks[(ref, kind)] = (b, [(it, copy.deepcopy(it)) for s in TASK_SECTIONS
                                               for it in doc.sections[s] if in_answer_scope(it, b)])
 
+    current = [-1]
+
     def skip(msg: str) -> None:
         if user:
             raise ChangeError(f"user の変更を適用できない: {msg}")
         body.append(f"skip: {msg}")
+        fx.skipped.append(current[0])
 
     present = {it.ref for s in TASK_SECTIONS for it in doc.sections[s]}
     deleted = set(decisions.deleted_refs(records, present)) if source == "ai" else set()
@@ -464,7 +471,7 @@ def apply_changes(
         skip(f"{'unknown' if not hits else 'ambiguous'} ref {ref}")
         return None
 
-    for op in ops:
+    for current[0], op in enumerate(ops):
         if not isinstance(op, dict):
             raise ChangeError(f"op が object でない: {op!r}")
         kind = op.get("op")
@@ -477,6 +484,8 @@ def apply_changes(
                 raise ChangeError(f"{kind}: by_answer が {{ref, kind}} でない: {ba!r}")
             if kind not in ANSWER_OPS:
                 raise ChangeError(f"{kind} に by_answer は付けられない")
+            if ba.get("answer") is not None and not isinstance(ba["answer"], str):
+                raise ChangeError(f"{kind}: by_answer の answer が文字列でない: {ba!r}")
         if kind in USER_OPS and not user and not (source == "ai" and (kind in AI_OPS or ba is not None)):
             raise ChangeError(f"{kind} は user だけが使える")
         answer = None
@@ -484,6 +493,11 @@ def apply_changes(
             answer = answer_blocks.get((ba["ref"], ba["kind"]))
             if answer is None:
                 skip(f"no answer {ba['ref']}")
+                continue
+            # /todo が読んだ後に人が回答を書き換えていたら、古い回答で行を触らず、新しい回答を次の実行に残す
+            if (ba.get("answer") or "").strip() != answer[0]["回答"].strip():
+                fx.held_answers.add((ba["ref"], ba["kind"]))
+                skip(f"answer changed {ba['ref']}")
                 continue
 
         def scoped(it: Item) -> "Item | None":
@@ -666,6 +680,7 @@ def apply_changes(
             for now, prev in refs_out:
                 fx.answer_intents.append({"ref": now, "value": _answer_value(answer[0]), "op": kind,
                                           "by_answer": {"ref": ba["ref"], "kind": ba["kind"]},
+                                          **({"title": op["title"]} if kind == "edit_title" else {}),
                                           **({"prev_ref": prev} if prev != now else {})})
     # 後の op で改名・再移動されうるので、最後の状態で取る
     for it in reopened:
@@ -685,8 +700,9 @@ def apply_changes(
                 raise ChangeError(f"keep_answered が回答のある確認待ちのブロック1つに当たらない: {k!r}")
         if any(isinstance(e, dict) and (e.get("ref"), e.get("kind")) in keep for e in entries):
             raise ChangeError("keep_answered のブロックを confirm にも書いている")
-        held = [b for b in old_blocks if b["回答"].strip() and tuple(reversed(parse_tag(b["question"]))) in keep]
-        done_now = {(ref, kind) for ref, kind, _ in consumed_answers(old_blocks, keep)
+        holding = keep | fx.held_answers
+        held = [b for b in old_blocks if b["回答"].strip() and tuple(reversed(parse_tag(b["question"]))) in holding]
+        done_now = {(ref, kind) for ref, kind, _ in consumed_answers(old_blocks, holding)
                     if not stale_answer(records, ref, kind, asked_at)}
         if answered is not None:
             _check_answers(old_blocks, answered)
@@ -700,7 +716,9 @@ def apply_changes(
 
         kept = []
         for e in entries:
-            if isinstance(e, dict) and done(e):
+            if isinstance(e, dict) and (e.get("ref"), e.get("kind")) in fx.held_answers:
+                body.append(f"skip: answer changed {e['kind']} {e['ref']}")
+            elif isinstance(e, dict) and done(e):
                 body.append(f"skip: answered {e['kind']} {e['ref']}")
             else:
                 kept.append(e)
@@ -724,6 +742,17 @@ def apply_changes(
                     body.append(f"answer: {b['lines'][0]}")
                     body.extend(b["lines"][1:])
     return doc, body
+
+
+def origin_fn(repo: Path, name: str, records: "list[dict]") -> Callable[[str], str]:
+    """origin_of に、確認待ちの回答で人の行に付けた題（todo(ai) のコミットで入る）を "human" と見なす判定を足したもの。"""
+    human = decisions.answer_titles(records)
+    return lambda t: "human" if t in human else origin_of(repo, name, t)
+
+
+def retitle_fn(repo: Path, name: str, records: "list[dict]") -> Callable[[str], str]:
+    human = decisions.answer_titles(records)
+    return lambda t: "human" if t in human else _retitle_origin(repo, name, t)
 
 
 def _retitle_origin(repo: Path, name: str, title: str) -> str:
@@ -1002,13 +1031,15 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
             asked_at = (confirm_asked_at(repo, name, dpath)
                         if any(kind == "conflict" for _, kind, _ in blocks_now) else None)
             fx = Effects()
-            after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today,
+            origins = origin_fn(repo, name, old_records)
+            after, body = apply_changes(before, changes, origins, today,
                                         old_records + new_records, effects=fx, asked_at=asked_at,
-                                        retitle_origins=lambda t: _retitle_origin(repo, name, t))
+                                        retitle_origins=retitle_fn(repo, name, old_records))
         except ValueError as e:
             print(f"apply: 未適用: {e}", file=sys.stderr)
             return 2
-        errs = validate(before, after, lambda t: origin_of(repo, name, t), source, fx) + roundtrip_errors(after)
+        blocks_now = [r for r in blocks_now if (r[0], r[1]) not in fx.held_answers]
+        errs = validate(before, after, origins, source, fx) + roundtrip_errors(after)
         if "confirm" in changes:
             errs += confirm_edit_errors(before.confirm, _last_written_confirm(repo, name))
         if errs:
@@ -1019,6 +1050,7 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
         for i in fx.answer_intents:
             new_records.append({"ts": ts, "ref": i["ref"], "kind": "intent", "value": i["value"], "by": "human",
                                 "op": i["op"], "by_answer": i["by_answer"],
+                                **({"title": i["title"]} if "title" in i else {}),
                                 **({"prev_ref": i["prev_ref"]} if "prev_ref" in i else {})})
         for ref, kind, ans in blocks_now:
             new_records.append({"ts": ts, "ref": ref, "kind": kind, "value": ans, "by": "human",

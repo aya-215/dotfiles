@@ -45,7 +45,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import apply
 import decisions
 import todo_md
-from origin import origin_of
 
 KINDS = apply.KINDS
 MAX_INTENTS = 5
@@ -127,6 +126,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
     records = decisions.load(decisions_path)
     records = records + decisions.detect_reverts(repo, name, records)
     t = datetime.date.fromisoformat(today)
+    origin_of = apply.origin_fn(repo, name, records)
 
     items = []
     for section in todo_md.TASK_SECTIONS:
@@ -135,7 +135,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
             items.append({
                 "ref": it.ref, "section": section, "title": it.title, "key": it.key, "url": it.url,
                 "next": it.next, "done": it.done, "done_date": it.done_date,
-                "origin": origin_of(repo, name, it.title),
+                "origin": origin_of(it.title),
                 "added_date": added,
                 "age_days": (t - datetime.date.fromisoformat(added)).days if added else None,
                 "pinned_to": decisions.pinned_sections(records, it.ref),
