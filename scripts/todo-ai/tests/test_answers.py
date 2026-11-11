@@ -248,6 +248,42 @@ class AnswersTest(unittest.TestCase):
         self.answer("A")
         self.assert_untouched(self.run_answers(), self.head())
 
+    def test_choice_whose_ops_would_skip_is_left_for_todo(self):
+        self.ask(IS_TASK, STILL)
+        t = self.todo.read_text(encoding="utf-8").replace("- [ ] 坂西さんの対応", "- [ ] 坂西さんの対応（済）")
+        self.todo.write_text(t, encoding="utf-8")
+        git(self.repo, "commit", "-q", "-am", "todo: rename")
+        self.answer(None, "B")
+        self.assert_untouched(self.run_answers(), self.head())
+        # 効かない選択だけ回答欄ごと残し、効く選択は反映する
+        git(self.repo, "reset", "-q", "--hard", "HEAD~1")
+        self.answer("A", "B")
+        r = self.run_answers()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        doc = self.doc()
+        self.assertEqual([it.title for it in doc.sections["やる"]][-1], "z の件")
+        self.assertEqual(doc.sections["待ち"][0].title, "坂西さんの対応（済）")
+        self.assertEqual(doc.confirm[-1], "   回答:B")
+        self.assertEqual([(x["kind"], x["ref"]) for x in self.records()],
+                         [("intent", "title:z の件"), ("is_task", "title:z の件")])
+        self.assertNotIn("skip:", git(self.repo, "log", "-1", "--format=%b"))
+
+    def test_log_names_carry_pid_and_any_error_is_logged(self):
+        self.ask(IS_TASK)
+        self.answer("A")
+        r = self.run_answers()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        names = [p.name for p in self.logs.rglob("answers-*")]
+        self.assertTrue(names and all(len(n.split(".")[0].split("-")) == 3 for n in names), names)
+        os.chmod(self.todo, 0)
+        try:
+            r = self.run_answers()
+        finally:
+            os.chmod(self.todo, 0o644)
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stderr, "")
+        err, = [p for p in self.logs.rglob("answers-*.err") if "PermissionError" in p.read_text(encoding="utf-8")]
+
     def test_nvim_editing_propagates_apply_exit_and_logs(self):
         self.ask(IS_TASK)
         self.answer("A")

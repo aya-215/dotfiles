@@ -9,7 +9,8 @@ nvim のポップアップを閉じたときに裏で起動される。対象は
 
 使い方: answers.py [--todo PATH] [--decisions PATH] [--log-dir DIR] [--today YYYY-MM-DD]
 終了コード: 0 反映した・対象が無い / 1 todo.md を読めない等のエラー / それ以外は apply.py の終了コード
-ログ: <log-dir>/<日付>/answers-<HHMMSS>.{json,out,err}（対象があったか、エラーのときだけ）
+選んだ文字の ops が apply で1つでも飛ばされる（行が消えた・名前が変わった等）ブロックも、回答欄ごと /todo に回す。
+ログ: <log-dir>/<日付>/answers-<HHMMSS>-<PID>.{json,out,err}（対象があったか、エラーのときだけ）
 """
 import argparse
 import datetime
@@ -17,6 +18,7 @@ import json
 import os
 import subprocess
 import sys
+import traceback
 from collections import Counter
 from pathlib import Path
 
@@ -36,7 +38,7 @@ def _entry(b: dict, pending: "list[dict]") -> dict:
             "options": apply.parse_options(b["選択"]), **({"on_answer": on} if on is not None else {})}
 
 
-def plan(todo: Path, dpath: Path) -> "tuple[dict | None, str]":
+def plan(todo: Path, dpath: Path, today: str) -> "tuple[dict | None, str]":
     """反映する変更案と、無ければその理由。"""
     repo, name = todo.parent, todo.name
     doc = todo_md.parse(todo.read_text(encoding="utf-8"))
@@ -58,6 +60,7 @@ def plan(todo: Path, dpath: Path) -> "tuple[dict | None, str]":
     if errs:
         return None, errs[0]
     records = decisions.load(dpath)
+    records = records + decisions.detect_reverts(repo, name, records)
     asked_at = None
     targets = []
     for b, (ref, kind) in zip(blocks, tags):
@@ -72,25 +75,37 @@ def plan(todo: Path, dpath: Path) -> "tuple[dict | None, str]":
             if apply.stale_answer(records, ref, kind, asked_at):
                 continue
         targets.append((b, on[label]))
-    if not targets:
-        return None, "選択肢の文字1つで変更案のある回答が無い"
-    chosen = [b for b, _ in targets]
-    # 書き直した確認待ちが conflict の回答の古さの基準になるので、問いの後に記録された意図を見落とさないよう持ち越さない
-    if any(kind == "conflict" and all(b is not c for c in chosen) for b, (_, kind) in zip(blocks, tags)):
-        return None, "持ち越す conflict の問いがある"
-    ops = [dict(op, by_answer={"ref": ref, "kind": kind})
-           for b, todo_ops in targets for op in todo_ops
-           for kind, ref in [apply.parse_tag(b["question"])]]
-    changes = {
-        "source": "ai",
-        "ops": ops,
-        "confirm": [_entry(b, pending) for b in blocks if not b["回答"].strip()],
-        "keep_answered": [{"ref": ref, "kind": kind} for b, (ref, kind) in zip(blocks, tags)
-                          if b["回答"].strip() and all(b is not c for c in chosen)],
-        "answered": [{"ref": ref, "kind": kind, "answer": b["回答"].strip()}
-                     for b, (ref, kind) in zip(blocks, tags) if b["回答"].strip()],
-    }
-    return changes, f"{len(targets)} 件"
+    origins, retitle = apply.origin_fn(repo, name, records), apply.retitle_fn(repo, name, records)
+    while True:
+        if not targets:
+            return None, "選択肢の文字1つで効く変更案のある回答が無い"
+        chosen = [b for b, _ in targets]
+        # 書き直した確認待ちが conflict の回答の古さの基準になるので、問いの後に記録された意図を見落とさないよう持ち越さない
+        if any(kind == "conflict" and all(b is not c for c in chosen) for b, (_, kind) in zip(blocks, tags)):
+            return None, "持ち越す conflict の問いがある"
+        owner, ops = [], []
+        for b, todo_ops in targets:
+            kind, ref = apply.parse_tag(b["question"])
+            for op in todo_ops:
+                owner.append(b)
+                ops.append(dict(op, by_answer={"ref": ref, "kind": kind, "answer": b["回答"].strip()}))
+        changes = {
+            "source": "ai",
+            "ops": ops,
+            "confirm": [_entry(b, pending) for b in blocks if not b["回答"].strip()],
+            "keep_answered": [{"ref": ref, "kind": kind} for b, (ref, kind) in zip(blocks, tags)
+                              if b["回答"].strip() and all(b is not c for c in chosen)],
+            "answered": [{"ref": ref, "kind": kind, "answer": b["回答"].strip()}
+                         for b, (ref, kind) in zip(blocks, tags) if b["回答"].strip()],
+        }
+        # 選んだ変更が飛ばされると回答だけ記録されて黙って効かないので、飛ぶ op のある選択は回答欄ごと /todo に回す
+        fx = apply.Effects()
+        apply.apply_changes(doc, changes, origins, today, records, effects=fx, asked_at=asked_at,
+                            retitle_origins=retitle)
+        bad = [owner[i] for i in fx.skipped if 0 <= i < len(owner)]
+        if not bad:
+            return changes, f"{len(targets)} 件"
+        targets = [(b, o) for b, o in targets if all(b is not x for x in bad)]
 
 
 def main(argv=None) -> int:
@@ -104,22 +119,28 @@ def main(argv=None) -> int:
     dpath = (a.decisions or todo.parent / decisions.DECISIONS_NAME).expanduser().absolute()
     now = datetime.datetime.now()
     logs = a.log_dir.expanduser() / now.strftime("%Y-%m-%d")
-    stem = f"answers-{now.strftime('%H%M%S')}"
+    stem = f"answers-{now.strftime('%H%M%S')}-{os.getpid()}"
     try:
-        changes, _ = plan(todo, dpath)
-    except (OSError, ValueError, RuntimeError) as e:
+        changes, _ = plan(todo, dpath, a.today)
+        if changes is None:
+            return 0
         logs.mkdir(parents=True, exist_ok=True)
-        (logs / f"{stem}.err").write_text(f"answers: {type(e).__name__}: {e}\n", encoding="utf-8")
+        cf = logs / f"{stem}.json"
+        cf.write_text(json.dumps(changes, ensure_ascii=False, indent=1), encoding="utf-8")
+        with open(logs / f"{stem}.out", "w", encoding="utf-8") as out, \
+                open(logs / f"{stem}.err", "w", encoding="utf-8") as err:
+            r = subprocess.run([sys.executable, "-I", APPLY, "--changes", str(cf), "--todo", str(todo),
+                                "--decisions", str(dpath), "--today", a.today], stdout=out, stderr=err)
+        return r.returncode
+    except Exception as e:
+        # 裏で起動され標準エラーは捨てられるので、何が起きてもログに残す
+        try:
+            logs.mkdir(parents=True, exist_ok=True)
+            with open(logs / f"{stem}.err", "a", encoding="utf-8") as f:
+                f.write(f"answers: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        except OSError:
+            pass
         return 1
-    if changes is None:
-        return 0
-    logs.mkdir(parents=True, exist_ok=True)
-    cf = logs / f"{stem}.json"
-    cf.write_text(json.dumps(changes, ensure_ascii=False, indent=1), encoding="utf-8")
-    with open(logs / f"{stem}.out", "w", encoding="utf-8") as out, open(logs / f"{stem}.err", "w", encoding="utf-8") as err:
-        r = subprocess.run([sys.executable, "-I", APPLY, "--changes", str(cf), "--todo", str(todo),
-                            "--decisions", str(dpath), "--today", a.today], stdout=out, stderr=err)
-    return r.returncode
 
 
 if __name__ == "__main__":
