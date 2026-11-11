@@ -185,6 +185,20 @@ class E2EFlow(unittest.TestCase):
         self.assertIn("来週聞く", self.todo.read_text(encoding="utf-8"))
 
 
+    def test_user_set_next_records_intent_and_needs_allow_user(self):
+        self.human_commit(migrate.migrate(OLD), "2026-10-01")
+        intent = "「eas#60 のマージ後にレビュー依頼する」と指示された。マージまで残す"
+        changes = {"source": "user", "ops": [
+            {"op": "set_next", "ref": "epc#1202", "next": "eas#60 のマージ後にレビュー依頼する", "intent": intent}]}
+        res = self.apply(changes, 1)
+        self.assertEqual(res.returncode, 2, res.stderr)
+        self.assertEqual([r for r in self.records() if r.get("kind") == "intent"], [])
+        res = self.apply(changes, 2, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual([(r["ref"], r["value"], r["by"]) for r in self.records() if r.get("kind") == "intent"],
+                         [("epc#1202", intent, "human")])
+        self.assertTrue(self.git("log", "-1", "--format=%s").startswith("todo(user): "))
+
     def test_intent_line_is_asked_not_completed_by_ai(self):
         self.human_commit(migrate.migrate(OLD), "2026-10-01")
         intent = "坂西さんから日程の返事が来るまで残す"
