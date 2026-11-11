@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import todo_md
 
 BALLS = ("mine", "theirs", "maybe_done")
-SOURCES = ("daily", "rocketchat", "github", "gitbucket", "worktree", "sessions", "mail")
+SOURCES = ("daily", "rocketchat", "github", "gitbucket", "worktree", "sessions", "mail", "ebpm")
 _REQUIRED = ("key", "url", "title", "ball", "next", "evidence", "deadline",
              "waiting_person", "blocks")
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")

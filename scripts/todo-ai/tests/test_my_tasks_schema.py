@@ -63,7 +63,7 @@ class ValidateCandidatesTest(unittest.TestCase):
     def test_sources_failed(self):
         d = load()
         self.assertEqual(d["sources_failed"], [])
-        d["sources_failed"] = ["rocketchat", "mail"]
+        d["sources_failed"] = ["rocketchat", "mail", "ebpm"]
         self.assertEqual(my_tasks_schema.validate_candidates(d), [])
         del d["sources_failed"]
         self.assertEqual(my_tasks_schema.validate_candidates(d), [])

@@ -21,6 +21,7 @@ has() {
 cat > "$TMP/claude" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$@" > "$STUB_ARGS"
+echo "TODO_AI_DENY_USER=${TODO_AI_DENY_USER:-}" > "$STUB_ARGS.env"
 echo "STUB OUTPUT"
 exit "${STUB_RC:-0}"
 EOF
@@ -51,6 +52,7 @@ has "claude に /todo" "$STUB_ARGS" "/todo"
 has "claude に disableAllHooks" "$STUB_ARGS" '{"disableAllHooks":true}'
 log="$(ls "$TODO_AI_LOG_ROOT/$day"/run-*.log 2>/dev/null | head -1)"
 has "ログにスタブの出力" "$log" "STUB OUTPUT"
+has "claude に TODO_AI_DENY_USER=1 を渡す" "$STUB_ARGS.env" "TODO_AI_DENY_USER=1"
 
 # claude の失敗は終了コードで返す
 rc=0; STUB_RC=7 bash "$RUN" > /dev/null 2>&1 || rc=$?

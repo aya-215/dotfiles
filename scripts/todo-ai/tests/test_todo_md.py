@@ -94,9 +94,9 @@ class TestTodoMd(unittest.TestCase):
 
     def test_is_key(self):
         for k in ["epc#1", "emm#22", "eae#3", "eas#4", "gb:repo-x#5",
-                  "rc:abc123", "rc:abc123#2", "mail:CAF+x.y", "wt:feat-foo"]:
+                  "rc:abc123", "rc:abc123#2", "mail:CAF+x.y", "wt:feat-foo", "ebpm:No00007400"]:
             self.assertTrue(is_key(k), k)
-        for k in ["foo#1", "epc#", "gb:#1", "rc:", "officeのteams資料修正", "epc#1a", ""]:
+        for k in ["foo#1", "epc#", "gb:#1", "rc:", "officeのteams資料修正", "epc#1a", "", "ebpm:7400", "ebpm:"]:
             self.assertFalse(is_key(k), k)
 
     def test_render_rejects_key_without_url(self):

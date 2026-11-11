@@ -63,10 +63,10 @@ class E2EFlow(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         return json.loads(res.stdout)
 
-    def apply(self, changes, n):
+    def apply(self, changes, n, *extra):
         cp = self.logs / f"changes-{n}.json"
         cp.write_text(json.dumps(changes, ensure_ascii=False), encoding="utf-8")
-        return self.script("apply.py", "--changes", str(cp), "--todo", str(self.todo), "--today", TODAY)
+        return self.script("apply.py", "--changes", str(cp), "--todo", str(self.todo), "--today", TODAY, *extra)
 
     def section(self, name):
         return todo_md.parse(self.todo.read_text(encoding="utf-8")).sections[name]
@@ -84,7 +84,8 @@ class E2EFlow(unittest.TestCase):
         old = {i["ref"]: i for i in ctx["items"]}
         self.assertEqual((old["rc:old1"]["origin"], old["rc:old1"]["age_days"]), ("human", 40))
         self.assertEqual(ctx["confirm_blocks"], [])
-        is_task_ref = "title:合田さんへのコンテナ設置依頼の返信"
+        # key の無い maybe_done（合田さん）は問わず、key の無い theirs だけを is_task にする
+        is_task_ref = "title:検証環境の利用申請"
         res = self.apply({"source": "ai", "ops": [
             {"op": "add", "section": "やる", "key": "epc#1163",
              "url": "https://github.com/ebase-dev/ebase-portal-chat/pull/1163",
@@ -103,8 +104,8 @@ class E2EFlow(unittest.TestCase):
              "options": [{"label": "A", "text": "要る", "recommended": False},
                          {"label": "B", "text": "不要（完了にする）", "recommended": True}]},
             {"ref": is_task_ref, "kind": "is_task",
-             "question": "合田さんへのコンテナ設置依頼の返信はタスク？",
-             "facts": "Sent に「Re: コンテナ設置のお願い」あり",
+             "question": "検証環境の利用申請はタスク？",
+             "facts": "Sent に「検証環境の利用申請」2026-11-06、返信なし / ball: theirs",
              "options": [{"label": "A", "text": "タスクとして追加", "recommended": False},
                          {"label": "B", "text": "タスクではない", "recommended": True}]},
         ]}, 1)
@@ -122,15 +123,15 @@ class E2EFlow(unittest.TestCase):
         # 2回目: 回答の反映（apply が回答欄のタグから記録する。未回答の問いは context から写し直す）
         ctx = self.context()
         self.assertEqual(ctx["confirm_errors"], [])
-        self.assertEqual(ctx["answered_now"], [{"ref": "rc:old1", "kind": "still_needed", "answer": "B"}])
+        self.assertEqual(ctx["answered_now"], [{"ref": "rc:old1", "kind": "still_needed", "answer": "B", "superseded": False}])
         keep = [{k: b[k] for k in ("ref", "kind", "question", "facts", "options")}
                 for b in ctx["confirm_blocks"] if not b["answer"]]
         res = self.apply({"source": "ai", "ops": [
             {"op": "move", "ref": "rc:old1", "to": "完了", "reason": "確認待ちの回答 B（不要）"},
         ], "confirm": keep}, 2)
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertEqual([(r["ref"], r["kind"], r["value"]) for r in self.records()],
-                         [("rc:old1", "still_needed", "B")])
+        self.assertEqual([(r["ref"], r["kind"], r.get("value", r.get("prev_ref"))) for r in self.records()],
+                         [("rc:Xk3p9aQ2#1", "alias", "title:インターン資料修正"), ("rc:old1", "still_needed", "B")])
         done = {it.ref: it for it in self.section("完了")}
         self.assertEqual(done["rc:old1"].done_date, TODAY)
         self.assertIn("title:済んだこと", done)
@@ -138,9 +139,10 @@ class E2EFlow(unittest.TestCase):
         # 3回目: 同じ問いは出ない
         ctx = self.context()
         self.assertEqual([(b["ref"], b["kind"], b["question"]) for b in ctx["confirm_blocks"]],
-                         [(is_task_ref, "is_task", "合田さんへのコンテナ設置依頼の返信はタスク？")])
+                         [(is_task_ref, "is_task", "検証環境の利用申請はタスク？")])
         self.assertEqual(ctx["answered_now"], [])
-        self.assertIn({"ref": "rc:old1", "kind": "still_needed", "value": "B", "ts": self.records()[0]["ts"]},
+        self.assertIn({"ref": "rc:old1", "kind": "still_needed", "value": "B", "ts": self.records()[1]["ts"],
+                       "superseded": False},
                       ctx["answered_refs"])
         self.assertIsNotNone(decisions.already_answered(self.records(), "rc:old1", "still_needed"))
         keep = [{k: b[k] for k in ("ref", "kind", "question", "facts", "options")} for b in ctx["confirm_blocks"]]
@@ -148,7 +150,7 @@ class E2EFlow(unittest.TestCase):
         res = self.apply({"source": "ai", "ops": [], "confirm": keep, "answered": ctx["answered_now"]}, 3)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
-        self.assertEqual(len(self.records()), 1)
+        self.assertEqual(len(self.records()), 2)
 
     def test_human_edited_question_reported_and_ops_still_apply_without_confirm(self):
         self.human_commit(migrate.migrate(OLD), "2026-10-01")
@@ -182,6 +184,125 @@ class E2EFlow(unittest.TestCase):
         res = self.apply({"source": "ai", "ops": [], "confirm": []}, 6)
         self.assertEqual(res.returncode, 2, res.stdout)
         self.assertIn("来週聞く", self.todo.read_text(encoding="utf-8"))
+
+
+    def test_user_set_next_records_intent_and_needs_allow_user(self):
+        self.human_commit(migrate.migrate(OLD), "2026-10-01")
+        intent = "「eas#60 のマージ後にレビュー依頼する」と指示された。マージまで残す"
+        changes = {"source": "user", "ops": [
+            {"op": "set_next", "ref": "epc#1202", "next": "eas#60 のマージ後にレビュー依頼する", "intent": intent}]}
+        res = self.apply(changes, 1)
+        self.assertEqual(res.returncode, 2, res.stderr)
+        self.assertEqual([r for r in self.records() if r.get("kind") == "intent"], [])
+        res = self.apply(changes, 2, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual([(r["ref"], r["value"], r["by"]) for r in self.records() if r.get("kind") == "intent"],
+                         [("epc#1202", intent, "human")])
+        self.assertTrue(self.git("log", "-1", "--format=%s").startswith("todo(user): "))
+
+    def test_intent_line_is_asked_not_completed_by_ai(self):
+        self.human_commit(migrate.migrate(OLD), "2026-10-01")
+        intent = "坂西さんから日程の返事が来るまで残す"
+        res = self.apply({"source": "user", "ops": [
+            {"op": "set_next", "ref": "rc:old1", "next": "日程の返事待ち", "intent": intent}]}, 1, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+
+        ctx = self.context()
+        line = next(i for i in ctx["items"] if i["ref"] == "rc:old1")
+        self.assertEqual([x["value"] for x in line["intents"]], [intent])
+        # 候補が決着を示しても、意図のある行は完了にせず conflict で聞く（move を作らない）
+        res = self.apply({"source": "ai", "ops": [], "confirm": [
+            {"ref": "rc:old1", "kind": "conflict", "question": "意図は「返事まで残す」だが返信済みに見える。完了にする？",
+             "facts": f"意図: {intent} / evidence: 「了解です、では来週で」",
+             "options": [{"label": "A", "text": "意図どおりにする", "recommended": True},
+                         {"label": "B", "text": "完了にする", "recommended": False}]}]}, 2)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("rc:old1", [it.ref for it in self.section("やる")])
+        self.assertNotIn("rc:old1", [it.ref for it in self.section("完了")])
+        self.assertEqual(self.section("やる")[[it.ref for it in self.section("やる")].index("rc:old1")].next,
+                         "日程の返事待ち")
+        self.assertEqual([(b["ref"], b["kind"]) for b in self.context()["confirm_blocks"]], [("rc:old1", "conflict")])
+
+    def test_ai_readd_of_user_deleted_ref_is_skipped(self):
+        # 人が書いた行なので、消しても reject_add には残らない。意図の記録だけが足し直しを止める
+        self.human_commit(migrate.migrate(OLD), "2026-10-01")
+        res = self.apply({"source": "user", "ops": [
+            {"op": "delete", "ref": "rc:old1", "intent": "坂西さんの件は河合さんが引き取った"}]}, 1, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+
+        ctx = self.context()
+        self.assertEqual(ctx["deleted_refs"], ["rc:old1"])
+        self.assertEqual(ctx["rejected_refs"], [])
+        self.assertNotIn("rc:old1", [i["ref"] for i in ctx["items"]])
+        # 規則を外れて足し直す案が来ても、apply がその op だけ飛ばし、他の op は通す
+        res = self.apply({"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "key": "rc:old1", "url": "https://rc.example/direct/x?msg=old1",
+             "title": "坂西さんへの返信", "reason": "未返信"},
+            {"op": "add", "section": "待ち", "key": "gb:tamaki-ai-training#42",
+             "url": "https://gitbucket.example/AI_dev/tamaki-ai-training/pull/42",
+             "title": "研修PR#42 の再レビュー", "next": "玉木さんの修正待ち", "reason": "Request Changes 済み"}]}, 2)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("skip: intent_deleted rc:old1", self.git("log", "-1", "--format=%b"))
+        refs = [i["ref"] for i in self.context()["items"]]
+        self.assertNotIn("rc:old1", refs)
+        self.assertIn("gb:tamaki-ai-training#42", refs)
+
+    def test_cleanup_line_is_dated_and_not_readded_after_user_deletes_it(self):
+        self.human_commit(migrate.migrate(OLD), "2026-10-01")
+        first = "後片付け（2026-11-10）"
+        res = self.apply({"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "title": first, "next": "epc-1163 の worktree 削除", "reason": "r"}]}, 1)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        res = self.apply({"source": "ai", "ops": [{"op": "move", "ref": f"title:{first}", "to": "完了", "reason": "0件"}]}, 2)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        # 翌日の後片付けは別の題なので、完了の行と ref が重ならず set_next が通る
+        second = "後片付け（2026-11-11）"
+        res = self.apply({"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "title": second, "next": "a", "reason": "r"},
+            {"op": "set_next", "ref": f"title:{second}", "next": "a; b", "reason": "r"}]}, 3)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("skip:", self.git("log", "-1", "--format=%b"))
+        self.assertEqual(next(it for it in self.section("やる") if it.title == second).next, "a; b")
+
+        res = self.apply({"source": "user", "ops": [
+            {"op": "delete", "ref": f"title:{second}", "intent": "後片付けは自分で管理する"}]}, 4, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        head = self.git("rev-parse", "HEAD")
+        res = self.apply({"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "title": "後片付け（2026-11-12）", "next": "c", "reason": "r"}]}, 5)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self.git("rev-parse", "HEAD"), head)
+        self.assertFalse(any(it.title.startswith("後片付け") for it in self.section("やる")))
+
+    def test_superseded_answer_is_reasked_with_newer_intent(self):
+        self.human_commit(migrate.migrate(OLD), "2026-10-01")
+        first, newer = "坂西さんから日程の返事が来るまで残す", "日程が決まっても議事録を送るまで残す"
+        res = self.apply({"source": "user", "ops": [{"op": "note", "ref": "rc:old1", "intent": first}]}, 1, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        q = {"ref": "rc:old1", "kind": "conflict", "question": "意図は「返事まで残す」だが返信済みに見える。完了にする？",
+             "facts": f"意図: {first} / evidence: 「了解です、では来週で」",
+             "options": [{"label": "A", "text": "意図どおりにする", "recommended": True},
+                         {"label": "B", "text": "完了にする", "recommended": False}]}
+        res = self.apply({"source": "ai", "ops": [], "confirm": [q]}, 2)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.human_commit(self.todo.read_text(encoding="utf-8").replace("   回答:", "   回答: B", 1), "2026-11-10")
+        res = self.apply({"source": "user", "ops": [{"op": "note", "ref": "rc:old1", "intent": newer}]}, 3, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+
+        ctx = self.context()
+        self.assertEqual(ctx["answered_now"], [{"ref": "rc:old1", "kind": "conflict", "answer": "B", "superseded": True}])
+        # SKILL: superseded の回答は従わず、同じ ref・kind で新しい意図を facts に入れて問い直す（報告にも出す）
+        res = self.apply({"source": "ai", "ops": [], "confirm": [dict(
+            q, question="意図が更新された。返信済みだが完了にする？",
+            facts=f"新しい意図: {newer} / 前の回答: B 完了にする / evidence: 「了解です、では来週で」")]}, 4)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("skip: answered", self.git("log", "-1", "--format=%b"))
+        stale = [r for r in self.records() if r.get("kind") == "conflict"]
+        self.assertEqual([(r["ref"], r["value"], r.get("stale")) for r in stale], [("rc:old1", "B", True)])
+        blocks = self.context()["confirm_blocks"]
+        self.assertEqual([(b["ref"], b["kind"], b["answer"]) for b in blocks], [("rc:old1", "conflict", "")])
+        self.assertIn(newer, blocks[0]["facts"])
+        self.assertIn("rc:old1", [it.ref for it in self.section("やる")])
 
 
 if __name__ == "__main__":
