@@ -820,4 +820,21 @@ err="$(cat "$TMP/syncfalse.err")"
 assert_grep "syncThreadsListがsuccess:falseの場合もstderrに記録される" \
   "ルーム room-syncfalse のスレッド一覧取得に失敗しスキップ" "$err"
 
+# --with-ids: 各発言行に {id:<_id>}、ルーム見出しに rid/t/permalink 接頭辞を付ける。
+# 既定出力には一切出さない（日報など既存の利用側を変えないため）。
+out_plain="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm 2>/dev/null)"
+out_ids="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm --with-ids 2>/dev/null)"
+assert_absent "既定出力に {id: が出ない" '{id:' "$out_plain"
+assert_absent "既定出力に {rid: が出ない" '{rid:' "$out_plain"
+assert_grep "--with-ids で発言行に {id:o1} が付く" '00:42 mori.a: APIの利用上限に達しました {id:o1}$' "$out_ids"
+assert_grep "--with-ids で見出しに rid/t/link が付く（private=group）" \
+  '===== mori.a-times .* {rid:room-own t:p link:http://rc.test/group/mori.a-times}$' "$out_ids"
+assert_grep "--with-ids のDM見出しは direct/<rid>" 'link:http://rc.test/direct/room-dm}' "$out_ids"
+assert_grep "--with-ids の public は channel/<URLエンコード名>" \
+  'link:http://rc.test/channel/e%E9%A3%9F%E3%81%AA%E3%81%B3}' "$out_ids"
+# --with-ids から {...} を除くと既定出力と一致する（行の構造を壊していない）
+stripped="$(sed -E 's/ \{(id|rid):[^}]*\}$//' <<<"$out_ids")"
+if [ "$stripped" = "$out_plain" ]; then echo "ok: --with-ids は既定出力に注釈を足すだけ"
+else echo "NG: --with-ids の注釈を除いても既定出力と一致しない"; fails=$((fails + 1)); fi
+
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "${fails} 件失敗"; exit 1; fi

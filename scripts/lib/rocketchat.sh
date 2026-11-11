@@ -11,6 +11,8 @@
 #   rocketchat.sh --from 2026-07-21 --to 2026-07-28 [--include-dm] [--budget N]
 #   rocketchat.sh --from ... --to ... --list-rooms      # 採用ルームの一覧だけ出す（デバッグ用）
 #   rocketchat.sh --from ... --to ... --print-window    # oldest/latest の計算結果だけ出す（デバッグ用）
+#   rocketchat.sh --from ... --to ... --with-ids        # 発言行に {id:<_id>}、見出しに {rid t link} を付ける
+#                                                       # （permalink = link + "?msg=<id>"。既定出力は変えない）
 #
 # 環境変数:
 #   RC_ENV_FILE  認証情報ファイル（既定: scripts/daily-review/.env.local）
@@ -30,7 +32,7 @@ env_file="${RC_ENV_FILE:-$DEFAULT_ENV_FILE}"
 me="${RC_ME:-mori.a}"
 curl_cmd="${RC_CURL:-curl}"
 
-from="" to="" include_dm=0 budget=0 list_rooms=0 print_window=0
+from="" to="" include_dm=0 budget=0 list_rooms=0 print_window=0 with_ids=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --from)         from="$2"; shift 2 ;;
@@ -39,6 +41,7 @@ while [ $# -gt 0 ]; do
     --budget)       budget="$2"; shift 2 ;;
     --list-rooms)   list_rooms=1; shift ;;
     --print-window) print_window=1; shift ;;
+    --with-ids)     with_ids=1; shift ;;
     *) echo "不明な引数: $1" >&2; exit 2 ;;
   esac
 done
@@ -299,8 +302,9 @@ print(json.dumps({"messages": out}, ensure_ascii=False))
 # 1ルーム分を判定・絞り込み・整形する。採用されなければ何も出さない。
 # stdin: 履歴 JSON / 引数: ルーム名, ルーム種別
 render_room() {
-  local name="$1" t="$2"
-  RC_ROOM_NAME="$name" RC_ROOM_T="$t" RC_WINDOW_SEC="$WINDOW_SEC" \
+  local name="$1" t="$2" rid="${3:-}"
+  RC_ROOM_NAME="$name" RC_ROOM_T="$t" RC_ROOM_ID="$rid" RC_BASE="$RC_BASE_URL" \
+  RC_WITH_IDS="$with_ids" RC_WINDOW_SEC="$WINDOW_SEC" \
   RC_MY_TIMES="${RC_CHANNEL:-}" python3 -c '
 import sys, json, os, datetime
 me      = os.environ["RC_ME"]
@@ -308,6 +312,7 @@ name    = os.environ["RC_ROOM_NAME"]
 rtype   = os.environ["RC_ROOM_T"]
 window  = int(os.environ["RC_WINDOW_SEC"])
 mytimes = os.environ.get("RC_MY_TIMES", "")
+with_ids = os.environ.get("RC_WITH_IDS") == "1"
 
 def ts(m):
     return datetime.datetime.fromisoformat((m.get("ts") or "").replace("Z", "+00:00"))
@@ -363,7 +368,15 @@ if men: why.append(f"@me{len(men)}")
 # f-string 内にバックスラッシュを書くと環境によって SyntaxError になるため
 # join は必ず変数に退避してから埋め込む
 tag = ",".join(why)
-print(f"===== {name} [{tag}] {len(sel)}/{len(msgs)}件 =====")
+head = f"===== {name} [{tag}] {len(sel)}/{len(msgs)}件 ====="
+if with_ids:
+    import urllib.parse
+    rid = os.environ["RC_ROOM_ID"]
+    seg = {"c": "channel", "p": "group", "d": "direct"}.get(rtype, rtype)
+    slug = rid if rtype == "d" else urllib.parse.quote(name)
+    base = os.environ["RC_BASE"].rstrip("/")
+    head += f" {{rid:{rid} t:{rtype} link:{base}/{seg}/{slug}}}"
+print(head)
 # 時刻順に平坦化するとスレッド返信が直前の別話題への返答に見えるため、返信先の親を添える
 by_id = {m["_id"]: m for m in msgs if m.get("_id")}
 for m in sorted(sel, key=lambda x: x.get("ts", "")):
@@ -379,7 +392,9 @@ for m in sorted(sel, key=lambda x: x.get("ts", "")):
             u = f"{u} [↳{pt} {pu}]"
         else:
             u = f"{u} [↳期間外の親]"
-    print(f"  {tstr} {u}: {body}")
+    mid = m.get("_id", "")
+    idtag = f" {{id:{mid}}}" if with_ids else ""
+    print(f"  {tstr} {u}: {body}{idtag}")
 '
 }
 
@@ -421,7 +436,7 @@ collect_blocks() {
     [ -n "$rid" ] || continue
     local block prio
     # Task 4 で追加した expand_threads を必ず通す（外すとスレッド返信が欠落する）
-    block="$(room_history "$rid" "$t" | expand_threads "$rid" | render_room "$name" "$t")"
+    block="$(room_history "$rid" "$t" | expand_threads "$rid" | render_room "$name" "$t" "$rid")"
     [ -n "$block" ] || continue
     if grep -q '\[発言' <<<"$block"; then prio=1
     elif grep -q '\[@me' <<<"$block"; then prio=2

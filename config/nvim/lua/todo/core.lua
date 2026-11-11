@@ -1,10 +1,19 @@
 -- todo.md の行操作（純関数）。バッファには一切触らない。
--- セクション順は 未完了(先頭) → ## 待ち → ## 完了 を前提とする。
+-- セクション順は ## 確認待ち → ## やる → ## 待ち → ## 完了 を前提とする（旧形式は 未完了(先頭) → 待ち → 完了）。
 local M = {}
 
+M.CONFIRM_HEADING = "## 確認待ち"
+M.TODO_HEADING = "## やる"
 M.WAIT_HEADING = "## 待ち"
 M.DONE_HEADING = "## 完了"
 M.HEADING = M.DONE_HEADING
+
+-- テストで日付を固定するための差し替え口
+function M.today()
+  return os.date("%Y-%m-%d")
+end
+
+local DONE_SUFFIX = "%s%(done: %d+%-%d+%-%d+%)$"
 
 ---@param line string
 ---@return { done: boolean, text: string }|nil
@@ -27,6 +36,28 @@ local function find_heading(lines, title)
   return nil
 end
 
+function M.find_todo_heading(lines)
+  return find_heading(lines, "やる")
+end
+
+function M.find_confirm_heading(lines)
+  return find_heading(lines, "確認待ち")
+end
+
+-- row が ## 確認待ち 見出しから次の見出しまでの間にあるか
+function M.in_confirm_area(lines, row)
+  local start = M.find_confirm_heading(lines)
+  if not start or row < start then
+    return false
+  end
+  for i = start + 1, row do
+    if lines[i] and lines[i]:match("^##%s") then
+      return false
+    end
+  end
+  return true
+end
+
 function M.find_wait_heading(lines)
   return find_heading(lines, "待ち")
 end
@@ -45,10 +76,12 @@ local function trimmed_end(lines, from, to)
 end
 
 -- 未完了エリアの最終行（末尾の空行は含まない）。新規タスクはこの直後に挿入する。
+-- ## やる があればその次の行から数える（## 確認待ち の番号付き行を巻き込まない）。
 ---@return integer row (0 = 先頭に挿入)
 function M.open_area_end(lines)
   local stop = M.find_wait_heading(lines) or M.find_done_heading(lines) or #lines + 1
-  return trimmed_end(lines, 1, stop)
+  local todo = M.find_todo_heading(lines)
+  return trimmed_end(lines, todo and todo + 1 or 1, stop)
 end
 
 -- 待ちエリアの最終行。見出しが無ければ nil。
@@ -62,7 +95,7 @@ function M.wait_area_end(lines)
 end
 
 function M.skeleton()
-  return { "# TODO", "", M.WAIT_HEADING, "", M.DONE_HEADING }
+  return { "# TODO", "", M.CONFIRM_HEADING, "", M.TODO_HEADING, "", M.WAIT_HEADING, "", M.DONE_HEADING }
 end
 
 -- 見出し行の直前に空行が無ければ足す
@@ -88,7 +121,7 @@ function M.toggle(lines, row)
 
   if task.done then
     local at = M.open_area_end(out) + 1
-    table.insert(out, at, "- [ ] " .. task.text)
+    table.insert(out, at, "- [ ] " .. task.text:gsub(DONE_SUFFIX, ""))
     return out, at
   end
 
@@ -97,7 +130,7 @@ function M.toggle(lines, row)
     table.insert(out, M.DONE_HEADING)
     heading = ensure_blank_before(out, #out)
   end
-  table.insert(out, heading + 1, "- [x] " .. task.text)
+  table.insert(out, heading + 1, "- [x] " .. task.text:gsub(DONE_SUFFIX, "") .. " (done: " .. M.today() .. ")")
   return out, heading + 1
 end
 

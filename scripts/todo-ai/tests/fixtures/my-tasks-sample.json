@@ -1,0 +1,51 @@
+{
+  "generated_at": "2026-11-10T09:00:00+09:00",
+  "window": {"from": "2026-10-27", "to": "2026-11-10"},
+  "sources_failed": [],
+  "candidates": [
+    {
+      "key": "epc#1163",
+      "url": "https://github.com/ebase-dev/ebase-portal-chat/pull/1163",
+      "title": "PR#1163 レビュー指摘対応",
+      "ball": "mine",
+      "next": "N1,N2 を直して push",
+      "evidence": "reviewer: CHANGES_REQUESTED 2026-11-08 / 未対応コメント2件",
+      "deadline": "2026-11-14",
+      "waiting_person": null,
+      "blocks": []
+    },
+    {
+      "key": "rc:Xk3p9aQ2#1",
+      "url": "https://rc.example/channel/dev-team?msg=Xk3p9aQ2",
+      "title": "インターン資料の修正",
+      "ball": "mine",
+      "next": "スライド3の数値を差し替えて共有",
+      "evidence": "kawai.t: 「スライド3の数値だけ直してもらえますか」 {id:Xk3p9aQ2}",
+      "deadline": null,
+      "waiting_person": null,
+      "blocks": ["epc#1163"]
+    },
+    {
+      "key": "gb:tamaki-ai-training#42",
+      "url": "https://gitbucket.example/AI_dev/tamaki-ai-training/pull/42",
+      "title": "研修PR#42 の再レビュー",
+      "ball": "theirs",
+      "next": "修正待ち",
+      "evidence": "mori.a が Request Changes を送信済み。以降の push なし",
+      "deadline": null,
+      "waiting_person": "玉木さん",
+      "blocks": []
+    },
+    {
+      "key": null,
+      "url": null,
+      "title": "合田さんへのコンテナ設置依頼の返信",
+      "ball": "maybe_done",
+      "next": "送信済みか確認",
+      "evidence": "Sent フォルダに「Re: コンテナ設置のお願い」あり（last:ME）",
+      "deadline": null,
+      "waiting_person": "合田さん",
+      "blocks": []
+    }
+  ]
+}
