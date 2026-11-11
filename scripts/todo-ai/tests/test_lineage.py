@@ -242,6 +242,17 @@ class CleanupHandDelete(Flow):
         self.assertIn("skip: intent_deleted title:後片付け（2026-11-10）", body)
         self.assertNotIn("後片付け", self.todo.read_text(encoding="utf-8"))
 
+    def test_renamed_then_done_cleanup_does_not_block_next_day(self):
+        self.apply({"source": "ai", "ops": [{"op": "add", "section": "やる", "title": "後片付け（2026-11-10）", "next": "a"}]})
+        self.edit("後片付け（2026-11-10） — next", "後片付け（2026-11-10）ブランチ — next")
+        self.edit("- [ ] 後片付け（2026-11-10）ブランチ — next: a\n", "")
+        self.edit("## 完了\n", "## 完了\n- [x] 後片付け（2026-11-10）ブランチ — next: a (done: 2026-11-10)\n")
+        self.edit("- [x] 後片付け（2026-11-10）ブランチ — next: a (done: 2026-11-10)\n", "")
+        self.assertEqual(self.ctx()["rejected_refs"], [])
+        body = self.apply({"source": "ai", "ops": [{"op": "add", "section": "やる", "title": "後片付け（2026-11-11）", "next": "b"}]})
+        self.assertNotIn("skip:", body)
+        self.assertIn("後片付け（2026-11-11）", self.todo.read_text(encoding="utf-8"))
+
     def test_other_title_refs_still_not_rejected(self):
         self.apply({"source": "ai", "ops": [{"op": "add", "section": "やる", "title": "普通の行"}]})
         self.edit("- [ ] 普通の行\n", "")

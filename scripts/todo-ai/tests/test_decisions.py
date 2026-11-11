@@ -161,6 +161,20 @@ class CleanupRejectAdd(unittest.TestCase):
         self.r.commit(doc(yaru="- [ ] 後片付け（2026-11-10）ブランチ — next: a\n"), "todo: 直した")
         self.assertEqual(self.refs(), [])
 
+    def test_renamed_cleanup_later_done_and_tidied_not_rejected(self):
+        self.r.commit(doc(yaru="- [ ] 後片付け（2026-11-10）ブランチ — next: a\n"), "todo: 直した")
+        self.r.commit(doc(kanryo="- [x] 後片付け（2026-11-10）ブランチ — next: a (done: 2026-11-10)\n"), "todo: 完了")
+        self.assertEqual(self.refs(), [])
+        self.r.commit(doc(), "todo: 完了から片付けた")
+        self.assertEqual(self.refs(), [])
+
+    def test_deleted_beside_other_cleanup_not_rejected_after_other_done(self):
+        other = "- [ ] 後片付け（2026-11-09） — next: b\n"
+        self.r.commit(doc(yaru=C + other), "todo: 別の後片付け")
+        self.r.commit(doc(yaru=other), "todo: 消した")
+        self.r.commit(doc(), "todo: もう1つも消した")
+        self.assertEqual(self.refs(), [])
+
     def test_rename_dropping_cleanup_prefix_rejected(self):
         self.r.commit(doc(yaru="- [ ] ブランチ掃除 — next: a\n"), "todo: 直した")
         self.assertEqual(self.refs(), [(C_REF, "reject_add")])

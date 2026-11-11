@@ -214,7 +214,7 @@ def detect_reverts(repo: Path, path: str, records: "list[dict] | None" = None) -
     各 ai/sync コミット C を C^・C・HEAD で比べる。C より後の ai/sync/user コミットが同じ ref を動かしていれば、
     その ref は C では判定しない（後の正当な移動や /todo-edit の変更を戻しと誤検出しない）。記録済みかは (commit, ref) で見る。
     title: の ref の追加の消去は、後片付け（題が日付で変わる）だけ reject_add にする。後片付けは、消える直前に
-    やる・待ちにあり、やる・待ちに後片付けの行が残っていないときだけ（完了からの片付けと、題の手直しは除く）。
+    やる・待ちにあり、消えた時点の台帳のやる・待ちに後片付けの行が残っていないときだけ（完了からの片付けと、題の手直しは除く）。
     records を省くと repo/todo-decisions.jsonl を読む。
     """
     repo = Path(repo)
@@ -246,10 +246,14 @@ def detect_reverts(repo: Path, path: str, records: "list[dict] | None" = None) -
     def cleanup_dropped(c: str, ref: str, added_to: str) -> bool:
         if c not in after_c:
             hs = (_git(repo, "log", "--format=%H", f"{c}..HEAD", "--", path) or "").split()
-            after_c[c] = _sections_at(repo, [f"{h}:{path}" for h in hs]) if hs else []
-        last = next((x[ref] for x in after_c[c] if x is not None and ref in x), added_to)
-        return last in _OPEN and not any(r.startswith("title:" + CLEANUP_PREFIX) and v in _OPEN
-                                         for r, v in head.items())
+            after_c[c] = _sections_at(repo, [f"{h}:{path}" for h in hs]) if hs else [head]
+        snaps = after_c[c]
+        # 新しい順。ref が最後に載った版の1つ新しい版が、消えた時点の台帳（毎回 HEAD で見ると、後で完了にした改名行で判定が変わる）
+        k = next((j for j, x in enumerate(snaps) if x is not None and ref in x), len(snaps))
+        last = snaps[k][ref] if k < len(snaps) else added_to
+        gone = snaps[k - 1] if k > 0 else None
+        return gone is not None and last in _OPEN and not any(
+            r.startswith("title:" + CLEANUP_PREFIX) and v in _OPEN for r, v in gone.items())
 
     ts = now_iso()
     new = []
