@@ -16,7 +16,7 @@ apply は人の行・完了・回答を壊す案を丸ごと止め、通った�
 | `scripts/todo-ai/decisions.py` | 人の判断（回答・戻し・消した追加）の記録と検出 |
 | `scripts/todo-ai/migrate.py` | 旧形式の todo.md を新形式へ一度だけ変換 |
 | `scripts/todo-ai/review.py` | 週次見直し用に人の訂正を一覧化 |
-| `scripts/todo-ai/pr_ball.py` | 自分の PR のボール（mine / theirs / unknown）を決める。取得に失敗した PR は unknown |
+| `scripts/todo-ai/pr_ball.py` | 自分の PR のボール（mine / theirs / done / unknown）を決める。マージ・クローズ済みは done、取得に失敗した PR は unknown |
 | `scripts/lib/ebpm_issues.py` | 課題DB（ebpm）の自分のコメント・お知らせ・担当を読み取る |
 | `.claude-global/skills/todo/SKILL.md` | `/todo` と `/todo review` |
 | `.claude-global/skills/todo-edit/SKILL.md` | `/todo-edit`（ユーザー指示で直し、意図を記録） |
@@ -109,13 +109,15 @@ Claude Code で `/todo`（「TODO更新」「確認待ちに答えたから反�
 
 AI の変更が違っていたら、nvim で直せばよい。git 履歴から検出して記録する。
 
-- AI が足した行を消す → その key は二度と足さない（`reject_add`）
+- AI が足した行を消す → その key は二度と足さない（`reject_add`）。key の無い行は記録しないが、後片付けの行（`後片付け（` で始まる）だけは記録し、別の日の後片付けも足さない
 - AI が移した行を元のセクションへ戻す → その行を、戻された移動先へは二度と移さない（`revert_move`）。別のセクションへの移動は止めない。たとえば AI が待ちにした PR を `<Tab>` でやるに戻しても、マージされれば同期が完了へ移す
 - `/todo-edit`（source user）で完了から戻した行は、戻し先によらず完了へは二度と移さない（`revert_move` の to=完了）。同期が毎時また完了にするのを防ぐ代わりに、本当に終わったら手で完了にする
+- `/todo-edit` のそれ以外の変更（`todo(user): ` のコミット）は戻しとして検出しない。止める根拠は記録した意図で、`/todo` が読む
+- key の無い行に AI が key を付けると、apply が `alias`（`{"ref": <key>, "kind": "alias", "prev_ref": <旧 title: ref>, "by": "ai"}`）を記録する。人の判断ではなく、付ける前の意図・戻し・回答を新しい key の行へつなぐための印
 
 ### /todo-edit
 
-Claude Code で `/todo-edit`（「todo を直して」「A5 は〜にして」「この行を消して」でもよい）。**対話専用**で、AI が自分で判断せずユーザーの指示どおりに直す。
+Claude Code で `/todo-edit`（「todo を直して」「資料の件は〜にして」「この行を消して」でもよい）。**対話専用**で、AI が自分で判断せずユーザーの指示どおりに直す。
 
 手順: 指示を読む → `context.py` で台帳を読む → 指示を行に対応づける（曖昧なら候補を出して聞く）→ 変更案と意図を見せて OK をもらう → `apply.py --allow-user` → コミットの差分と記録した意図を見せる。変更案は `~/.local/log/todo-ai/<日付>/edit-<HHMMSS>.json` に残る。
 
@@ -124,9 +126,9 @@ Claude Code で `/todo-edit`（「todo を直して」「A5 は〜にして」�
 | 指示 | op | 注意 |
 |---|---|---|
 | next を変える | `set_next` | |
-| セクションを移す | `move` | 完了から出す（reopen）と、以後 `/todo` も同期も自動で完了に戻さない |
+| セクションを移す | `move` | 完了から出す（reopen）と、以後 `/todo` も同期も自動で完了に戻さない。GitHub の key の行は、やる/待ちにあるうちは意図を残しても PR がマージ・クローズされると同期が完了へ移す（同期は意図を読まない）。開いたまま残すには、完了に移った後に完了から出す |
 | 行を足す | `add` | |
-| タイトルを直す | `edit_title` | 元のタイトルは `/todo` が足し直さない |
+| タイトルを直す | `edit_title` | key の無い行は、元のタイトルを `/todo` が足し直さない（key のある行は ref が変わらない） |
 | 行を消す | `delete` | その行を `/todo` が二度と足し直さない |
 | 意図だけ残す | `note` | 行は変わらない |
 
@@ -136,12 +138,13 @@ Claude Code で `/todo-edit`（「todo を直して」「A5 は〜にして」�
 
 #### 意図の記録
 
-各 op に付けた `intent`（ユーザーの指示を要約した1文で、根拠の言葉を含む）を `todo-decisions.jsonl` に `{"ts", "ref", "kind": "intent", "value", "by": "human"}` で記録する（改名では `prev_ref` も付く）。コミットは `todo(user): <要約>` で、origin 判定では人の行扱い。
+各 op に付けた `intent`（ユーザーの指示を要約した1文で、根拠の言葉を含む）を `todo-decisions.jsonl` に `{"ts", "ref", "kind": "intent", "value", "by": "human", "op"}` で記録する（`op` は意図を残した op。key の無い行の改名・key 付けでは `prev_ref` も付く）。コミットは `todo(user): <要約>` で、origin 判定では人の行扱い。
 
 `/todo` は `context.py` の次を必ず読んで従う。
 
-- `items[].intents`（その行の意図。新しい順で最大5件）: 意図に反して完了・移動・next の上書きをしない。一次データが意図と食い違うとき（意図は「残す」のに PR がマージ済み等）は、op を作らず `conflict` の確認待ちで聞く
-- `deleted_refs`: 消した行・改名前の ref。`add` も `attach` も確認待ちの問いにも使わない（後片付けは題の前方一致）。source ai の add/attach は apply が `skip: intent_deleted` で飛ばす
+- `items[].intents`（その行の意図。新しい順で最大5件。key を付ける前・改名する前の ref の意図も含む）: 意図に反して完了・移動・next の上書きをしない。一次データが意図と食い違うとき（意図は「eas#60 のマージ後に依頼」なのに eas#60 がマージされた、GitBucket の PR がマージ・クローズされた等）は、op を作らず `conflict` の確認待ちで聞く。GitHub の key の行のマージ・クローズは毎時の同期が意図を読まずに完了へ移すので、conflict にはならない
+- `items[].answers`: その行への確認待ちの回答。`superseded: true` の conflict の回答（問いや回答より後に同じ行の意図が記録された）には従わず、食い違えばもう一度聞く。apply も、意図より後に記録された回答だけを回答済みとして扱う（ファイル内の位置で比べる）
+- `deleted_refs`: 消した行（key を付ける前の ref も）・key の無い行の改名前の ref。`add` も `attach` も確認待ちの問いにも使わない（後片付けは題の前方一致）。source ai の add/attach は apply が `skip: intent_deleted` で飛ばす。人が nvim で行を書き戻すと、その ref は外れてふつうの行に戻る
 - `other_intents`: まだ台帳に無い key へのメモ。その候補を足すときの指示として従う
 
 apply は source user に `--allow-user` を必須とし、`TODO_AI_DENY_USER=1` なら常に拒む（無人実行が user を名乗っても通らない）。完了から出した行には `revert_move`（to=完了）の記録が付き、AI・同期が完了に戻さない。
