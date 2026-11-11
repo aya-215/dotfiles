@@ -189,13 +189,11 @@ class ApplyChangesTest(unittest.TestCase):
              "facts": "依頼あり", "options": [{"label": "A", "text": "はい"}]},
         ])
         self.assertEqual(new.confirm, [
-            "1. 方針を決める [policy epc#1202]",
-            "   事実: PR が2本",
-            "   選択: A まとめる（おすすめ） / B 分ける",
+            "1. 方針を決める（PR が2本） [policy epc#1202]",
+            "   A まとめる★ / B 分ける",
             "   回答:",
-            "2. タスク？ [is_task title:インターン資料修正]",
-            "   事実: 依頼あり",
-            "   選択: A はい",
+            "2. タスク？（依頼あり） [is_task title:インターン資料修正]",
+            "   A はい",
             "   回答:",
         ])
 
@@ -313,7 +311,7 @@ class ApplyChangesTest(unittest.TestCase):
     def test_confirm_entry_answered_in_this_run_is_dropped(self):
         entries = self.answered_doc()
         new, body = self.run_ops([], confirm=entries)
-        self.assertEqual(new.confirm, ["1. 方針？ [policy epc#1202]", "   事実: g", "   選択: A x（おすすめ）", "   回答:"])
+        self.assertEqual(new.confirm, ["1. 方針？（g） [policy epc#1202]", "   A x★", "   回答:"])
         self.assertIn("skip: answered is_task title:見積もり", body)
         self.assertIn("confirm: 1 件", body)
 
@@ -325,7 +323,7 @@ class ApplyChangesTest(unittest.TestCase):
             {"ref": "epc#1163", "kind": "policy", "question": "別？", "options": [{"label": "A", "text": "y"}]}]},
             human, TODAY, recs)
         self.assertEqual(new.confirm[0], "1. 別？ [policy epc#1163]")
-        self.assertEqual(len(new.confirm), 4)
+        self.assertEqual(len(new.confirm), 3)
         self.assertIn("skip: answered policy epc#1202", body)
 
     def test_title_with_unicode_line_separator_roundtrips(self):
@@ -963,6 +961,78 @@ class InProcessRunTest(RepoMixin, unittest.TestCase):
         with self.assertRaises(RuntimeError):
             apply.run(self.changes_file(self.move_1202()), self.todo, TODAY)
         self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+
+
+OLD_BLOCK = ["1. 『X（11/14）への対応』を足す？ [is_task title:X（11/14）への対応]",
+             "   事実: ball: mine / 期限（金）",
+             "   選択: A 追加する（やる）（おすすめ） / B タスクではない（追加しない）",
+             "   回答:"]
+NEW_BLOCK = ["1. 『X（11/14）への対応』を足す？（ball: mine / 期限（金）） [is_task title:X（11/14）への対応]",
+             "   A 追加する（やる）★ / B タスクではない（追加しない）",
+             "   回答:"]
+
+
+class ConfirmFormatTest(unittest.TestCase):
+    def test_new_block_parsed_with_trailing_balanced_facts(self):
+        b, = apply.parse_confirm(NEW_BLOCK)
+        self.assertEqual(b["question"], "『X（11/14）への対応』を足す？ [is_task title:X（11/14）への対応]")
+        self.assertEqual(b["事実"], "ball: mine / 期限（金）")
+        self.assertEqual(b["選択"], "A 追加する（やる）★ / B タスクではない（追加しない）")
+        self.assertEqual(b["回答"], "")
+        self.assertEqual(b["lines"], NEW_BLOCK)
+
+    def test_old_block_still_parsed(self):
+        b, = apply.parse_confirm(OLD_BLOCK)
+        self.assertEqual(b["question"], "『X（11/14）への対応』を足す？ [is_task title:X（11/14）への対応]")
+        self.assertEqual(b["事実"], "ball: mine / 期限（金）")
+        self.assertEqual(b["lines"], OLD_BLOCK)
+
+    def test_question_without_facts_keeps_inner_parens(self):
+        b, = apply.parse_confirm(["1. 『X（11/14）』を足す？ [is_task rc:a]", "   A はい", "   回答: A"])
+        self.assertEqual((b["question"], b["事実"], b["回答"]), ("『X（11/14）』を足す？ [is_task rc:a]", "", "A"))
+
+    def test_block_without_options_is_two_lines(self):
+        lines = apply._render_confirm([{"ref": "rc:a", "kind": "manual", "question": "やった？", "options": []}])
+        self.assertEqual(lines, ["1. やった？ [manual rc:a]", "   回答:"])
+        b, = apply.parse_confirm(lines)
+        self.assertEqual((b["事実"], b["選択"], b["lines"]), ("", "", lines))
+
+    def test_mixed_old_and_new_blocks_and_answers(self):
+        lines = [*OLD_BLOCK[:3], "   回答: A", "", "2. 要る？ [still_needed rc:b]", "   A 要る / B 不要", "   回答: B"]
+        blocks = apply.parse_confirm(lines)
+        self.assertEqual([len(b["lines"]) for b in blocks], [4, 3])
+        self.assertEqual(apply.answer_records(blocks),
+                         [("title:X（11/14）への対応", "is_task", "A"), ("rc:b", "still_needed", "B")])
+
+    def test_free_text_inside_new_block_rejected(self):
+        for bad in ([NEW_BLOCK[0], NEW_BLOCK[1], "   人の補足", "   回答:"],
+                    [NEW_BLOCK[0], NEW_BLOCK[1]],
+                    [NEW_BLOCK[0], "人の補足", "   回答:"]):
+            with self.assertRaises(ChangeError, msg=bad):
+                apply.parse_confirm(bad)
+
+    def test_old_and_new_rendering_of_same_block_compare_equal(self):
+        self.assertEqual(confirm_edit_errors(NEW_BLOCK, OLD_BLOCK), [])
+        self.assertEqual(confirm_edit_errors(OLD_BLOCK, NEW_BLOCK), [])
+        self.assertEqual(confirm_edit_errors([*OLD_BLOCK[:3], "   回答: A"], OLD_BLOCK), [])
+
+    def test_human_edit_of_new_block_detected(self):
+        self.assertTrue(confirm_edit_errors([NEW_BLOCK[0].replace("足す？", "足す？急ぎ"), *NEW_BLOCK[1:]], NEW_BLOCK))
+        self.assertTrue(confirm_edit_errors([NEW_BLOCK[0], "   A 追加する（やる） / B 様子を見る", NEW_BLOCK[2]], NEW_BLOCK))
+        self.assertTrue(confirm_edit_errors([NEW_BLOCK[0], NEW_BLOCK[1].replace("★", ""), NEW_BLOCK[2]], NEW_BLOCK))
+
+    def test_reasking_old_block_writes_new_format_and_keeps_answer_in_body(self):
+        doc = todo_md.parse(BASE)
+        doc.confirm = [*OLD_BLOCK[:3], "   回答: A", "",
+                       "2. 要る？ [still_needed rc:b]", "   事実: 20日", "   選択: A 要る（おすすめ） / B 不要", "   回答:"]
+        new, body = apply_changes(doc, {"source": "ai", "ops": [], "confirm": [
+            {"ref": "rc:b", "kind": "still_needed", "question": "要る？", "facts": "20日",
+             "options": [{"label": "A", "text": "要る", "recommended": True}, {"label": "B", "text": "不要"}]}]},
+            human, TODAY)
+        self.assertEqual(new.confirm, ["1. 要る？（20日） [still_needed rc:b]", "   A 要る★ / B 不要", "   回答:"])
+        self.assertIn("answer: " + OLD_BLOCK[0], body)
+        self.assertIn("   回答: A", body)
+        self.assertEqual(apply.roundtrip_errors(new), [])
 
 
 if __name__ == "__main__":

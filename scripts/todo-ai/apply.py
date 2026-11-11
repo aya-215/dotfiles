@@ -37,9 +37,12 @@ OP_LABELS = {
     "edit_title": "タイトル変更", "delete": "削除", "note": "意図",
     "order": "並べ替え", "confirm": "確認待ち", "archive": "アーカイブ",
 }
-CONFIRM_FIELDS = ("事実", "選択", "回答")
 _CONFIRM_Q = re.compile(r"(\d+)\. (.+)\Z")
 _CONFIRM_FIELD = re.compile(r"\s+(事実|選択|回答)[:：] ?(.*)\Z")
+_CONFIRM_OPTIONS = re.compile(r"\s+(\S.*)\Z")
+RECOMMENDED = "★"
+OLD_RECOMMENDED = "（おすすめ）"
+_OPTION = re.compile(r"(\S+) (.*?)(" + RECOMMENDED + "|" + OLD_RECOMMENDED + r")?\Z")
 KINDS = ("policy", "before_share", "manual", "conflict", "is_task", "still_needed")
 _TAG = re.compile(r" \[(" + "|".join(KINDS) + r") (.+)\]\Z")
 GIT_RETRIES = 10
@@ -98,10 +101,31 @@ def _note(op: dict, head: str, url: "str | None") -> str:
     return s
 
 
-def parse_confirm(lines: "list[str]") -> "list[dict]":
-    """確認待ちを「問い・事実・選択・回答」の4行ブロックの列として厳密に読む。崩れていれば ChangeError。
+def split_facts(text: str) -> "tuple[str, str]":
+    """タグを外した問いの行を (問い, 事実) に分ける。事実は末尾の釣り合った（…）。問いの途中の括弧は事実にしない。"""
+    if not text.endswith("）"):
+        return text, ""
+    depth = 0
+    for i in range(len(text) - 1, 0, -1):
+        if text[i] == "）":
+            depth += 1
+        elif text[i] == "（":
+            depth -= 1
+            if depth == 0:
+                return text[:i], text[i + 1:-1]
+    return text, ""
 
-    各ブロックは {"question", "事実", "選択", "回答", "lines"}。ブロックの間の空行だけ許す。
+
+def _field(lines: "list[str]", i: int, name: str) -> "str | None":
+    f = _CONFIRM_FIELD.match(lines[i]) if i < len(lines) else None
+    return f.group(2) if f and f.group(1) == name else None
+
+
+def parse_confirm(lines: "list[str]") -> "list[dict]":
+    """確認待ちをブロックの列として厳密に読む。崩れていれば ChangeError。
+
+    新書式は「問い（事実） [タグ]・選択肢・回答」の3行（選択肢が無ければ2行）、旧書式は「問い [タグ]・事実・選択・回答」の4行。
+    各ブロックは {"question"（事実を外しタグは残した問い）, "事実", "選択", "回答", "lines"}。ブロックの間の空行だけ許す。
     """
     blocks = []
     i = 0
@@ -112,15 +136,46 @@ def parse_confirm(lines: "list[str]") -> "list[dict]":
         m = _CONFIRM_Q.match(lines[i])
         if not m:
             raise ChangeError(f"確認待ちに解釈できない行がある（全置換すると消える）: {lines[i]!r}")
-        block = {"question": m.group(2), "lines": lines[i:i + 4]}
-        for j, name in enumerate(CONFIRM_FIELDS, 1):
-            f = _CONFIRM_FIELD.match(lines[i + j]) if i + j < len(lines) else None
-            if not f or f.group(1) != name:
-                raise ChangeError(f"確認待ちのブロックが崩れている（{name} の行が無い）: {lines[i]!r}")
-            block[name] = f.group(2)
-        blocks.append(block)
-        i += 4
+        head = m.group(2)
+        if _field(lines, i + 1, "事実") is not None:
+            facts, opts, ans = _field(lines, i + 1, "事実"), _field(lines, i + 2, "選択"), _field(lines, i + 3, "回答")
+            if opts is None or ans is None:
+                raise ChangeError(f"確認待ちのブロックが崩れている（選択・回答の行が無い）: {lines[i]!r}")
+            n = 4
+        else:
+            body = strip_tag(head)
+            q, facts = split_facts(body)
+            head = q + head[len(body):]
+            opts, n = "", 2
+            ans = _field(lines, i + 1, "回答")
+            if ans is None:
+                o = _CONFIRM_OPTIONS.match(lines[i + 1]) if i + 1 < len(lines) else None
+                ans = _field(lines, i + 2, "回答") if o else None
+                if ans is None:
+                    raise ChangeError(f"確認待ちのブロックが崩れている（回答の行が無い）: {lines[i]!r}")
+                opts, n = o.group(1), 3
+        blocks.append({"question": head, "事実": facts, "選択": opts, "回答": ans, "lines": lines[i:i + n]})
+        i += n
     return blocks
+
+
+def parse_options(s: str) -> "list[dict]":
+    """選択肢の行を {label, text, recommended} の列に読む。おすすめは ★（旧書式は（おすすめ））。"""
+    out = []
+    for part in s.split(" / ") if s else []:
+        m = _OPTION.match(part)
+        # 空白の無い断片は選択肢の文中の " / " で割れたものなので、前の選択肢に戻す
+        if out and (not m or not m.group(2)):
+            prev = out[-1]
+            prev["text"] += " / " + part
+            for mark in (RECOMMENDED, OLD_RECOMMENDED):
+                if prev["text"].endswith(mark):
+                    prev["text"], prev["recommended"] = prev["text"][: -len(mark)], True
+        elif m:
+            out.append({"label": m.group(1), "text": m.group(2), "recommended": bool(m.group(3))})
+        else:
+            out.append({"label": part, "text": part, "recommended": False})
+    return out
 
 
 def with_tag(question: str, kind: str, ref: str) -> str:
@@ -164,6 +219,14 @@ def _check_answers(blocks: "list[dict]", answered: list) -> None:
         raise ChangeError("answered が確認待ちの回答欄と食い違う")
 
 
+def _confirm_key(block: dict) -> tuple:
+    """書式（新旧・★/（おすすめ））によらず、同じ問い・事実・選択なら同じになる比較用の値。"""
+    body = strip_tag(block["question"])
+    head = body + (f"（{block['事実']}）" if block["事実"] else "")
+    opts = tuple((o["label"], o["text"], o["recommended"]) for o in parse_options(block["選択"]))
+    return head, block["question"][len(body):], opts
+
+
 def confirm_edit_errors(current: "list[str]", written: "list[str]") -> "list[str]":
     """確認待ちの問い・事実・選択が、apply が最後に書いた内容から変わっていれば違反を返す。
 
@@ -177,10 +240,10 @@ def confirm_edit_errors(current: "list[str]", written: "list[str]") -> "list[str
         prev = parse_confirm(written)
     except ChangeError:
         prev = []
-    pool = Counter((b["question"], b["事実"], b["選択"]) for b in prev)
+    pool = Counter(_confirm_key(b) for b in prev)
     errs = []
     for b in cur:
-        k = (b["question"], b["事実"], b["選択"])
+        k = _confirm_key(b)
         if pool[k] <= 0:
             errs.append(f"確認待ちの問い・事実・選択が apply の書いた内容と違う（人の追記が消える）: {b['lines'][0]!r}")
         else:
@@ -196,8 +259,8 @@ def _render_confirm(entries: list) -> "list[str]":
         ref = _str(e, "ref")
         if e.get("kind") not in KINDS:
             raise ChangeError(f"confirm の kind が不正: {e.get('kind')!r}")
-        q = with_tag(strip_tag(_str(e, "question")), e["kind"], ref)
         facts = _str(e, "facts", required=False) or ""
+        q = with_tag(strip_tag(_str(e, "question")) + (f"（{facts}）" if facts else ""), e["kind"], ref)
         opts = []
         options = e.get("options") or []
         if not isinstance(options, list) or not all(isinstance(o, dict) for o in options):
@@ -205,8 +268,8 @@ def _render_confirm(entries: list) -> "list[str]":
         for o in options:
             label = _str(o, "label")
             text = _str(o, "text")
-            opts.append(f"{label} {text}" + ("（おすすめ）" if o.get("recommended") else ""))
-        out += [f"{n}. {q}", f"   事実: {facts}", f"   選択: {' / '.join(opts)}", "   回答:"]
+            opts.append(f"{label} {text}" + (RECOMMENDED if o.get("recommended") else ""))
+        out += [f"{n}. {q}", *([f"   {' / '.join(opts)}"] if opts else []), "   回答:"]
     return out
 
 
