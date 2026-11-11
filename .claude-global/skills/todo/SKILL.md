@@ -153,7 +153,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 `items[].intents` は、ユーザーがその行について `/todo-edit` で指示した内容で、守るべき指示として読む（新しい順。食い違えば新しい方）。
 
 - 意図のある行には、意図に反する op を作らない: 完了への `move`（手順5の GitBucket のマージ・クローズも含む）、やる⇄待ちの `move`、`set_next`（意図が next の中身・順番を指定しているとき）、`order` での位置。例: 「eas#60 のマージ後にレビュー依頼する」の行は、eas#60 がマージされるまで完了にも待ちにもせず、next をその指示と違う文に変えない
-- 一次データ（候補の `evidence`・PR/Issue の状態）が意図と食い違う（意図は「残す」なのに決着している、意図の待ち条件が満たされた等）ときは、その行に op を作らず `confirm kind=conflict`（ref は行の ref）で聞く。question に意図と事実の食い違いを1行で書き、facts に意図の文と一次データの引用、options は A `意図どおりにする`（おすすめ）/ B `<一次データに沿った op の内容>`。行の `answers` に `superseded: false` の conflict の回答があれば、問わずにその回答に従う。`superseded: true` だけなら回答の後に新しい意図が記録されているので、食い違えばもう一度聞く（apply も、意図より後に記録された回答だけを回答済みとして扱う。ts は比べない）
+- 一次データ（候補の `evidence`・PR/Issue の状態）が意図と食い違う（意図は「残す」なのに決着している、意図の待ち条件が満たされた等）ときは、その行に op を作らず `confirm kind=conflict`（ref は行の ref）で聞く。question に意図と事実の食い違いを1行で書き、facts に意図の文と一次データの引用、options は A `意図どおりにする`（おすすめ）/ B `<一次データに沿った op の内容>`。行の `answers` に `superseded: false` の conflict の回答があれば、問わずにその回答に従う。`superseded: true` だけなら回答の後に新しい意図が記録されているので、食い違えばもう一度聞く（apply も、意図より後に記録された回答だけを回答済みとして扱う。ts は比べない）。今回の `answered_now` の `superseded: true` は下の「回答の反映」のとおり必ず問い直す
 - 意図に反しない op（意図が指示していない側面の更新）はふつうに作ってよい。意図が読み取れないときは op を作らず報告に書く
 - `deleted_refs` の ref は、`add`・`attach`・確認待ちの問いのどれにも使わない（ふるい分けで落とす）。`other_intents` の意図は、その ref の候補を足すときの指示として従う
 
@@ -174,6 +174,9 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
   - `既存の『…』と同じ作業？`（規則 4b の1件）に「同じ（既存の行に紐付ける）」→ `facts` の `既存行:` の ref へ、問いの ref の key と候補の `url`（今回の候補に無ければ `facts` の url）で `attach`（行の `next` が null のときだけ候補の `next` も付ける）。その行に既に key があれば attach せず報告に書く。「別の作業」→ 括弧のセクションへ `add`。「足さない」→ op なし（回答の記録が以後の add を止める）
   - `既存の『…』に含まれる作業。別の行で足す？`（規則 4b の傘の行）に「別の行で足す」→ `facts` の各候補を、今回の候補の ball（今回の JSON に無ければ facts の ball）でやる/待ちへ `add`（`key` と `url` は今回の候補から。今回に無い候補は足さず報告に書く）。「足さない」→ op なし
   - conflict（意図との食い違い）に回答 → 選ばれた側の op を作る。「意図どおり」なら op なし
+- `answered_now` の `superseded: true` の回答（問いを書いた後に新しい意図が記録された）は、黙って捨てない。従う op は作らず、毎回次の2つを両方する
+  - `confirm` の②で同じ `ref`・`kind` の問いを出し直す。`facts` に新しい意図の文（行の `intents` の先頭）と前の回答を入れ、question・options は新しい意図に合わせて書き直してよい（apply は古くなった回答を回答済みに数えないので `skip: answered` にならない）
+  - 報告の6に、問い（`confirm_blocks` の同じ ref・kind の `question`）とユーザーの回答を出す
 - 回答に沿った op にも「意図の扱い」を当てる（`superseded: false` の回答なら回答に従い、`superseded: true` の回答には従わない）。`deleted_refs` の ref は、回答が何であっても `add`・`attach` しない（apply も飛ばす。報告に書く）
 
 #### 確認待ちが壊れているとき（`confirm_errors` が空でない）
@@ -219,6 +222,7 @@ exit 2 で `確認待ちの問い・事実・選択が apply の書いた内容�
 3. 新しい確認待ち: exit 0 なら適用後の todo.md の `## 確認待ち` 欄（番号・問い・おすすめ）。それ以外は「変更なし」
 4. 違反・警告: `apply-<RUN>.err`、`confirm_errors`、同期の失敗、GitBucket 未確認、my-tasks で取れなかったデータ源
 5. 足さなかった候補・止めた op: ふるい分けで落とした候補（意図で消された ref・他人の担当）と、意図のために作らなかった op を1行ずつ（key か title と理由）
+6. 古くなった回答: `answered_now` の `superseded: true` ごとに1行（ref・問い・ユーザーの回答・新しい意図）と「確認待ちで問い直した」。無ければ出さない
 
 ログは `~/.local/log/todo-ai/<今日>/`。1回の実行のファイルは同じ `<RUN>`（開始時刻 HHMMSS）を持つ（sync-<RUN>.out/err, context-<RUN>.json/err, my-tasks-<RUN>.json, changes-<RUN>.json, head-before-<RUN>.txt, apply-<RUN>.out/err）。
 

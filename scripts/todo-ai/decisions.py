@@ -182,6 +182,7 @@ def _sections(text: "str | None") -> "dict[str, str] | None":
 
 
 MAX_SCAN = 50
+_OPEN = ("やる", "待ち")
 
 
 def _sections_at(repo: Path, revs: "list[str]") -> "list[dict[str, str] | None]":
@@ -212,7 +213,8 @@ def detect_reverts(repo: Path, path: str, records: "list[dict] | None" = None) -
 
     各 ai/sync コミット C を C^・C・HEAD で比べる。C より後の ai/sync/user コミットが同じ ref を動かしていれば、
     その ref は C では判定しない（後の正当な移動や /todo-edit の変更を戻しと誤検出しない）。記録済みかは (commit, ref) で見る。
-    title: の ref の追加の消去は、後片付け（題が日付で変わる）だけ reject_add にする。
+    title: の ref の追加の消去は、後片付け（題が日付で変わる）だけ reject_add にする。後片付けは、消える直前に
+    やる・待ちにあり、やる・待ちに後片付けの行が残っていないときだけ（完了からの片付けと、題の手直しは除く）。
     records を省くと repo/todo-decisions.jsonl を読む。
     """
     repo = Path(repo)
@@ -239,6 +241,16 @@ def detect_reverts(repo: Path, path: str, records: "list[dict] | None" = None) -
         if p is not None and a is not None:
             acc |= {r for r in set(p) | set(a) if p.get(r) != a.get(r)}
 
+    after_c: "dict[str, list[dict[str, str] | None]]" = {}
+
+    def cleanup_dropped(c: str, ref: str, added_to: str) -> bool:
+        if c not in after_c:
+            hs = (_git(repo, "log", "--format=%H", f"{c}..HEAD", "--", path) or "").split()
+            after_c[c] = _sections_at(repo, [f"{h}:{path}" for h in hs]) if hs else []
+        last = next((x[ref] for x in after_c[c] if x is not None and ref in x), added_to)
+        return last in _OPEN and not any(r.startswith("title:" + CLEANUP_PREFIX) and v in _OPEN
+                                         for r, v in head.items())
+
     ts = now_iso()
     new = []
     for i, c in enumerate(commits):
@@ -252,7 +264,8 @@ def detect_reverts(repo: Path, path: str, records: "list[dict] | None" = None) -
             if p is not None and s is not None and p != s and h == p:
                 rec = {"kind": "revert_move", "value": p, "from": p, "to": s}
             elif p is None and s is not None and h is None and (
-                    not ref.startswith("title:") or ref.startswith("title:" + CLEANUP_PREFIX)):
+                    not ref.startswith("title:") or (ref.startswith("title:" + CLEANUP_PREFIX)
+                                                     and cleanup_dropped(c, ref, s))):
                 rec = {"kind": "reject_add", "value": s}
             else:
                 continue

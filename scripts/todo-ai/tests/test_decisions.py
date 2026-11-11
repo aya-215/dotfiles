@@ -127,6 +127,45 @@ class DetectReverts(unittest.TestCase):
         self.assertEqual((rec["value"], rec["from"], rec["to"]), ("やる", "やる", "待ち"))
 
 
+C = "- [ ] 後片付け（2026-11-10） — next: a\n"
+C_DONE = "- [x] 後片付け（2026-11-10） — next: a (done: 2026-11-10)\n"
+C_REF = "title:後片付け（2026-11-10）"
+
+
+class CleanupRejectAdd(unittest.TestCase):
+    def setUp(self):
+        self._t = tempfile.TemporaryDirectory()
+        self.addCleanup(self._t.cleanup)
+        self.r = Repo(self._t.name)
+        self.r.commit(doc(), "todo: base")
+        self.r.commit(doc(yaru=C), "todo(ai): 追加1")
+
+    def refs(self):
+        return [(x["ref"], x["kind"]) for x in decisions.detect_reverts(self.r.dir, "todo.md")]
+
+    def test_deleted_from_yaru_rejected(self):
+        self.r.commit(doc(), "todo: 消した")
+        self.assertEqual(self.refs(), [(C_REF, "reject_add")])
+
+    def test_deleted_from_matsu_rejected(self):
+        self.r.commit(doc(matsu=C), "todo: 待ちへ")
+        self.r.commit(doc(), "todo: 消した")
+        self.assertEqual(self.refs(), [(C_REF, "reject_add")])
+
+    def test_deleted_from_done_not_rejected(self):
+        self.r.commit(doc(kanryo=C_DONE), "todo: 完了にした")
+        self.r.commit(doc(), "todo: 完了から片付けた")
+        self.assertEqual(self.refs(), [])
+
+    def test_rename_keeping_cleanup_prefix_not_rejected(self):
+        self.r.commit(doc(yaru="- [ ] 後片付け（2026-11-10）ブランチ — next: a\n"), "todo: 直した")
+        self.assertEqual(self.refs(), [])
+
+    def test_rename_dropping_cleanup_prefix_rejected(self):
+        self.r.commit(doc(yaru="- [ ] ブランチ掃除 — next: a\n"), "todo: 直した")
+        self.assertEqual(self.refs(), [(C_REF, "reject_add")])
+
+
 class Records(unittest.TestCase):
     def test_load_append_pinned_answered(self):
         with tempfile.TemporaryDirectory() as t:

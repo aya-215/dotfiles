@@ -274,5 +274,36 @@ class E2EFlow(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
         self.assertFalse(any(it.title.startswith("後片付け") for it in self.section("やる")))
 
+    def test_superseded_answer_is_reasked_with_newer_intent(self):
+        self.human_commit(migrate.migrate(OLD), "2026-10-01")
+        first, newer = "坂西さんから日程の返事が来るまで残す", "日程が決まっても議事録を送るまで残す"
+        res = self.apply({"source": "user", "ops": [{"op": "note", "ref": "rc:old1", "intent": first}]}, 1, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        q = {"ref": "rc:old1", "kind": "conflict", "question": "意図は「返事まで残す」だが返信済みに見える。完了にする？",
+             "facts": f"意図: {first} / evidence: 「了解です、では来週で」",
+             "options": [{"label": "A", "text": "意図どおりにする", "recommended": True},
+                         {"label": "B", "text": "完了にする", "recommended": False}]}
+        res = self.apply({"source": "ai", "ops": [], "confirm": [q]}, 2)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.human_commit(self.todo.read_text(encoding="utf-8").replace("   回答:", "   回答: B", 1), "2026-11-10")
+        res = self.apply({"source": "user", "ops": [{"op": "note", "ref": "rc:old1", "intent": newer}]}, 3, "--allow-user")
+        self.assertEqual(res.returncode, 0, res.stderr)
+
+        ctx = self.context()
+        self.assertEqual(ctx["answered_now"], [{"ref": "rc:old1", "kind": "conflict", "answer": "B", "superseded": True}])
+        # SKILL: superseded の回答は従わず、同じ ref・kind で新しい意図を facts に入れて問い直す（報告にも出す）
+        res = self.apply({"source": "ai", "ops": [], "confirm": [dict(
+            q, question="意図が更新された。返信済みだが完了にする？",
+            facts=f"新しい意図: {newer} / 前の回答: B 完了にする / evidence: 「了解です、では来週で」")]}, 4)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertNotIn("skip: answered", self.git("log", "-1", "--format=%b"))
+        stale = [r for r in self.records() if r.get("kind") == "conflict"]
+        self.assertEqual([(r["ref"], r["value"], r.get("stale")) for r in stale], [("rc:old1", "B", True)])
+        blocks = self.context()["confirm_blocks"]
+        self.assertEqual([(b["ref"], b["kind"], b["answer"]) for b in blocks], [("rc:old1", "conflict", "")])
+        self.assertIn(newer, blocks[0]["facts"])
+        self.assertIn("rc:old1", [it.ref for it in self.section("やる")])
+
+
 if __name__ == "__main__":
     unittest.main()
