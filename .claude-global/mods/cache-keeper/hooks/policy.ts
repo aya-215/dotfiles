@@ -53,6 +53,10 @@ export const decide = (s: Session, now: number, facts: Facts, config: Config): D
   // A five-minute cache needs a ping every few minutes: within the hour that costs more than a re-cache.
   if (s.cacheTtl === '5m') return { action: 'stop', reason: 'short-ttl' }
 
+  // On 2.1.322 a fork after a process's first main request reads only ~37k of a 62k
+  // context, while one after the second reads it all; a miss would bench every session.
+  if (s.requests < 2) return { action: 'idle' }
+
   const expiresAt = s.lastRequestAt + config.ttlMs
   if (now >= expiresAt) return { action: 'stop', reason: 'expired' }
 

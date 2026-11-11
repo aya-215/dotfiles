@@ -32,6 +32,8 @@ const INITIAL: Session = {
   isCompacted: false,
   model: null,
   pings: 0,
+  requests: 0,
+  turnRequests: 0,
   pingErrors: 0,
   lastPing: null,
   stopReason: null,
@@ -375,7 +377,7 @@ async function endRequest($: EngineInterface, turnId: string, usage: ModelUsage 
       isRequestRunning: false,
       probe: null,
       ...(isDone
-        ? { isCompacted: false, lastRequestAt: now, lastTurnAt: now, pings: 0, pingErrors: 0 }
+        ? { isCompacted: false, lastRequestAt: now, lastTurnAt: now, pings: 0, pingErrors: 0, requests: cur.requests + 1, turnRequests: cur.turnRequests + 1 }
         : {}),
     }))
     if (isDone && s.probe !== null) await verifyRefresh($, s.probe, usage)
@@ -486,7 +488,7 @@ export const register: Register = (on, options) => {
     if (e.agentId !== undefined) return next(e)
     cancelTimer()
     // Until its first request the turn is about to use the cache: no ping in between.
-    await update($, sessionAtom, cur => ({ ...cur, isRequestRunning: true, turnId: e.turnId, probe: null }))
+    await update($, sessionAtom, cur => ({ ...cur, isRequestRunning: true, turnId: e.turnId, turnRequests: 0, probe: null }))
     return next(e)
   })
 
@@ -528,6 +530,8 @@ export const register: Register = (on, options) => {
       lastTurnAt: now,
       pings: 0,
       pingErrors: 0,
+      requests: s.turnRequests === 0 && e.reason !== 'error' ? s.requests + 1 : s.requests,
+      turnRequests: 0,
       untilMs: s.untilMs !== null && s.untilMs <= now ? null : s.untilMs,
     }))
     if (s.untilMs !== before.untilMs) await recordSetting($, s)

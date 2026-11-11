@@ -175,8 +175,10 @@ const turnWithStep = async ($: any, w: { stepUsage: (u: ModelUsage) => void }, t
   await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId, reason: 'answer' })
 }
 
+// Two turns: a session with one main request in the process is never pinged (see policy.ts).
 const startAndTurn = async ($: any) => {
   await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+  await turn($, 't0')
   await turn($, 't1')
 }
 
@@ -284,6 +286,7 @@ describe('cache-keeper', () => {
   test('a turn that started before a reload still counts when it completes', async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await turn($, 't0')
     await $.turn.start({ text: 'hi', turnId: 't1' })
     await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true }) // hot reload
     await $.turn.complete({ answer: 'done', durationMs: 1000, isAborted: false, turnId: 't1', reason: 'answer' })
@@ -644,6 +647,26 @@ describe('cache-keeper', () => {
     expect(w.store.has('refreshVerified')).toBe(false)
   })
 
+  test('a session with only one main request in this process is not pinged', async ($, on) => {
+    const w = world(on)
+    await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await turnWithStep($, w, 't1')
+    await w.clock.advance(2 * HOUR)
+    expect(w.forks.length).toBe(0)
+    expect(w.store.has('forkMiss')).toBe(false)
+  })
+
+  test('a turn of several requests counts each of them', async ($, on) => {
+    const w = world(on)
+    await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await $.turn.start({ text: 'hi', turnId: 't1' })
+    await step($, w, 't1', 0, HIT)
+    await step($, w, 't1', 1, HIT)
+    await $.turn.complete({ answer: 'done', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+    await w.clock.advance(56 * MIN)
+    expect(w.forks.length).toBe(1)
+  })
+
   test('a manual /keepwarm now does not count toward the ping limit', async ($, on) => {
     const w = world(on)
     await startAndTurn($)
@@ -674,6 +697,7 @@ describe('cache-keeper', () => {
   test('seated: a model switch whose hook was skipped stops pings until the next turn, without benching', async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await turnWithStep($, w, 't0')
     await turnWithStep($, w, 't1')
     await w.clock.advance(70 * MIN) // one ping at 55
     w.switchModel('claude-sonnet-5-5')
@@ -731,6 +755,7 @@ describe('cache-keeper', () => {
   test('unseated: a model switch seen by its hook and by the model read is handled once', async ($, on) => {
     const w = world(on)
     await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await turnWithStep($, w, 't0')
     await turnWithStep($, w, 't1')
     await w.clock.advance(70 * MIN)
     await $.classic.PostModelSwitch(modelSwitch('1h'))
@@ -751,6 +776,7 @@ describe('cache-keeper', () => {
   test("an answered request whose token count isn't filled yet is not taken for a compaction", async ($, on) => {
     const w = world(on, { isFresh: true, isCountLate: true })
     await $.session.start({ cwd: '/x', surface: 'terminal', isInteractive: true })
+    await turnWithStep($, w, 't0')
     await turnWithStep($, w, 't1')
     await w.clock.advance(55 * MIN)
     expect(w.forks.length).toBe(1)

@@ -46,6 +46,10 @@ export type Session = {
   model: string | null
   /** Pings since the last real main-loop request. */
   pings: number
+  /** Main-loop requests answered in this process (a turn with no step counts as one). */
+  requests: number
+  /** Main-loop requests answered in the turn in progress. */
+  turnRequests: number
   /** Ping errors in a row since the last hit or real request. */
   pingErrors: number
   lastPing: PingRecord | null

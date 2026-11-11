@@ -29,6 +29,8 @@ const session = (over: Partial<Session> = {}): Session => ({
   stopReason: null,
   probe: null,
   model: null,
+  requests: 2,
+  turnRequests: 0,
   ...over,
 })
 
@@ -133,6 +135,12 @@ describe('decide', () => {
       action: 'stop',
       reason: 'small-context',
     })
+  })
+
+  test('does not ping a session with only one main request in this process', () => {
+    expect(decide(session({ requests: 1 }), 56 * MIN, facts, config)).toEqual({ action: 'idle' })
+    expect(decide(session({ requests: 1, untilMs: 2 * HOUR }), 56 * MIN, facts, config)).toEqual({ action: 'idle' })
+    expect(decide(session({ requests: 2 }), 56 * MIN, facts, config)).toEqual({ action: 'ping' })
   })
 
   test('waits for a running request', () => {
