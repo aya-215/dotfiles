@@ -115,18 +115,20 @@ Claude Code で `/todo`（「TODO更新」「確認待ちに答えたから反�
 - 回答が選択肢の文字1つだけ（`A`・`Ａ`・` b ` のように前後の空白・全角・小文字でもよい）で、`/todo` が問いを出したときにその選択肢の変更案（`on_answer`）を付けていれば、ポップアップを `q` で閉じたときに `answers.py` が AI なしで反映する（コミットとロック解除の後に裏で起動。数秒で `todo(ai): ` のコミットになる）
 - 変更案は apply が問いを書くときに `~/memo/todo-pending.json` に保存し、同じコミットに入れる。確認待ちから消えた問いの分は次に確認待ちを書くときに消える。問い・選択肢の行が保存したときと一字でも違うブロックには使わない
 - 文の回答、変更案の無い問いへの回答、選択肢に無い文字は、回答欄ごと確認待ちに残り、次の `/todo` が読む（文の回答と文字の回答が混ざっていても、文字の回答の分だけ反映する）
-- 結果はポップアップには出ない。`~/.local/log/todo-ai/<日付>/answers-<HHMMSS>.{json,out,err}` に残る（反映する回答が無ければ何も書かない）
+- 結果はポップアップには出ない。`~/.local/log/todo-ai/<日付>/answers-<HHMMSS>-<PID>.{json,out,err}` に残る（反映する回答が無ければ何も書かない。エラーは何であっても `.err` に残る）
+- 選んだ文字の変更案の op が1つでも飛ばされる（行が消えた・題が変わった等）なら、その問いは反映せず回答欄ごと残して次の `/todo` に回す（反映前に apply と同じ処理を試しに流して決める）。何もしない選択肢（変更案が `[]`）は飛ばされる op が無いので、そのまま反映する
 - 反映しない conflict の問い（未回答・文の回答・古くなった回答）が確認待ちに残るときは、閉じても何もせず全部を次の `/todo` に回す（確認待ちを書き直すと、conflict の回答が古くなったかを測る基準が動くため）
 
 #### 回答で人の行を直す
 
-`/todo` は人の行（origin human）を消せず、題も変えられず、完了から戻せない。回答に「既存行を削除して」「これは対応済み」のような人の行への指示があるときだけ、`/todo` はその op に `"by_answer": {"ref": <ブロックの ref>, "kind": <kind>}` を付けて実行する（answers.py の op には全部付く）。
+`/todo` は人の行（origin human）を消せず、題も変えられず、完了から戻せない。回答に「既存行を削除して」「これは対応済み」のような人の行への指示があるときだけ、`/todo` はその op に `"by_answer": {"ref": <ブロックの ref>, "kind": <kind>, "answer": <読んだ回答文>}` を付けて実行する（answers.py の op には全部付く）。
 
 - apply は、この実行で読んだ確認待ちにその (ref, kind) のブロックがあり、回答が空でないことを確かめる。無ければ `skip: no answer <ref>`。confirm を出さない実行・回答欄ごと残したブロック・古くなった conflict の回答・同じタグのブロックが2つ以上のときも同じ
 - 触れる行は、ブロックの ref の行と、問い・事実の本文に『』で引用された題と完全一致する行だけ。op を当てる前の台帳で決めるので、同じ実行の attach で key を付けた行や add した行は名指しできない。それ以外は `skip: out of answer scope <ref>`。回答の文に題が出ているだけの行は対象にならない
 - その行には人の行でも `delete`・`edit_title`・`move`（完了から出す・人が戻した移動先への移動を含む）・`set_next` ができる。範囲の外では、ai は今までどおり人の行を消せず・題を変えず・完了から戻せず、validate も同じ
-- 適用した op ごとに意図 `{"kind": "intent", "ref", "value": "確認待ち「<問い>」への回答「<回答>」に基づく", "op", "by": "human", "by_answer": {"ref", "kind"}}` を、その回答の記録より前に残す（回答の文はユーザーの言葉なので by human。後ろに置くと conflict の回答が古くなった扱いになる）。delete した行は以後 `/todo` が足し直さず、完了から出した行には `revert_move`（to=完了）が付く
-- source ai の機能なので、`TODO_AI_DENY_USER` の無人実行でも動く。コミットは `todo(ai): ` なので、回答で題を変えた行は以後 AI の行（origin ai）として扱われる
+- 適用した op ごとに意図 `{"kind": "intent", "ref", "value": "確認待ち「<問い>」への回答「<回答>」に基づく", "op", "by": "human", "by_answer": {"ref", "kind"}}`（edit_title なら新しい題の `"title"` も）を、その回答の記録より前に残す（回答の文はユーザーの言葉なので by human。後ろに置くと conflict の回答が古くなった扱いになる）。delete した行は以後 `/todo` が足し直さず、完了から出した行には `revert_move`（to=完了）が付く
+- `answer` が今の回答欄と一字一句（前後の空白を除く）違えば `skip: answer changed <ref>`。`/todo` が読んだ後（収集の約14分の間）に書き換えた回答で、古い回答の op を走らせないため。そのブロックは記録せず回答欄ごと確認待ちに残す
+- source ai の機能なので、`TODO_AI_DENY_USER` の無人実行でも動く。回答で付けた題は `todo(ai): ` のコミットで入るが、意図の `title` から人の題として扱い（origin human）、以後の回答なしの `edit_title` は `skip: human title`、validate も人の題として守る
 
 所要は実測で約14分・約306k tokens（2026-11-11）。大半は `/my-tasks` の収集（サブエージェント）。
 
@@ -214,7 +216,7 @@ python3 ~/.dotfiles/scripts/todo-ai/review.py --since $(date -d '7 days ago' +%F
 | `~/.local/log/todo-ai/<YYYY-MM-DD>/run-<HHMMSS>.log` | 無人実行1回分の claude の出力 |
 | `~/.local/log/todo-ai/<YYYY-MM-DD>/` | `/todo` の1回ごとのファイル。名前に開始時刻 `<HHMMSS>` が付く（`sync-`, `context-`, `my-tasks-`, `changes-`, `head-before-`, `apply-`） |
 | `~/.local/log/todo-ai/<YYYY-MM-DD>/edit-<HHMMSS>.json` | `/todo-edit` の変更案 |
-| `~/.local/log/todo-ai/<YYYY-MM-DD>/answers-<HHMMSS>.{json,out,err}` | ポップアップを閉じたときの回答の反映（変更案と apply の出力） |
+| `~/.local/log/todo-ai/<YYYY-MM-DD>/answers-<HHMMSS>-<PID>.{json,out,err}` | ポップアップを閉じたときの回答の反映（変更案と apply の出力） |
 | `git -C ~/memo log` | AI・同期・ユーザー指示の変更と理由（`todo(ai): ` / `todo(sync): ` / `todo(user): ` の本文。飛ばした op は `skip: ...`） |
 | `~/memo/todo-decisions.jsonl` | 人の判断（回答・戻し・消した追加）と `/todo-edit` の意図の記録 |
 

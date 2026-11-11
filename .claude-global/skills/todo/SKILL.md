@@ -203,8 +203,9 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 - 回答したブロックは `confirm` に写さない（写しても apply が、回答欄が埋まっている・判断記録にある (ref, kind) の問いを `skip: answered` で落とす）
 - 選択肢の文字1つの回答で `on_answer` があったものは、ポップアップを閉じたときに `answers.py` が反映済みで、確認待ちから消えている。`/todo` に残るのは、文の回答・変更案の無い問いへの回答・conflict の問いが残っていて閉じても反映しなかった回答・閉じた後の反映が止まった（`~/.local/log/todo-ai/<日付>/answers-<HHMMSS>.err`）回答
 - 回答の内容に沿った op を作る。回答は選択の `label`（A/B/C）か `text` の言葉で読む。問いの中身は `confirm_blocks` の同じ ref・kind のブロック（回答済みも載っている）の `question`・`facts` で見る。回答が読み取れない自由文なら op は作らず、記録だけして報告に書く
-- **回答で人の行を直す（by_answer）**: 自由文の回答が既存の行への指示（消す・完了にする・題を直す・移す・next を変える。例「既存行を削除して」「これは対応済み」「坂西さんの対応も完了」）を含むときは、その op に `"by_answer": {"ref": <ブロックの ref>, "kind": <ブロックの kind>}` を付けて実行する。付けた op だけ、人の行にも `delete`・`edit_title`・完了からの `move`・`set_next` ができ、apply が意図（回答の文に基づく、by human）を残す（`delete` した行は以後足し直さない。完了から出した行は自動で完了に戻さない）
+- **回答で人の行を直す（by_answer）**: 自由文の回答が既存の行への指示（消す・完了にする・題を直す・移す・next を変える。例「既存行を削除して」「これは対応済み」「坂西さんの対応も完了」）を含むときは、その op に `"by_answer": {"ref": <ブロックの ref>, "kind": <ブロックの kind>, "answer": <answered_now のその回答の answer をそのまま>}` を付けて実行する。付けた op だけ、人の行にも `delete`・`edit_title`・完了からの `move`・`set_next` ができ、apply が意図（回答の文に基づく、by human）を残す（`delete` した行は以後足し直さない。完了から出した行は自動で完了に戻さない）
   - 対象にできるのは、そのブロックの `scope` に出ている行だけ。回答の文に別の行の題が出ていても、`scope` に無い行には作らない（apply も `skip: out of answer scope <ref>` で飛ばす）。`scope` に無い行への指示は op にせず報告に書く
+  - `answer` は `context-<RUN>.json` の `answered_now` の文字列を一字も変えずに入れる。収集の間にユーザーが回答を書き換えていると、apply は今の回答欄と比べて `skip: answer changed <ref>` で飛ばし、その問いを回答欄ごと確認待ちに残す（新しい回答は次の `/todo` が読む）。`answer` が無いのも同じ
   - 回答が今回の確認待ちに無い・空のブロックを指す `by_answer` は `skip: no answer <ref>` になる。`confirm` を出さない実行（`confirm_errors` があるとき）では使えない
   - 回答が曖昧（どの行か・消すのか完了なのかが読めない）なら op を作らず、`conflict` ではなく `is_task` か `policy` の問いを1つ出し直す（`ref` は同じ行、対象の行の題を『』で問いに入れ、選択肢は具体的な op に、`on_answer` も付ける）
   - still_needed に「不要」→ `move → 完了`
@@ -229,13 +230,13 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 #### apply が全体を止める書き方（1つでもあると何も書かれない）
 
 - `by_answer` の無い、完了にある行への `move` と `delete`
-- `by_answer` が `{ref, kind}`（kind は確認待ちの6種）の形でない、`order` に付けた
+- `by_answer` が `{ref, kind, answer}`（kind は確認待ちの6種、answer は文字列）の形でない、`order` に付けた
 - `add` の `section` がやる/待ち以外、`key` があるのに `url` が null、key の形式違い（`epc#N` `emm#N` `eae#N` `eas#N` `gb:<repo>#N` `rc:<id>` `rc:<id>#N` `mail:<id>` `wt:<name>` `ebpm:No<数字>`）
 - どの文字列にも改行を入れる
 - `title`・`next` に ` — next: ` や `](` を含める、`title` の前後に空白がある、`url` に空白や括弧がある（書き出すと別の行に読めてしまうため全体が止まる）
 - `options` の要素に `label`/`text` が無い・空、`confirm` の要素に `ref` が無い・`kind` が上の6種以外
 
-存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、人の行（この実行で add した行を除き、apply が git 履歴で判定する）・完了・後片付けの行への `edit_title`、key の無い行で別の行と題が重なる `edit_title`、回答の無いブロック・`scope` の外の行への `by_answer` 付きの op は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: human title` / `skip: done` / `skip: cleanup` / `skip: duplicate title` / `skip: no answer` / `skip: out of answer scope` としてコミット本文に残る）。
+存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、人の行（この実行で add した行を除き、apply が git 履歴で判定する）・完了・後片付けの行への `edit_title`、key の無い行で別の行と題が重なる `edit_title`、回答の無いブロック・回答文が変わったブロック・`scope` の外の行への `by_answer` 付きの op は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: human title` / `skip: done` / `skip: cleanup` / `skip: duplicate title` / `skip: no answer` / `skip: answer changed` / `skip: out of answer scope` としてコミット本文に残る）。
 
 ### 7. 適用
 
