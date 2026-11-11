@@ -341,6 +341,18 @@ if [ "${#mail_log}" -gt "$MAX_MAIL_CHARS" ]; then
 fi
 
 git_log="$(collect_git_log)"
+# git 節の見出し（### [ラベル] 名）と「Merge pull request #N from <owner>/<branch>」の行から
+# 区切り内にマージされた PR の一覧を作る。切り詰め前の git_log から読む
+merged_prs="$(printf '%s\n' "$git_log" | awk '
+  /^### \[[^]]+\] / { name = $0; sub(/^### \[[^]]+\] /, "", name); next }
+  /^- [0-9][0-9]\/[0-9][0-9] [0-9][0-9]:[0-9][0-9] \[[^]]*\] Merge pull request #[0-9]+ from [^ ]+/ {
+    ts = $2 " " $3
+    n = $0; sub(/.*Merge pull request #/, "", n); sub(/ .*/, "", n)
+    ref = $0; sub(/.* from /, "", ref); sub(/[ （].*/, "", ref)
+    printf "- %s #%s（%s、%s）\n", name, n, ref, ts
+  }
+')"
+[ -n "$merged_prs" ] || merged_prs="(なし)"
 if [ "${#git_log}" -gt "$MAX_GIT_CHARS" ]; then
   git_log="${git_log:0:$MAX_GIT_CHARS}
 （※ git活動が長いため切り詰め）"
@@ -372,6 +384,10 @@ build_sessions() {
     # frontmatter は「project: 行より後の最初の ---」で終わる（先頭に余分な --- ブロックが
     # 付くファイルと標準形の両方に対応する。--- の個数には依存しない）
     body="$(awk '/^project: /{seen=1} /^---$/{if(seen && !body){body=1; next}} body{print}' "$sf")"
+    # 日報に使わない3節は payload にだけ載せない（要約ファイル自体は変えない）
+    body="$(printf '%s\n' "$body" | awk '
+      /^## /{ skip = ($0 == "## 実行した主なコマンド" || $0 == "## ナレッジ候補" || $0 == "## フィードバック/承認") }
+      !skip{print}')"
     # 本文が空の要約（薄いセッション等）は見出しごとスキップしてトークンを節約する
     if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
       continue
@@ -408,6 +424,9 @@ while :; do
 
 【git活動（区切り内のコミット・ローカル収集）】
 ${git_log}
+
+【区切り内にマージされたPR】
+${merged_prs}
 
 【Rocket Chat 当日履歴（購読ルーム横断・DM除く。[↳HH:MM 発言者] 付きの行は直前の行ではなくその親メッセージへのスレッド返信）】
 ${rocketchat_log}

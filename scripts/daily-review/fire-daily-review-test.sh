@@ -210,6 +210,36 @@ P="$C/slices/2026-11-04/payload.txt"
 has "c14 groupA は別見出し" "$P" "### [Work] groupA/ebase-web"
 has "c14 groupB は別見出し" "$P" "### [Work] groupB/ebase-web"
 
+# ---- ケース15: マージ一覧と、要約から外す3節 ----
+C="$TMP/c15"; mkdir -p "$C/home" "$C/roots"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "## 作業内容
+WORK_BODY
+## 実行した主なコマンド
+CMD_BODY
+## ナレッジ候補
+KNOW_BODY
+## フィードバック/承認
+FB_BODY
+## 結論
+CONCL_BODY"
+git init -q "$C/roots/ebase-portal-chat" && git -C "$C/roots/ebase-portal-chat" remote add origin git@github.com:ebase-dev/ebase-portal-chat.git
+mkcommit "$C/roots/ebase-portal-chat" "Merge pull request #1202 from ebase-dev/feat/1013-x" $ME
+FIRE_GIT_ROOTS="$C/roots/*/" run_fire "$C" --dry-run --date 2026-11-04
+P="$C/slices/2026-11-04/payload.txt"
+has "c15 マージ節の見出し" "$P" "【区切り内にマージされたPR】"
+has "c15 マージ行" "$P" "- ebase-portal-chat #1202（ebase-dev/feat/1013-x、11/03 23:00）"
+has "c15 作業内容は残る" "$P" "## 作業内容"
+has "c15 結論は残る" "$P" "CONCL_BODY"
+lacks "c15 コマンド節の見出し" "$P" "## 実行した主なコマンド"
+lacks "c15 コマンド節の中身" "$P" "CMD_BODY"
+lacks "c15 ナレッジ節" "$P" "KNOW_BODY"
+lacks "c15 フィードバック節" "$P" "FB_BODY"
+has "c15 切り出し md 自体は不変" "$C/src/2026-11-04/projA-aaaaaaaa.md" "CMD_BODY"
+C="$TMP/c16"; mkdir -p "$C/home"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
+run_fire "$C" --dry-run --date 2026-11-04
+check "c16 マージ無しは (なし)" "(なし)" "$(grep -A1 '^【区切り内にマージされたPR】' "$C/slices/2026-11-04/payload.txt" | tail -1)"
+
 # ---- ケース5: --overwrite ----
 C="$TMP/c5"; mkdir -p "$C/home"
 mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
