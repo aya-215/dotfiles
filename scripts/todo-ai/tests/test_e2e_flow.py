@@ -84,7 +84,8 @@ class E2EFlow(unittest.TestCase):
         old = {i["ref"]: i for i in ctx["items"]}
         self.assertEqual((old["rc:old1"]["origin"], old["rc:old1"]["age_days"]), ("human", 40))
         self.assertEqual(ctx["confirm_blocks"], [])
-        is_task_ref = "title:合田さんへのコンテナ設置依頼の返信"
+        # key の無い maybe_done（合田さん）は問わず、key の無い theirs だけを is_task にする
+        is_task_ref = "title:検証環境の利用申請"
         res = self.apply({"source": "ai", "ops": [
             {"op": "add", "section": "やる", "key": "epc#1163",
              "url": "https://github.com/ebase-dev/ebase-portal-chat/pull/1163",
@@ -103,8 +104,8 @@ class E2EFlow(unittest.TestCase):
              "options": [{"label": "A", "text": "要る", "recommended": False},
                          {"label": "B", "text": "不要（完了にする）", "recommended": True}]},
             {"ref": is_task_ref, "kind": "is_task",
-             "question": "合田さんへのコンテナ設置依頼の返信はタスク？",
-             "facts": "Sent に「Re: コンテナ設置のお願い」あり",
+             "question": "検証環境の利用申請はタスク？",
+             "facts": "Sent に「検証環境の利用申請」2026-11-06、返信なし / ball: theirs",
              "options": [{"label": "A", "text": "タスクとして追加", "recommended": False},
                          {"label": "B", "text": "タスクではない", "recommended": True}]},
         ]}, 1)
@@ -138,7 +139,7 @@ class E2EFlow(unittest.TestCase):
         # 3回目: 同じ問いは出ない
         ctx = self.context()
         self.assertEqual([(b["ref"], b["kind"], b["question"]) for b in ctx["confirm_blocks"]],
-                         [(is_task_ref, "is_task", "合田さんへのコンテナ設置依頼の返信はタスク？")])
+                         [(is_task_ref, "is_task", "検証環境の利用申請はタスク？")])
         self.assertEqual(ctx["answered_now"], [])
         self.assertIn({"ref": "rc:old1", "kind": "still_needed", "value": "B", "ts": self.records()[0]["ts"]},
                       ctx["answered_refs"])
