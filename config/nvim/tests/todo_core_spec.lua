@@ -191,13 +191,47 @@ do
   vim.cmd.edit(todo.path)
   todo.lock()
   local lock_at_commit
+  local lock_at_answers
   todo.commit = function()
     lock_at_commit = vim.fn.filereadable(dir .. "/.todo.lock")
+  end
+  todo.reflect_answers = function()
+    lock_at_answers = vim.fn.filereadable(dir .. "/.todo.lock")
   end
   todo.leave()
   eq(lock_at_commit, 1, "leave commits while lock is held")
   eq(vim.fn.filereadable(dir .. "/.todo.lock"), 0, "leave unlocks after commit")
+  eq(lock_at_answers, 0, "leave reflects answers after unlock")
   vim.cmd("bwipeout!")
+  lock_at_answers = nil
+  todo.leave()
+  eq(lock_at_answers, nil, "leave from another file does not reflect answers")
+  vim.fn.delete(dir, "rf")
+end
+
+-- 回答の反映は answers.py を TODO_MD_PATH 付きで裏で起動する
+do
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  vim.env.TODO_MD_PATH = dir .. "/todo.md"
+  package.loaded["todo"] = nil
+  local todo = require("todo")
+  eq(todo.answers_script:sub(-#"/scripts/todo-ai/answers.py"), "/scripts/todo-ai/answers.py", "answers script path")
+  eq(vim.fn.filereadable(todo.answers_script), 1, "answers script exists next to the nvim config")
+  local marker = dir .. "/marker"
+  todo.answers_script = dir .. "/stub.py"
+  vim.fn.writefile({
+    "import os",
+    "open(" .. vim.inspect(marker) .. ", 'w').write(os.environ.get('TODO_MD_PATH', ''))",
+  }, todo.answers_script)
+  vim.env.TODO_MD_PATH = nil
+  todo.reflect_answers()
+  vim.wait(5000, function()
+    return vim.fn.filereadable(marker) == 1 and vim.fn.readfile(marker)[1] ~= nil
+  end)
+  eq(vim.fn.readfile(marker), { todo.path }, "answers.py gets TODO_MD_PATH")
+  todo.answers_script = dir .. "/missing.py"
+  eq(pcall(todo.reflect_answers), true, "missing answers script does not fail")
   vim.fn.delete(dir, "rf")
 end
 
