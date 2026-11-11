@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from xml.sax.saxutils import quoteattr
 
 ENDPOINT = "http://192.168.234.19:8080/ebase-net/eb-api"
 VOLUME = "02043"
@@ -20,6 +21,7 @@ VOLUME = "02043"
 DEFAULT_ME = "森彪人"
 MAX_CALLS = 40
 CHUNK = 30
+LOOKUP_BATCH = 25
 DONE_STATUSES = {"完了", "終了", "クローズ", "完了済", "対応済", "取下", "取り下げ", "却下", "中止", "対応不要"}
 TEXT_LIMIT = 1000
 DETAIL_URL = "https://ebpm.ebase-jp.com/ebase-web-v3/DispDetail.do?volumeName=02043&itemID="
@@ -78,7 +80,7 @@ def curl_post(xml):
     # Python の urllib は連続呼び出しで connect timeout になった（curl は通る）
     try:
         p = subprocess.run(
-            ["curl", "-s", "-S", "-m", "60", "-X", "POST", "-H", "Content-Type: text/plain; charset=utf-8",
+            ["curl", "-s", "-S", "--connect-timeout", "10", "-m", "60", "-X", "POST", "-H", "Content-Type: text/plain; charset=utf-8",
              "--data-binary", "@-", ENDPOINT],
             input=xml.encode("utf-8"), capture_output=True, timeout=75)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -101,16 +103,17 @@ class Client:
         return self.post('<?xml version="1.0" encoding="utf-8"?>' + xml)
 
     def search(self, conds, match="part"):
-        c = "".join(f'<spec target="spec" spec_type="{t}" spec_title="{k}" value="{v}"/>' for t, k, v in conds)
+        c = "".join(f"<spec target=\"spec\" spec_type={quoteattr(t)} spec_title={quoteattr(k)} value={quoteattr(v)}/>"
+                    for t, k, v in conds)
         return parse_item_ids(self.call(
             f'<request><command name="getItems"/><data><volume voldbname="{VOLUME}"/>'
-            f'<search match="{match}">{c}</search></data></request>'))
+            f'<search match={quoteattr(match)}>{c}</search></data></request>'))
 
     def fetch(self, ids, spec_types):
         assert len(ids) <= CHUNK
         items = "".join(f"<item><item_id>{i}</item_id></item>" for i in ids)
         targets = '<targets><spec target="basic"/>' + "".join(
-            f'<spec target="spec" spec_type="{t}" spec_title="*"/>' for t in spec_types) + "</targets>"
+            f'<spec target="spec" spec_type={quoteattr(t)} spec_title="*"/>' for t in spec_types) + "</targets>"
         return parse_records(self.call(
             f'<request><command name="getSpecDataLite"/><data><volume voldbname="{VOLUME}"/>{items}{targets}</data></request>'))
 
@@ -125,24 +128,38 @@ def _at(rec):
 
 def collect(since, me, post=None, max_calls=MAX_CALLS):
     post = post or curl_post
-    me_n = norm(me)
-    out = {"me": me, "comments": [], "notices": [], "assigned": [], "failed": None}
-    cl = Client(post, max_calls)
+    out = {"me": me, "comments": [], "notices": [], "assigned": [], "failed": None, "notes": []}
+    cl = Client(post, max(1, max_calls))
     try:
-        _collect(cl, since, me_n, out)
+        _collect(cl, since, norm(me), out)
     except EbpmError as e:
         out["failed"] = str(e)
+        out["truncated"] = True  # 途中で止まったので、以降のデータは含まれない
+    out.setdefault("truncated", False)
+    rows = out["comments"] + out["notices"]
+    try:
+        _attach_issue_ids(cl, rows)
+    except EbpmError as e:
+        out["failed"] = out["failed"] or str(e)
+        out["truncated"] = True
+    for row in rows:
+        row["url"] = DETAIL_URL + row["issue_item_id"] if row["issue_item_id"] else ""
+    for k in ("comments", "notices"):
+        out[k].sort(key=lambda r: r["at"], reverse=True)
     return out
+
+
+ID_RE = re.compile(r"^t\d{12}$")
 
 
 def _collect(cl, since, me, out):
     mine = cl.search([("EBCMTコメント情報", "コメント登録者", me)])
     to_me = cl.search([("EBCMTコメント情報", "お知らせ先担当者", me)])
-    assigned_ids = cl.search([("EBITS課題管理情報", "担当者名", me)])
+    assigned_ids = cl.search([("EBITS課題管理情報", "担当者名", me)])  # 実測: 件数上限なし（全件1回で返る）
 
-    # item_id は登録順に増えるので、新しい方から読み、期間より古いチャンクが来たら打ち切る
     ids = sorted(set(mine) | set(to_me), reverse=True)
-    mine_set = set(mine)
+    # 固定幅 t+12桁・登録順に増える（実測で日付の逆転0件）ときだけ、古いチャンクで打ち切る
+    early_ok = all(ID_RE.match(i) for i in ids)
     for i in range(0, len(ids), CHUNK):
         recs = cl.fetch(ids[i:i + CHUNK], COMMENT_TYPES)
         dates = [to_date(_at(r)) for r in recs]
@@ -157,27 +174,33 @@ def _collect(cl, since, me, out):
             elif me in norm(r.get("お知らせ先担当者", "")):
                 row.update(by=by, to=r.get("お知らせ先担当者", ""))
                 out["notices"].append(row)
-        if recs and all(d and d < since for d in dates):
+        if early_ok and recs and all(d and d < since for d in dates):
+            out["notes"].append(f"stopped early at {ids[i]} (chunk older than {since})")
             break
 
-    if assigned_ids:
-        for r in cl.fetch(assigned_ids[:CHUNK], ISSUE_TYPES):
+    for i in range(0, len(assigned_ids), CHUNK):
+        for r in cl.fetch(assigned_ids[i:i + CHUNK], ISSUE_TYPES):
             if r.get("属性") == "課題" and norm(r.get("担当者名", "")) == me and r.get("状況", "") not in DONE_STATUSES:
                 out["assigned"].append({"issue_no": r.get("課題No", ""), "issue_title": r.get("課題名", ""),
                                         "status": r.get("状況", ""), "item_id": r.get("item_id", ""),
                                         "url": DETAIL_URL + r.get("item_id", "")})
 
-    # コメントのレコードは課題本体の item_id を持たないので、課題No から引く
-    lookup = {}
-    for row in out["comments"] + out["notices"]:
-        no = row["issue_no"]
-        if no and no not in lookup:
-            hit = cl.search([("EBITS基本情報", "課題No", no), ("データ管理", "属性", "課題")], match="full")
-            lookup[no] = hit[0] if hit else ""
-        row["issue_item_id"] = lookup.get(no, "")
-        row["url"] = DETAIL_URL + row["issue_item_id"] if row["issue_item_id"] else ""
-    for k in ("comments", "notices"):
-        out[k].sort(key=lambda r: r["at"], reverse=True)
+
+def _attach_issue_ids(cl, rows):
+    """コメントのレコードは課題本体の item_id を持たないので、課題No をまとめて引く（part 検索は空白区切りで OR になる）"""
+    nos = sorted({r["issue_no"] for r in rows if r["issue_no"]})
+    found = {}
+    for i in range(0, len(nos), LOOKUP_BATCH):
+        batch = nos[i:i + LOOKUP_BATCH]
+        try:
+            hits = cl.search([("EBITS基本情報", "課題No", " ".join(batch)), ("データ管理", "属性", "課題")])
+            for j in range(0, len(hits), CHUNK):
+                for r in cl.fetch(hits[j:j + CHUNK], ["データ管理", "EBITS基本情報"]):
+                    if r.get("属性") == "課題":
+                        found[r.get("課題No", "")] = r.get("item_id", "")
+        finally:
+            for r in rows:
+                r["issue_item_id"] = found.get(r["issue_no"], "")
 
 
 def main(argv=None):

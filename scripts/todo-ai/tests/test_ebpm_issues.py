@@ -91,8 +91,10 @@ class CollectTest(unittest.TestCase):
             if "担当者名" in xml:
                 return ids_resp("i1", "i2", "i3")
             if "課題No" in xml:
-                return ids_resp("ISSUE-" + xml.split('value="')[1].split('"')[0])
+                return ids_resp("ISSUE-No8", "ISSUE-No9")
         if "getSpecDataLite" in xml:
+            if "<item_id>ISSUE-" in xml:
+                return resp(issue("ISSUE-No8", "No8", "対応中") + issue("ISSUE-No9", "No9", "対応中"))
             if "<item_id>i1" in xml:
                 return resp(issue("i1", "No1", "対応中") + issue("i2", "No2", "完了") + issue("i3", "No3", "クローズ"))
             return resp(
@@ -123,7 +125,7 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(out["comments"], [])
 
     def test_stops_after_old_chunk(self):
-        ids = [f"c{n:03d}" for n in range(100)]
+        ids = [f"t{n:012d}" for n in range(100)]
 
         def h(xml):
             if "getItems" in xml:
@@ -132,8 +134,64 @@ class CollectTest(unittest.TestCase):
         out, api = run(h)
         fetches = [c for c in api.calls if "getSpecDataLite" in c]
         self.assertEqual(len(fetches), 1)
-        self.assertIn("<item_id>c099</item_id>", fetches[0])
+        self.assertIn("<item_id>t000000000099</item_id>", fetches[0])
+        self.assertIn("stopped early at t000000000099", out["notes"][0])
         self.assertLessEqual(fetches[0].count("<item_id>"), 30)
+
+    def test_no_early_stop_when_id_format_unexpected(self):
+        ids = [f"c{n:03d}" for n in range(60)]
+        n = [0]
+
+        def h(xml):
+            if "getItems" in xml:
+                return ids_resp(*ids) if "コメント登録者" in xml else ids_resp()
+            n[0] += 1
+            return resp("".join(comment(i, "2026/09/01") for i in range(1)))
+        out, _ = run(h)
+        self.assertEqual(n[0], 2)
+        self.assertEqual(out["notes"], [])
+
+    def test_assigned_beyond_30_not_dropped(self):
+        ids = [f"t{n:012d}" for n in range(45)]
+
+        def h(xml):
+            if "getItems" in xml:
+                return ids_resp(*ids) if "担当者名" in xml else ids_resp()
+            got = [i for i in ids if f"<item_id>{i}<" in xml]
+            return resp("".join(issue(i, "No" + i, "進行中") for i in got))
+        out, _ = run(h)
+        self.assertEqual(len(out["assigned"]), 45)
+
+    def test_issue_lookup_batched_and_partial_on_cap(self):
+        nos = [f"No{n:08d}" for n in range(30)]
+        recs = "".join(comment(f"t{n:012d}", "2026/11/09", no=nos[n]) for n in range(30))
+
+        def h(xml):
+            if "getItems" in xml:
+                return ids_resp(*[f"t{n:012d}" for n in range(30)]) if "コメント登録者" in xml else ids_resp()
+            return resp(recs)
+        out, api = run(h)
+        self.assertEqual(len(out["comments"]), 30)
+        lookups = [c for c in api.calls if "課題No" in c and "getItems" in c]
+        self.assertEqual(len(lookups), 2)  # 25件ずつ
+        out, _ = run(h, max_calls=5)
+        self.assertEqual(len(out["comments"]), 30)
+        self.assertIn("call cap", out["failed"])
+        self.assertTrue(out["truncated"])
+
+    def test_xml_attribute_escaped(self):
+        def h(xml):
+            ET = __import__("xml.etree.ElementTree", fromlist=["x"])
+            ET.fromstring(xml.split("?>", 1)[1].encode())
+            return ids_resp()
+        api = FakeApi(h)
+        with mock.patch.object(E.time, "sleep"):
+            out = E.collect("2026-11-01", 'a"<&b', post=api)
+        self.assertIsNone(out["failed"])
+
+    def test_max_calls_floor(self):
+        out, api = run(self.handler, max_calls=0)
+        self.assertEqual(len(api.calls), 1)
 
     def test_connection_error_sets_failed(self):
         def h(xml):
