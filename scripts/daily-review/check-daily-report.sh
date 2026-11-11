@@ -211,15 +211,20 @@ add_missing_prs() {
   while IFS= read -r line; do
     [[ "$line" =~ ^-\ (.*)\ \#([0-9]+)（ ]] || continue
     name="${BASH_REMATCH[1]}"; num="${BASH_REMATCH[2]}"
-    if ! printf '%s\n' "$summary" | grep -qE "(^|[^0-9])#${num}([^0-9]|$)"; then
+    if ! grep -qE "(^|[^0-9])#${num}([^0-9]|$)" <<<"$summary"; then
       json="$(jq --arg t "区切り内にマージされた $name #$num が日報に無い" \
-        '.missing += [{text: $t, severity: "重大"}]' <<<"$json")"
+        '.missing += [{text: $t, severity: "重大"}]' <<<"$json")" || return 1
     fi
   done < <(pr_section)
   printf '%s\n' "$json"
 }
 
-result="$(printf '%s' "$result" | add_missing_prs)"
+# 決定的な照合が失敗しても LLM の結果で判定を続ける
+if merged="$(printf '%s' "$result" | add_missing_prs)" && [ -n "$merged" ]; then
+  result="$merged"
+else
+  echo "warn: PR照合に失敗（LLM の結果のみで判定）" >&2
+fi
 
 # 通知判定は決定的に行う: 重大な取りこぼし、または確信度・高の根拠不明
 final="$(printf '%s' "$result" | jq '

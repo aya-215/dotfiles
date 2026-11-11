@@ -217,4 +217,20 @@ echo 'JSONではない' > "$TMP/prfail/stub/out"
 run_check prfail
 check "pr: check_failed のときは照合しない" jq_has "$TMP/prfail" '.status == "check_failed" and (.missing | length) == 0'
 
+# PR 照合の jq だけ失敗させても、LLM の結果で ok のまま（ログ1行）
+set_pr_case prjq "$PR_LIST" '- Work: 何か'
+mkdir -p "$TMP/prjq/fakebin"
+cat > "$TMP/prjq/fakebin/jq" <<EOF2
+#!/bin/bash
+case "\$*" in *'.missing += '*) exit 1 ;; esac
+exec "$(command -v jq)" "\$@"
+EOF2
+chmod +x "$TMP/prjq/fakebin/jq"
+echo '{"missing":[{"text":"llm","severity":"軽微"}],"unsupported":[],"misclassified":[],"format":[]}' > "$TMP/prjq/stub/out"
+rm -f "$TMP/prjq/check.log"
+NIX_PROFILE_BIN="$TMP/prjq/fakebin" run_check prjq
+check "prjq: status=ok で LLM の missing が残る" jq_has "$TMP/prjq" '.status == "ok" and (.missing | length) == 1 and .missing[0].text == "llm" and .notify == false'
+check "prjq: ログ1行 status=ok" test "$(grep -c 'status=ok' "$TMP/prjq/check.log")" = 1 -a "$(wc -l < "$TMP/prjq/check.log")" = 1
+check "prjq: 警告が stderr に出る" grep -q 'PR照合に失敗' "$TMP/prjq/stderr"
+
 if [ "$fails" -eq 0 ]; then echo "ALL OK"; else echo "$fails 件失敗"; exit 1; fi
