@@ -12,10 +12,10 @@
 #   ./summarize.sh <transcript.jsonl> <session_id>
 #   ./summarize.sh <transcript.jsonl> <session_id> --slice <YYYY-MM-DD> --since <ISO> --until <ISO>
 # 切り出しモード（--slice）は [since, until) の中の出来事だけを要約し、SLICES_ROOT/<日付>/ に書く。
-# 範囲より前の末尾は文脈としてだけ渡す。sessions/ の要約は消さず、生成失敗は終了コード 3 で返す。
+# 範囲内に User の発言が無ければ何も書かない。文脈は直近の切り出し md の意図と結論だけ。sessions/ の要約は消さず、生成失敗は終了コード 3 で返す。
 # 環境変数（テスト用に上書き可能）:
 #   CLAUDE_BIN / SESSIONS_ROOT / MAX_CHARS
-#   SLICES_ROOT / SLICE_MODEL / SLICE_MODEL_LARGE / SLICE_CONTEXT_CHARS（切り出しモード）
+#   SLICES_ROOT / SLICE_MODEL / SLICE_MODEL_LARGE （切り出しモード）
 set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,7 +40,6 @@ MAX_CHARS_LARGE="${MAX_CHARS_LARGE:-950000}"
 SLICES_ROOT="${SLICES_ROOT:-$HOME/.nb/claude/daily-slices}"
 SLICE_MODEL="${SLICE_MODEL:-claude-sonnet-5}"
 SLICE_MODEL_LARGE="${SLICE_MODEL_LARGE:-claude-sonnet-5[1m]}"
-SLICE_CONTEXT_CHARS="${SLICE_CONTEXT_CHARS:-20000}"
 
 readonly USAGE='usage: summarize.sh <transcript.jsonl> <session_id> [--slice <YYYY-MM-DD> --since <ISO> --until <ISO>]'
 transcript="${1:?$USAGE}"
@@ -77,6 +76,11 @@ extracted="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" "${extract_args[@]}"
 # 中身が実質空（ヘッダのみ）なら要約しない
 body_lines="$(printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | grep -c .)" || body_lines=0
 [ "$body_lines" -gt 0 ] || exit 0
+
+# 切り出しモード: User の発言が1つも無い区切り（assistant の続きと tool_result だけ）は切り出さない
+if [ -n "$slice_date" ]; then
+  printf '%s\n' "$extracted" | sed -n '/^---$/,$p' | tail -n +2 | grep -q '^\*\*User:\*\*' || exit 0
+fi
 
 # ガードA: 薄いセッション（ツール使用なし＆本文が極端に短い）は要約しない
 tool_count="$(printf '%s\n' "$extracted" | grep -c '\[tool:')" || tool_count=0
@@ -142,23 +146,28 @@ if [ -n "$slice_date" ]; then
   out_file="$out_dir/${safe_proj}-${sid_short}.md"
 fi
 
-# 切り出しモード: 範囲より前の末尾を文脈として渡す（無ければブロックごと省く）
+# 切り出しモード: 直近の前日以前の切り出し md の「意図」「結論」だけを文脈にする。
+# 範囲より前の生ログを渡すと、前日の作業を当日の作業として書き写すため使わない。
 context_block=""
 if [ -n "$slice_date" ]; then
-  context_raw="$(python3 "$SCRIPT_DIR/extract.py" "$transcript" --until "$slice_since" 2>/dev/null \
-    | sed -n '/^---$/,$p' | tail -n +2)" || context_raw=""
-  if [ -n "$context_raw" ]; then
-    # 短い文字列に負オフセットを使うと空になるため、超えたときだけ末尾を切る
-    if [ "${#context_raw}" -gt "$SLICE_CONTEXT_CHARS" ]; then
-      context_raw="${context_raw: -$SLICE_CONTEXT_CHARS}"
-    fi
-    context_block="<<<CONTEXT_START>>>
+  prev_file=""
+  for i in $(seq 1 14); do
+    d="$(date -d "$slice_date -$i day" +%Y-%m-%d 2>/dev/null)" || break
+    [ -d "$SLICES_ROOT/$d" ] || continue
+    prev_file="$(find "$SLICES_ROOT/$d" -maxdepth 1 -type f -name "*-${sid_short}.md" 2>/dev/null | sort | head -1)"
+    [ -n "$prev_file" ] && break
+  done
+  if [ -n "$prev_file" ]; then
+    context_raw="$(awk '/^## /{keep = ($0 == "## 意図" || $0 == "## 結論")} keep' "$prev_file")"
+    if [ -n "$context_raw" ]; then
+      context_block="<<<CONTEXT_START>>>
 ${context_raw}
 <<<CONTEXT_END>>>
 
-上記 <<<CONTEXT_START>>>〜<<<CONTEXT_END>>> は要約対象の範囲より前の経緯です。会話の流れを理解するためだけに使い、要約には含めないこと。
+上記 <<<CONTEXT_START>>>〜<<<CONTEXT_END>>> は直近の切り出しの意図と結論です。会話の流れを理解するためだけに使い、要約には含めないこと。文脈に書かれた作業（コミット・PR・修正・配置など）は、範囲内のやりとりで改めて行われていない限り書かないこと。
 
 "
+    fi
   fi
 fi
 

@@ -303,7 +303,7 @@ run_slice() {
   local case_name="$1"
   local case_dir="$TMP/$case_name"
   mkdir -p "$case_dir/stub" "$case_dir/sessions" "$case_dir/slices"
-  make_slice_transcript "$case_dir/transcript.jsonl"
+  [ -f "$case_dir/transcript.jsonl" ] || make_slice_transcript "$case_dir/transcript.jsonl"
   slice_rc=0
   CLAUDE_BIN="$TMP/bin/claude" STUB_DIR="$case_dir/stub" \
   SESSIONS_ROOT="$case_dir/sessions" SLICES_ROOT="$case_dir/slices" \
@@ -327,8 +327,35 @@ assert_contains "case9: スタブに claude-sonnet-5 が渡る" "$TMP/case9/stub
 if [ "$slice_rc" -eq 0 ]; then echo "ok: case9: 終了コード 0"; else echo "NG: case9: 終了コード $slice_rc"; fails=$((fails + 1)); fi
 assert_absent "case9: sessions/ には書かない" "$TMP/case9/sessions/2026-07-13"
 
-# ==== case10: 範囲前の発言は CONTEXT、範囲内の発言は TRANSCRIPT にだけ入る ====
-prompt10="$TMP/case9/stub/prompt.1"
+# ==== case10: 文脈は直近の切り出しの意図と結論だけ。範囲前の生の発言・作業内容は入れない ====
+# put_prev_slice <case> <日付> — 同じ sid8 の前日以前の切り出し md を置く（隠しファイル名）
+put_prev_slice() {
+  local case_name="$1" day="$2"
+  mkdir -p "$TMP/$case_name/slices/$day"
+  cat > "$TMP/$case_name/slices/$day/.testproj-$SID_SHORT.md" <<'MD'
+---
+project: testproj
+session_id: x
+---
+
+## 意図
+前日の意図X
+
+## 作業内容
+- 前日の作業Z
+
+## 結論
+前日の結論Y
+
+## ナレッジ候補
+なし
+MD
+}
+mkdir -p "$TMP/case10/stub"
+good_body > "$TMP/case10/stub/out"
+put_prev_slice case10 2026-07-11
+run_slice case10
+prompt10="$TMP/case10/stub/prompt.1"
 transcript_part="$(sed -n '/^<<<TRANSCRIPT_START>>>$/,/^<<<TRANSCRIPT_END>>>$/p' "$prompt10")"
 context_part="$(sed -n '/^<<<CONTEXT_START>>>$/,/^<<<CONTEXT_END>>>$/p' "$prompt10")"
 if ! printf '%s' "$transcript_part" | grep -q 'LINE-A' && printf '%s' "$transcript_part" | grep -q 'LINE-B' \
@@ -337,11 +364,60 @@ if ! printf '%s' "$transcript_part" | grep -q 'LINE-A' && printf '%s' "$transcri
 else
   echo "NG: case10: TRANSCRIPT の中身が不正 → $transcript_part"; fails=$((fails + 1))
 fi
-if printf '%s' "$context_part" | grep -q 'LINE-A' && ! printf '%s' "$context_part" | grep -q 'LINE-B'; then
-  echo "ok: case10: CONTEXT に範囲前の発言だけがある"
+if printf '%s' "$context_part" | grep -q '前日の意図X' && printf '%s' "$context_part" | grep -q '前日の結論Y' \
+   && ! printf '%s' "$context_part" | grep -q '前日の作業Z' && ! printf '%s' "$context_part" | grep -q 'LINE-'; then
+  echo "ok: case10: CONTEXT に前日の意図と結論だけがあり、作業内容と生の発言は無い"
 else
   echo "NG: case10: CONTEXT の中身が不正 → $context_part"; fails=$((fails + 1))
 fi
+assert_contains "case10: 文脈の作業を書かせない1文がある" "$prompt10" '文脈に書かれた作業（コミット・PR・修正・配置など）は、範囲内のやりとりで改めて行われていない限り書かないこと。'
+
+# ==== case10b: 15日前にしか前の切り出しが無ければ文脈ブロックなし ====
+mkdir -p "$TMP/case10b/stub"
+good_body > "$TMP/case10b/stub/out"
+put_prev_slice case10b 2026-06-29
+run_slice case10b
+if [ -f "$TMP/case10b/stub/prompt.1" ] && ! grep -q 'CONTEXT_START' "$TMP/case10b/stub/prompt.1"; then
+  echo "ok: case10b: 15日前の切り出しは文脈にしない"
+else
+  echo "NG: case10b: 文脈ブロックが入っている、または claude が呼ばれていない"; fails=$((fails + 1))
+fi
+
+# ==== case10c: 前の切り出しが別の SLICES_ROOT にしか無ければ文脈ブロックなし ====
+mkdir -p "$TMP/case10c/stub"
+good_body > "$TMP/case10c/stub/out"
+put_prev_slice case10b 2026-07-12
+mkdir -p "$TMP/case10c/other"
+cp -R "$TMP/case10b/slices/2026-07-12" "$TMP/case10c/other/"
+run_slice case10c
+if [ -f "$TMP/case10c/stub/prompt.1" ] && ! grep -q 'CONTEXT_START' "$TMP/case10c/stub/prompt.1"; then
+  echo "ok: case10c: 別の SLICES_ROOT の切り出しは文脈にしない"
+else
+  echo "NG: case10c: 文脈ブロックが入っている、または claude が呼ばれていない"; fails=$((fails + 1))
+fi
+
+# ==== case10d: 範囲内に User の発言が無い（assistant と tool_result だけ）→ 何も書かず 0 ====
+mkdir -p "$TMP/case10d/stub"
+good_body > "$TMP/case10d/stub/out"
+cat > "$TMP/case10d/transcript.jsonl" <<JSONL
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:09:00.000Z","message":{"content":"LINE-A 前日の依頼"}}
+{"type":"assistant","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:10:00.000Z","message":{"content":[{"type":"text","text":"LINE-B 続きの作業"},{"type":"tool_use","name":"Edit","input":{"file_path":"/home/aya/testproj/a.conf"}}]}}
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:11:00.000Z","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}
+JSONL
+run_slice case10d
+if [ "$slice_rc" -eq 0 ]; then echo "ok: case10d: 終了コード 0"; else echo "NG: case10d: 終了コード $slice_rc"; fails=$((fails + 1)); fi
+assert_absent "case10d: ファイルを書かない" "$TMP/case10d/slices/2026-07-14/testproj-$SID_SHORT.md"
+assert_absent "case10d: claude を呼ばない" "$TMP/case10d/stub/calls"
+
+# ==== case10e: 範囲内の User の発言が local-command-stdout だけでも発言ありとして切り出す ====
+mkdir -p "$TMP/case10e/stub"
+good_body > "$TMP/case10e/stub/out"
+cat > "$TMP/case10e/transcript.jsonl" <<JSONL
+{"type":"assistant","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:10:00.000Z","message":{"content":[{"type":"text","text":"LINE-B 範囲内"},{"type":"tool_use","name":"Edit","input":{"file_path":"/home/aya/testproj/a.conf"}}]}}
+{"type":"user","sessionId":"$SID","cwd":"/home/aya/testproj","timestamp":"2026-07-13T13:11:00.000Z","message":{"content":"<local-command-stdout>Compacted</local-command-stdout>"}}
+JSONL
+run_slice case10e
+assert_contains "case10e: local-command-stdout だけの発言でも切り出す" "$TMP/case10e/slices/2026-07-14/testproj-$SID_SHORT.md" '^## 意図'
 
 # ==== case11: 切り出しモードは sessions/ の既存要約を消さない ====
 mkdir -p "$TMP/case11/stub" "$TMP/case11/sessions/2026-07-13"
