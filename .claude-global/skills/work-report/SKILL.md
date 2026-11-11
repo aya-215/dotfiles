@@ -242,7 +242,7 @@ bash ~/.dotfiles/scripts/lib/thunderbird.sh \
 
 | カテゴリ | 対象 |
 |---|---|
-| AI | `ebase-dev` 配下の全リポジトリ ＋ `eb-api-extended` |
+| AI | `ebase-dev` 配下の全リポジトリ ＋ `eb-api-extended` ＋ GitBucket の `AI_dev/tamaki-ai-training`（AIチームのエージェント開発研修）・`eBASE/ebase-claude-marketplace`（AIeBASE 向けスキル） |
 | その他 | 仕事関連かつAIカテゴリに属さないもの（`hankyu` のgitログ、および日報・Claudeセッション要約から判明したAI以外の仕事関連作業） |
 
 月曜のAI案件モードでは「その他」カテゴリを出力しない。ただしカテゴリ判定自体は全モードで同じように行う（判定を省くと、AIカテゴリに入るべき作業を取りこぼす）。
@@ -255,6 +255,7 @@ bash ~/.dotfiles/scripts/lib/thunderbird.sh \
 |---|---|
 | `ebase-portal-chat` | `AI-search` |
 | `hankyu` | 阪急キッチンエール |
+| `tamaki-ai-training` | エージェント開発研修 |
 
 gitログに紐づかない作業（日報・Claudeセッション要約のみから判明した作業）は、内容から推測できる作業テーマ名をサブプロジェクト名として使う。
 
