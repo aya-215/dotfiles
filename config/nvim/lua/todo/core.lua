@@ -94,6 +94,70 @@ function M.wait_area_end(lines)
   return trimmed_end(lines, wait + 1, stop)
 end
 
+M.CONFIRM_KINDS = { "policy", "before_share", "manual", "conflict", "is_task", "still_needed" }
+M.NEXT_SEP = " — next: "
+M.NEXT_ARROW = "→"
+local KIND_SET = {}
+for _, k in ipairs(M.CONFIRM_KINDS) do
+  KIND_SET[k] = true
+end
+
+-- 確認待ちの問いの末尾タグ ` [<kind> <ref>]` の開始位置（1-based、先頭の空白）。apply.py の _TAG と同じく最初の候補を取る
+local function tag_start(line)
+  if not line:match("^%d+%. ") or line:sub(-1) ~= "]" then
+    return nil
+  end
+  local init = 1
+  while true do
+    local s = line:find(" [", init, true)
+    if not s then
+      return nil
+    end
+    local kind = line:match("^ %[([%l_]+) .", s)
+    if kind and KIND_SET[kind] then
+      return s
+    end
+    init = s + 1
+  end
+end
+
+-- 表示で隠す範囲。{ 開始, 終了 } は 0-based の半開区間（byte）、3番目があればその文字を代わりに見せる。
+-- ファイルの中身は変えず、nvim の conceal に渡すためだけに使う。
+---@param line string
+---@return { [1]: integer, [2]: integer, [3]: string|nil }[]
+function M.conceal_ranges(line)
+  local out = {}
+  local tag = tag_start(line)
+  local init = 1
+  while true do
+    local s, e, paren = line:find("%[[^%[%]]*%]()%([^%s()]+%)", init)
+    if not s or (tag and s >= tag) then
+      break
+    end
+    table.insert(out, { s - 1, s })
+    table.insert(out, { paren - 2, e })
+    init = e + 1
+  end
+  if tag then
+    table.insert(out, { tag - 1, #line })
+  end
+  if M.parse(line) then
+    local last
+    local i = line:find(M.NEXT_SEP, 1, true)
+    while i do
+      last = i
+      i = line:find(M.NEXT_SEP, i + 1, true)
+    end
+    if last then
+      table.insert(out, { last, last + #M.NEXT_SEP - 2, M.NEXT_ARROW })
+    end
+  end
+  table.sort(out, function(a, b)
+    return a[1] < b[1]
+  end)
+  return out
+end
+
 function M.skeleton()
   return { "# TODO", "", M.CONFIRM_HEADING, "", M.TODO_HEADING, "", M.WAIT_HEADING, "", M.DONE_HEADING }
 end

@@ -9,9 +9,13 @@
                   origin, added_date, age_days, pinned_to, intents, answers）。pinned_to は人が戻したため
                   その行を移してはいけないセクション。pinned_to・intents・answers は行の系譜（key を付ける前・
                   改名する前の ref の記録）も含める
-  confirm_blocks  確認待ちの各ブロック（number, ref, kind, question, facts, options, answer）。
-                  ref/kind は apply.py が書いた問い末尾のタグから読み、question はタグを外したもの。
-                  ref, kind, question, facts, options をそのまま confirm に写せば同じ行に戻る
+  confirm_blocks  確認待ちの各ブロック（number, ref, kind, question, facts, options, answer, scope, on_answer）。
+                  ref/kind は apply.py が書いた問い末尾のタグから読み、question はタグと末尾の（事実）を外したもの。
+                  旧書式（問い・事実・選択・回答の4行）のブロックも同じ形で読む。
+                  ref, kind, question, facts, options, on_answer をそのまま confirm に写せば同じ行・同じ変更案に戻る。
+                  scope は回答に基づく op（by_answer）で触ってよい今の台帳の行の ref（ブロックの ref の行と、
+                  問い・事実の『』の題に完全一致する行）。on_answer は todo-pending.json にある選択肢ごとの変更案
+                  （問い・選択肢の行が書いたときと同じときだけ。無ければ null）
   confirm_errors  確認待ちを全置換できない理由（空でなければ /todo は confirm を出さない）
   answered_now    回答欄が埋まったブロックの (ref, kind, answer, superseded)。apply.py も同じものを記録する
   answered_refs   判断記録にある確認待ちへの回答（ref, kind, value, ts, superseded）
@@ -33,7 +37,6 @@ import argparse
 import datetime
 import json
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -42,7 +45,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import apply
 import decisions
 import todo_md
-from origin import origin_of
 
 KINDS = apply.KINDS
 MAX_INTENTS = 5
@@ -72,33 +74,15 @@ def _answers(records: "list[dict]", ref: str) -> "list[dict]":
              "superseded": decisions.superseded(records, i)} for i, r in decisions.answers(records, ref, KINDS)]
 
 
-_OPTION = re.compile(r"(\S+) (.*?)(（おすすめ）)?\Z")
-
-
-def _parse_options(s: str) -> "list[dict]":
-    out = []
-    for part in s.split(" / ") if s else []:
-        m = _OPTION.match(part)
-        # 空白の無い断片は選択肢の文中の " / " で割れたものなので、前の選択肢に戻す
-        if out and (not m or not m.group(2)):
-            prev = out[-1]
-            prev["text"] += " / " + part
-            if prev["text"].endswith("（おすすめ）"):
-                prev["text"], prev["recommended"] = prev["text"][: -len("（おすすめ）")], True
-        elif m:
-            out.append({"label": m.group(1), "text": m.group(2), "recommended": bool(m.group(3))})
-        else:
-            out.append({"label": part, "text": part, "recommended": False})
-    return out
-
-
-def confirm_blocks(lines: "list[str]") -> "list[dict]":
+def confirm_blocks(lines: "list[str]", items: "list[todo_md.Item]" = (), pending: "list[dict]" = ()) -> "list[dict]":
     """確認待ちの行を apply.py と同じ厳密さで読む。崩れていれば apply.ChangeError。"""
     out = []
     for n, b in enumerate(apply.parse_confirm(lines), 1):
         kind, ref = apply.parse_tag(b["question"])
         out.append({"number": n, "ref": ref, "kind": kind, "question": apply.strip_tag(b["question"]),
-                    "facts": b["事実"], "options": _parse_options(b["選択"]), "answer": b["回答"].strip()})
+                    "facts": b["事実"], "options": apply.parse_options(b["選択"]), "answer": b["回答"].strip(),
+                    "scope": [it.ref for it in items if apply.in_answer_scope(it, b)],
+                    "on_answer": apply.pending_for(b, pending)})
     return out
 
 
@@ -142,6 +126,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
     records = decisions.load(decisions_path)
     records = records + decisions.detect_reverts(repo, name, records)
     t = datetime.date.fromisoformat(today)
+    origin_of = apply.origin_fn(repo, name, records)
 
     items = []
     for section in todo_md.TASK_SECTIONS:
@@ -150,7 +135,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
             items.append({
                 "ref": it.ref, "section": section, "title": it.title, "key": it.key, "url": it.url,
                 "next": it.next, "done": it.done, "done_date": it.done_date,
-                "origin": origin_of(repo, name, it.title),
+                "origin": origin_of(it.title),
                 "added_date": added,
                 "age_days": (t - datetime.date.fromisoformat(added)).days if added else None,
                 "pinned_to": decisions.pinned_sections(records, it.ref),
@@ -163,7 +148,8 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
     covered = set().union(*(decisions.lineage_refs(records, ref) for ref in present))
     errors: "list[str]" = []
     try:
-        blocks = confirm_blocks(doc.confirm)
+        blocks = confirm_blocks(doc.confirm, [it for s in todo_md.TASK_SECTIONS for it in doc.sections[s]],
+                                apply.load_pending(repo))
     except apply.ChangeError as e:
         blocks = []
         errors.append(str(e))

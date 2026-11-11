@@ -113,7 +113,7 @@ class E2EFlow(unittest.TestCase):
         self.assertTrue(self.git("log", "-1", "--format=%s").startswith("todo(ai): "))
         self.assertEqual([it.ref for it in self.section("やる")], ["epc#1163", "rc:Xk3p9aQ2#1", "rc:old1"])
         self.assertEqual(self.section("やる")[1].title, "インターン資料修正")
-        self.assertIn("1. 坂西さんへの返信はまだ要る？ [still_needed rc:old1]\n", self.todo.read_text(encoding="utf-8"))
+        self.assertIn("1. 坂西さんへの返信はまだ要る？（追加から40日、直近2週間に決着・進展の発言なし） [still_needed rc:old1]\n", self.todo.read_text(encoding="utf-8"))
 
         # 人が確認待ちの1件目に回答する（nvim のポップアップを閉じたときのコミット）
         text = self.todo.read_text(encoding="utf-8")
@@ -159,7 +159,7 @@ class E2EFlow(unittest.TestCase):
             {"ref": "rc:old1", "kind": "still_needed", "question": q, "facts": "40日",
              "options": [{"label": "A", "text": "要る"}]}]}, 1)
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.human_commit(self.todo.read_text(encoding="utf-8").replace("事実: 40日", "事実: 40日、来週聞く"), "2026-11-10")
+        self.human_commit(self.todo.read_text(encoding="utf-8").replace("（40日）", "（40日、来週聞く）"), "2026-11-10")
 
         ctx = self.context()
         self.assertEqual(len(ctx["confirm_errors"]), 1)
