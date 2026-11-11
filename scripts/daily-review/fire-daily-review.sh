@@ -172,11 +172,9 @@ default_git_roots() {
     "/mnt/d/git/*/"
 }
 
-collect_git_log() {
-  local out="" label repo key lines glob_line
-  # 集約順を保つための正規リポジトリ名リストと、名前→本文の対応
-  local order=() bodies=() seen_shas=""
-  local all_repos=() repo_labels=()
+# 収集対象リポジトリを all_repos / repo_labels に積む（呼び出し側の local 配列を埋める）
+collect_repo_list() {
+  local glob_line repo
   while IFS= read -r glob_line; do
     [ -n "$glob_line" ] || continue
     # shellcheck disable=SC2086
@@ -186,6 +184,45 @@ collect_git_log() {
       repo_labels+=("$(repo_label "$repo")")
     done
   done <<< "${FIRE_GIT_ROOTS:-$(default_git_roots)}"
+}
+
+# 区切り内にマージされた PR の一覧。HEAD と remote-tracking の両方を見る
+# （ブラウザでの main へのマージは、clone が feature ブランチにいると HEAD から見えないため）。
+# 出力: "- <名前> #<N>（<owner>/<branch>、<MM/DD HH:MM>）" の行。SHA 重複は1回だけ。git の失敗は repo 単位で飛ばす。
+collect_merged_prs() {
+  local all_repos=() repo_labels=() label ri repo key rows="" seen_shas="" line sha ts subj n ref
+  local names=() idx i
+  collect_repo_list
+  for label in Personal Work; do
+    for ri in "${!all_repos[@]}"; do
+      [ "${repo_labels[$ri]}" = "$label" ] || continue
+      repo="${all_repos[$ri]}"
+      key="$(canonical_repo_name "$repo")"
+      idx=-1
+      for i in "${!names[@]}"; do [ "${names[$i]}" = "$label/$key" ] && { idx="$i"; break; }; done
+      if [ "$idx" -lt 0 ]; then names+=("$label/$key"); idx=$(( ${#names[@]} - 1 )); fi
+      while IFS=$'\t' read -r sha ts subj; do
+        [ -n "$sha" ] || continue
+        case "$seen_shas" in *"$sha"*) continue ;; esac
+        seen_shas="${seen_shas} ${sha}"
+        n="${subj#*Merge pull request #}"; n="${n%% *}"
+        ref="${subj#* from }"; ref="${ref%% *}"
+        rows="${rows}$([ "$label" = Personal ] && echo 0 || echo 1)"$'\t'"${idx}"$'\t'"${ts}"$'\t'"- ${key} #${n}（${ref}、${ts}）"$'\n'
+      done < <(git -C "$repo" log HEAD --remotes --merges \
+        --author="$GIT_AUTHOR_RE" --since="$WINDOW_SINCE" --until="$WINDOW_UNTIL" \
+        --grep='Merge pull request #' \
+        --date=format-local:'%m/%d %H:%M' --pretty=tformat:'%H%x09%ad%x09%s' 2>/dev/null || true)
+    done
+  done
+  printf '%s' "$rows" | sort -t$'\t' -s -k1,1n -k2,2n -k3,3 | cut -f4-
+}
+
+collect_git_log() {
+  local out="" label repo key lines glob_line
+  # 集約順を保つための正規リポジトリ名リストと、名前→本文の対応
+  local order=() bodies=() seen_shas=""
+  local all_repos=() repo_labels=()
+  collect_repo_list
   for label in Personal Work; do
     order=() bodies=()
     local ri
@@ -350,17 +387,8 @@ if [ "${#mail_log}" -gt "$MAX_MAIL_CHARS" ]; then
 fi
 
 git_log="$(collect_git_log)"
-# git 節の見出し（### [ラベル] 名）と「Merge pull request #N from <owner>/<branch>」の行から
-# 区切り内にマージされた PR の一覧を作る。切り詰め前の git_log から読む
-merged_prs="$(printf '%s\n' "$git_log" | awk '
-  /^### \[[^]]+\] / { name = $0; sub(/^### \[[^]]+\] /, "", name); next }
-  /^- [0-9][0-9]\/[0-9][0-9] [0-9][0-9]:[0-9][0-9] \[[^]]*\] Merge pull request #[0-9]+ from [^ ]+/ {
-    ts = $2 " " $3
-    n = $0; sub(/.*Merge pull request #/, "", n); sub(/ .*/, "", n)
-    ref = $0; sub(/.* from /, "", ref); sub(/[ （].*/, "", ref)
-    printf "- %s #%s（%s、%s）\n", name, n, ref, ts
-  }
-')"
+# マージ一覧は git 節（HEAD のみ）とは別に、remote-tracking も含めて集める。切り詰め前のデータを使う
+merged_prs="$(collect_merged_prs)"
 [ -n "$merged_prs" ] || merged_prs="(なし)"
 if [ "${#git_log}" -gt "$MAX_GIT_CHARS" ]; then
   git_log="${git_log:0:$MAX_GIT_CHARS}

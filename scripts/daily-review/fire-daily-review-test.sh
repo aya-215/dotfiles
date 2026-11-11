@@ -182,6 +182,21 @@ mkcommit() {
   GIT_AUTHOR_DATE="2026-11-03T23:00:00+09:00" GIT_COMMITTER_DATE="2026-11-03T23:00:00+09:00" \
     git -C "$1" -c user.name=t -c user.email="$3" commit -q --allow-empty -m "$2" --author="t <$3>"
 }
+# mkmerge <repo> <PR番号> <owner/branch> <author-email> : main に --no-ff の本物のマージコミットを作る
+mkmerge() {
+  local d="2026-11-03T23:00:00+09:00"
+  GIT_AUTHOR_DATE="$d" GIT_COMMITTER_DATE="$d" git -C "$1" checkout -q -b "pr-$2"
+  GIT_AUTHOR_DATE="$d" GIT_COMMITTER_DATE="$d" git -C "$1" -c user.name=t -c user.email="$4" commit -q --allow-empty -m "work $2"
+  git -C "$1" checkout -q main
+  GIT_AUTHOR_DATE="$d" GIT_COMMITTER_DATE="$d" git -C "$1" -c user.name=t -c user.email="$4" \
+    merge -q --no-ff -m "Merge pull request #$2 from $3" "pr-$2"
+}
+# mkclone <dir> : main にベースコミットを持つ clone と、fetch 済みの origin/main を作る
+mkclone() {
+  git init -q -b main "$1"
+  git -C "$1" remote add origin git@github.com:ebase-dev/ebase-portal-chat.git
+  mkcommit "$1" BASE_COMMIT $ME
+}
 ME=mori.a@ebase.co.jp
 R="$C/roots"
 git init -q "$R/dotfiles" && git -C "$R/dotfiles" remote add origin git@github-aya215:aya-215/dotfiles.git
@@ -238,8 +253,8 @@ KNOW_BODY
 FB_BODY
 ## 結論
 CONCL_BODY"
-git init -q "$C/roots/ebase-portal-chat" && git -C "$C/roots/ebase-portal-chat" remote add origin git@github.com:ebase-dev/ebase-portal-chat.git
-mkcommit "$C/roots/ebase-portal-chat" "Merge pull request #1202 from ebase-dev/feat/1013-x" $ME
+mkclone "$C/roots/ebase-portal-chat"
+mkmerge "$C/roots/ebase-portal-chat" 1202 ebase-dev/feat/1013-x $ME
 FIRE_GIT_ROOTS="$C/roots/*/" run_fire "$C" --dry-run --date 2026-11-04
 P="$C/slices/2026-11-04/payload.txt"
 has "c15 マージ節の見出し" "$P" "【区切り内にマージされたPR】"
@@ -255,6 +270,38 @@ C="$TMP/c16"; mkdir -p "$C/home"
 mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
 run_fire "$C" --dry-run --date 2026-11-04
 check "c16 マージ無しは (なし)" "(なし)" "$(grep -A1 '^【区切り内にマージされたPR】' "$C/slices/2026-11-04/payload.txt" | tail -1)"
+
+# ---- ケース17: マージ一覧は checkout 中のブランチに依存しない ----
+C="$TMP/c17"; mkdir -p "$C/home" "$C/roots"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
+R17="$C/roots/ebase-portal-chat"
+mkclone "$R17"
+mkmerge "$R17" 1202 ebase-dev/feat/x $ME
+mkmerge "$R17" 1203 someone/feat/y someone@example.com
+git init -q --bare "$C/bare.git"
+git -C "$R17" push -q "$C/bare.git" main
+git -C "$R17" fetch -q "$C/bare.git" "main:refs/remotes/origin/main"
+# HEAD をマージ前の feature ブランチへ移す（ブラウザでマージした後に clone が別ブランチにいる状況）
+git -C "$R17" checkout -q -b feat/other main~2
+FIRE_GIT_ROOTS="$C/roots/*/" run_fire "$C" --dry-run --date 2026-11-04
+P="$C/slices/2026-11-04/payload.txt"
+check "c17 exit 0" 0 "$RC"
+has "c17 feature ブランチ上でも origin/main のマージが載る" "$P" "- ebase-portal-chat #1202（ebase-dev/feat/x、11/03 23:00）"
+lacks "c17 他人の author のマージは載らない" "$P" "#1203"
+
+# HEAD からも remotes からも届くマージは1回だけ
+C="$TMP/c18"; mkdir -p "$C/home" "$C/roots"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
+R18="$C/roots/ebase-portal-chat"
+mkclone "$R18"
+mkmerge "$R18" 1202 ebase-dev/feat/x $ME
+git -C "$R18" update-ref refs/remotes/origin/main main
+# 同じリポジトリの別 clone（worktree 相当）からも同じ SHA に届く
+git clone -q "$R18" "$C/roots/ebase-portal-chat-wt"
+git -C "$C/roots/ebase-portal-chat-wt" remote set-url origin git@github.com:ebase-dev/ebase-portal-chat.git
+FIRE_GIT_ROOTS="$C/roots/*/" run_fire "$C" --dry-run --date 2026-11-04
+P="$C/slices/2026-11-04/payload.txt"
+check "c18 マージ節に1行だけ載る" 1 "$(grep -c '^- ebase-portal-chat #1202（' "$P")"
 
 # ---- ケース5: --overwrite ----
 C="$TMP/c5"; mkdir -p "$C/home"
