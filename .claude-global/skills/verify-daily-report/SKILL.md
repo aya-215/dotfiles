@@ -87,6 +87,7 @@ done
 - 切り出し md（`daily-slices/<date>/*.md`）: セッションごとの区切り内の要約。切り出し md 自体に補完の印は付かない
 - `.failed`: 切り出しに失敗したセッションの sid8 一覧（無ければファイル自体が無い）。その sid8 の全期間の要約は `sessions/**/*-<sid8>.md`（find で探す。glob は隠しファイルを飛ばす）。fire はこれを payload.txt に補完として入れる
 - 補完の印: payload.txt の `## <proj> — HH:MM` 見出しの末尾に `（全期間の要約・補完）` が付く（fire が付ける。切り出し md や sessions/ の要約には付かない）。区切り外の内容を含みうる
+- `【区切り内にマージされたPR】`: payload.txt の git 節の直後。ここの PR は日報に `#番号` で載っているのが正しい。`check-daily-report.sh` が決定的に照合し、無ければ `missing`（重大）に足す。手動照合でも同じ見方をする
 - `check.json`: 日報投稿後の自動チェック結果（`scripts/daily-review/check-daily-report.sh --date <date> --no-wait` で再生成できる）。キーは `missing[{text,severity 重大|軽微}]`・`unsupported[{text,confidence 高|中|低}]`・`misclassified[{text}]`・`format[str]`・`notify`・`status`（`ok` / `report_missing` / `check_failed`）。`status` が `ok` 以外のときは `message`（理由）も付き、中身は空なので、手動で照合する。`check.json` は検証の叩き台であり、サブエージェントの判定を置き換えない
 
 #### 旧方式でも Rocket Chat を照合に加える
@@ -94,7 +95,7 @@ done
 旧方式の日報も Rocket Chat を入力源にしているのに、セッション要約だけで照合すると RC 由来の記述が根拠不明に化ける。対象日ごとに取得してサブエージェントに渡す。
 
 ```bash
-bash ~/.dotfiles/scripts/lib/rocketchat.sh --from <date> --to <date> --budget 15000
+bash ~/.dotfiles/scripts/lib/rocketchat.sh --from <date> --to <date> --budget 15000   # 字数基準
 ```
 
 新方式の日は payload.txt の「Rocket Chat 当日履歴」節に入っている（`(Rocket Chat: 取得失敗)` と出ていたら、その日の RC 由来は照合できないので確信度を下げる）。
@@ -188,5 +189,4 @@ TZ=Asia/Tokyo date +%Y-%m-%d > ~/.nb/claude/last_verify_daily_report.txt
 
 この水準から悪化していたら、プロンプトか上流（要約・収集）に問題が入った可能性が高い。
 
-**予算は逼迫していない**（実測最大36,424字／上限60,000）。取りこぼしが出ても原因は予算ではないので、
-`fire-daily-review.sh` の予算設定を疑う前に生成側を見る。
+ペイロード全体の予算は逼迫していない（実測最大36,424字／上限60,000）。ただし 2026-11 時点で Rocket Chat は `--budget` をバイトで数えていて削られていた（字数化で解消見込み）。RC 由来の取りこぼしは、まず payload.txt の RC 節が削られていないかを見る。それ以外の取りこぼしは生成側を見る。
