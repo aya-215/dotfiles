@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from find_handoff import matches, search  # noqa: E402
+from find_handoff import find, matches, search  # noqa: E402
 
 SCRIPT = Path(__file__).resolve().parent / "find_handoff.py"
 
@@ -131,7 +131,47 @@ class SearchTest(unittest.TestCase):
         open_ = note(self.root, "work-in-progress/handoff-a.md", "PR1210 待ち", "2026-11-10", "blocked", "handoff", "pull/1210")
         out = subprocess.run([sys.executable, "-I", str(SCRIPT), "--root", str(self.root), "#1210"],
                              capture_output=True, text=True, check=True).stdout
-        self.assertEqual(json.loads(out)["hits"][0]["path"], str(open_))
+        self.assertEqual(json.loads(out)["results"][0]["hits"][0]["path"], str(open_))
+
+
+class FindTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_each_number_is_searched_separately(self):
+        a = note(self.root, "work-in-progress/handoff-a.md", "eae#134 待ち", "2026-11-11", "blocked", "handoff", "pull/134")
+        b = note(self.root, "work-in-progress/phone.md", "PR #1236", "2026-11-09", "in-progress", "shifton", "PR #1236")
+        result = find(self.root, ["https://github.com/x/eb-api-extended/pull/134", "https://github.com/x/epc/pull/1236"])
+        self.assertEqual([(r["term"], r["stage"], [h["path"] for h in r["hits"]]) for r in result["results"]],
+                         [("134", "handoff-open", [str(a)]), ("1236", "work-in-progress", [str(b)])])
+
+    def test_words_are_ignored_when_numbers_are_given(self):
+        a = note(self.root, "work-in-progress/handoff-a.md", "eae#134 待ち", "2026-11-11", "blocked", "handoff", "pull/134")
+        result = find(self.root, ["マージされた", "#134"])
+        self.assertEqual([(r["term"], [h["path"] for h in r["hits"]]) for r in result["results"]], [("134", [str(a)])])
+
+    def test_a_number_with_no_note_is_reported_as_none(self):
+        result = find(self.root, ["1236"])
+        self.assertEqual(result, {"results": [{"term": "1236", "stage": "none", "hits": []}]})
+
+    def test_same_number_twice_is_searched_once(self):
+        result = find(self.root, ["#1236", "https://github.com/x/epc/pull/1236"])
+        self.assertEqual([r["term"] for r in result["results"]], ["1236"])
+
+    def test_words_only_must_all_appear(self):
+        a = note(self.root, "work-in-progress/handoff-a.md", "阪急 アイコン", "2026-11-11", "blocked", "handoff", "x")
+        result = find(self.root, ["阪急", "アイコン"])
+        self.assertEqual([(r["term"], r["stage"], [h["path"] for h in r["hits"]]) for r in result["results"]],
+                         [("阪急 アイコン", "handoff-open", [str(a)])])
+
+    def test_no_terms_lists_open_handoffs(self):
+        a = note(self.root, "work-in-progress/handoff-a.md", "待ち", "2026-11-11", "blocked", "handoff", "x")
+        result = find(self.root, [])
+        self.assertEqual([(r["term"], [h["path"] for h in r["hits"]]) for r in result["results"]], [("", [str(a)])])
 
 
 if __name__ == "__main__":

@@ -2,7 +2,9 @@
 
 Usage: find_handoff.py [--root <memories dir>] [terms...]
 
-Prints one JSON object: {"stage": ..., "hits": [{"path", "summary", "created", "status"}]}.
+Prints one JSON object: {"results": [{"term", "stage", "hits": [{"path", "summary", "created", "status"}]}]}.
+Each PR / issue number in the terms is searched on its own, and other words are then ignored
+(they are usually the instruction, like "マージされた"). Without numbers, all words must appear.
 Stages are tried in order and the first with hits wins:
 handoff-open (tag handoff, status blocked) -> handoff-all -> work-in-progress -> all -> none.
 With no terms, lists the open handoffs.
@@ -21,17 +23,26 @@ NUMBER_TERM = re.compile(r"^(?:#|pr|no)?[-.#]?0*(\d+)$", re.IGNORECASE)
 EMBEDDED_NUMBER = re.compile(r"(?:pull/|issues/|#|\bpr[-.#]?|\bno[-.#]?)0*(\d+)", re.IGNORECASE)
 
 
+def _clean(raw: str) -> str:
+    return re.sub(r"^\W+|\W+$", "", unicodedata.normalize("NFKC", raw))
+
+
+def _number(raw: str) -> str | None:
+    term = _clean(raw)
+    found = NUMBER_TERM.match(term) or EMBEDDED_NUMBER.search(term)
+    return found.group(1) if found else None
+
+
 def matches(text: str, terms: list[str]) -> bool:
     """True when every term appears in text: numbers as whole numbers ignoring leading zeros, words case-insensitively."""
     text = unicodedata.normalize("NFKC", text)
     lowered = text.lower()
     for raw in terms:
-        term = re.sub(r"^\W+|\W+$", "", unicodedata.normalize("NFKC", raw))
-        number = NUMBER_TERM.match(term) or EMBEDDED_NUMBER.search(term)
+        number = _number(raw)
         if number:
-            if not re.search(rf"(?<!\d)0*{number.group(1)}(?!\d)", text):
+            if not re.search(rf"(?<!\d)0*{number}(?!\d)", text):
                 return False
-        elif term.lower() not in lowered:
+        elif _clean(raw).lower() not in lowered:
             return False
     return True
 
@@ -91,12 +102,19 @@ def search(root: Path, terms: list[str]) -> dict:
     return {"stage": "none", "hits": []}
 
 
+def find(root: Path, terms: list[str]) -> dict:
+    """Search each number in terms separately; without numbers, search all the words together."""
+    numbers = list(dict.fromkeys(n for n in map(_number, terms) if n))
+    groups = [(n, [n]) for n in numbers] or [(" ".join(terms), terms)]
+    return {"results": [{"term": label, **search(root, group)} for label, group in groups]}
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--root", type=Path, default=DEFAULT_ROOT)
     parser.add_argument("terms", nargs="*")
     args = parser.parse_args(argv)
-    print(json.dumps(search(args.root, args.terms), ensure_ascii=False))
+    print(json.dumps(find(args.root, args.terms), ensure_ascii=False))
     return 0
 
 
