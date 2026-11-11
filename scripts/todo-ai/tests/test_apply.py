@@ -1080,6 +1080,16 @@ class AiEditTitleTest(unittest.TestCase):
         self.assertEqual(new.sections, self.doc.sections)
         self.assertIn("skip: human title title:インターン資料修正", body)
 
+    def test_ai_retitle_collisions_are_skipped_not_fatal(self):
+        new, body = self.run_ops([
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "坂西さんの対応"},
+            {"op": "edit_title", "ref": "title:AI の鍵なし行", "title": "インターン資料修正"},
+            {"op": "set_next", "ref": "epc#1202", "next": "続ける"}])
+        self.assertIn("skip: human title title:インターン資料修正", body)
+        self.assertIn("skip: duplicate title title:AI の鍵なし行", body)
+        self.assertEqual(titles(new, "やる")[:3], ["インターン資料修正", AI_TITLE, "AI の鍵なし行"])
+        self.assertEqual(new.sections["やる"][4].next, "続ける")
+
     def test_sync_still_cannot_edit_title(self):
         with self.assertRaises(ChangeError):
             self.run_ops([{"op": "edit_title", "ref": "epc#1210", "title": "短く"}], source="sync")
@@ -1136,6 +1146,26 @@ class AiEditTitleCliTest(RepoMixin, unittest.TestCase):
         self.assertIn("- [ ] インターン資料修正\n", text)
         self.assertIn("— next: 続ける", text)
         self.assertIn("skip: human title title:インターン資料修正", self.head("%b"))
+
+    SHORT = "PR #1210 車両候補の選択肢バブル"
+
+    def assert_human_shortening_kept(self):
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "edit_title", "ref": "epc#1210", "title": "車両候補バブルの再レビュー"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn(f"- [ ] {self.SHORT} [epc#1210]", self.todo.read_text(encoding="utf-8"))
+
+    def test_human_shortening_in_nvim_is_not_overwritten(self):
+        self.commit(self.text.replace(AI_TITLE, self.SHORT), "todo: 2026-11-10 12:00")
+        self.assert_human_shortening_kept()
+
+    def test_human_shortening_by_todo_edit_is_not_overwritten(self):
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "edit_title", "ref": "epc#1210", "title": self.SHORT, "intent": "題を短く"}]},
+            extra=("--allow-user",))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertTrue(self.head("%s").startswith("todo(user): "))
+        self.assert_human_shortening_kept()
 
     def test_keyless_rename_records_alias(self):
         self.commit(self.text.replace("- [ ] 坂西さんの対応\n", "- [ ] 坂西さんの対応\n- [ ] AI の長い鍵なし行\n"),

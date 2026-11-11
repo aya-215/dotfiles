@@ -215,7 +215,7 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 - `title`・`next` に ` — next: ` や `](` を含める、`title` の前後に空白がある、`url` に空白や括弧がある（書き出すと別の行に読めてしまうため全体が止まる）
 - `options` の要素に `label`/`text` が無い・空、`confirm` の要素に `ref` が無い・`kind` が上の6種以外
 
-存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、人の行（この実行で add した行を除き、apply が git 履歴で判定する）・完了・後片付けの行への `edit_title` は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: human title` / `skip: done` / `skip: cleanup` としてコミット本文に残る）。
+存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、人の行（この実行で add した行を除き、apply が git 履歴で判定する）・完了・後片付けの行への `edit_title`、key の無い行で別の行と題が重なる `edit_title` は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: human title` / `skip: done` / `skip: cleanup` / `skip: duplicate title` としてコミット本文に残る）。
 
 ### 7. 適用
 

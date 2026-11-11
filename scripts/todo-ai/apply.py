@@ -24,7 +24,7 @@ from typing import Callable
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import decisions
 import todo_md
-from origin import origin_of
+from origin import origin_of, title_written_by
 from todo_md import TASK_SECTIONS, Doc, Item
 
 SOURCES = ("ai", "sync", "user")
@@ -278,6 +278,7 @@ def _render_confirm(entries: list) -> "list[str]":
 def apply_changes(
     doc: Doc, changes: dict, origins: Callable[[str], str], today: str, records: "list[dict]" = (),
     effects: "Effects | None" = None, asked_at: "int | None" = None,
+    retitle_origins: "Callable[[str], str] | None" = None,
 ) -> "tuple[Doc, list[str]]":
     """変更案を適用した新しい Doc とコミット本文の行を返す（doc は変更しない）。
 
@@ -290,8 +291,8 @@ def apply_changes(
     後片付けは題の前方一致）の add/attach も飛ばす。
     source user（ユーザー指示）は例外: 戻し・却下の記録に縛られず、完了から戻せ、edit_title / delete / note を
     使える。各 op に intent が必須で、op を1つでも飛ばすなら全体を ChangeError にする（承認された変更を欠かさない）。
-    source ai も edit_title を使えるが、origins が "ai" の行（この実行で足した行を含む）だけ。人の行・完了の行・
-    後片付けの行への edit_title は飛ばす。
+    source ai も edit_title を使えるが、retitle_origins（省けば origins）が "ai" の行（この実行で足した行を含む）だけ。
+    人の行・完了の行・後片付けの行・key の無い行の題の重なりになる edit_title は飛ばす。
     effects を渡すと、source user の意図と validate の免除対象をそこに集める。
     変更案の形が不正なら ChangeError。人のタイトル保護などの結果の検証は validate が行う。
     """
@@ -308,6 +309,7 @@ def apply_changes(
         # 確認待ちの基準は ai/sync のコミットから取るので、user が書き換えると以後の ai 実行が止まる
         raise ChangeError("user は確認待ちを書き換えられない")
     fx = effects if effects is not None else Effects()
+    retitle_origins = retitle_origins or origins
     doc = copy.deepcopy(doc)
     body: "list[str]" = []
     fresh: "list[Item]" = []
@@ -442,11 +444,9 @@ def apply_changes(
                 continue
             it = doc.sections[loc[0]][loc[1]]
             if title != it.title:
-                if not it.key and _find(doc, "title:" + title):
-                    raise ChangeError(f"edit_title: 同じ題の key の無い行が既にあり ref が重なる: {title!r}")
                 if not user:
                     # validate は題の数で比べるので、人の行の改名と同じ題の add の組を見逃す。ここで行ごとに飛ばす
-                    if all(it is not f for f in fresh) and origins(it.title) != "ai":
+                    if all(it is not f for f in fresh) and retitle_origins(it.title) != "ai":
                         skip(f"human title {ref}")
                         continue
                     if loc[0] == "完了":
@@ -455,6 +455,12 @@ def apply_changes(
                     if it.title.startswith(CLEANUP_PREFIX) or title.startswith(CLEANUP_PREFIX):
                         skip(f"cleanup {ref}")
                         continue
+                if not it.key and _find(doc, "title:" + title):
+                    if not user:
+                        skip(f"duplicate title {ref}")
+                        continue
+                    raise ChangeError(f"edit_title: 同じ題の key の無い行が既にあり ref が重なる: {title!r}")
+                if not user:
                     if not it.key:
                         fx.aliases.append(("title:" + title, ref))
                 elif all(it is not f for f in fresh):
@@ -543,6 +549,13 @@ def apply_changes(
                     body.append(f"answer: {b['lines'][0]}")
                     body.extend(b["lines"][1:])
     return doc, body
+
+
+def _retitle_origin(repo: Path, name: str, title: str) -> str:
+    """AI が題を変えてよい行か。出現数でも、題をちょうどその文字列にしたコミットでも ai のときだけ "ai"。"""
+    if origin_of(repo, name, title) != "ai":
+        return "human"
+    return title_written_by(repo, name, title)
 
 
 def stale_answer(records: "list[dict]", ref: str, kind: str, asked_at: "int | None") -> bool:
@@ -810,7 +823,8 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
                         if any(kind == "conflict" for _, kind, _ in blocks_now) else None)
             fx = Effects()
             after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today,
-                                        old_records + new_records, effects=fx, asked_at=asked_at)
+                                        old_records + new_records, effects=fx, asked_at=asked_at,
+                                        retitle_origins=lambda t: _retitle_origin(repo, name, t))
         except ValueError as e:
             print(f"apply: 未適用: {e}", file=sys.stderr)
             return 2
