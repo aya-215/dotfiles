@@ -8,7 +8,7 @@
 # 設計: docs/superpowers/specs/2026-07-28-rocketchat-multiroom-design.md
 #
 # 使用方法:
-#   rocketchat.sh --from 2026-07-21 --to 2026-07-28 [--include-dm] [--budget N]
+#   rocketchat.sh --from 2026-07-21 --to 2026-07-28 [--include-dm] [--budget N]   # N は出力の字数上限
 #   rocketchat.sh --from ... --to ... --list-rooms      # 採用ルームの一覧だけ出す（デバッグ用）
 #   rocketchat.sh --from ... --to ... --print-window    # oldest/latest の計算結果だけ出す（デバッグ用）
 #   rocketchat.sh --from ... --to ... --with-ids        # 発言行に {id:<_id>}、見出しに {rid t link} を付ける
@@ -450,10 +450,8 @@ blocks="$(collect_blocks)"
 
 # 優先度昇順に採用し、予算を超えたら以降を落とす。
 #
-# 予算はバイト数で比較する（`wc -c`。LANG に依存しない）。fire-daily-review.sh
-# は LANG=C.UTF-8 を export して `${#var}` を文字数で数えるため、呼び出し側の
-# 上限判定は文字数、こちらはバイト数になる。RC 予算は従来どおりバイトのまま
-# なので、cron でバイト数判定だった頃と概ね同じ量が採用される。
+# 予算は字数（Unicode の文字数）で比較する。python3 で数えるので LANG に依存せず、
+# LANG 未設定の cron でも日本語がバイト数（1字3バイト）で数えられない。
 #
 # ソート済みの全行を配列に読み込んでから for で回す（while <(...) だと
 # break した時点で未読の行がプロセス置換ごと破棄され、残りを dropped に
@@ -488,8 +486,8 @@ for line in "${sorted_blocks[@]}"; do
   block="$(printf '%s' "$b64" | base64 -d)"
   if [ "$budget" -gt 0 ]; then
     candidate="${out}${block}"$'\n\n'
-    candidate_bytes="$(printf '%s' "$candidate" | wc -c)"
-    if [ "$candidate_bytes" -gt "$budget" ] && [ -n "$out" ]; then
+    candidate_chars="$(printf '%s' "$candidate" | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8", "replace")))')"
+    if [ "$candidate_chars" -gt "$budget" ] && [ -n "$out" ]; then
       dropped+=("$name")
       budget_hit=1
       continue

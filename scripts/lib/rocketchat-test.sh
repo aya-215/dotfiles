@@ -726,9 +726,7 @@ assert_eq "historyとthreadの重複メッセージは1回だけ出力される"
 
 # ===== Task 5: 予算処理 =====
 # 全ルーム分では収まらない小さな予算を与える。
-# --budget はバイト数基準（fire-daily-review.sh の ${#var} は LANG 未設定の
-# cron環境でバイト数になるため、rocketchat.sh 側もバイト数に合わせる。詳細は
-# task-5-report.md 参照）。
+# --budget は字数（Unicode の文字数）基準。LANG に依存しない。
 #
 # budget=400 だと、優先度1グループ内の先頭2ルームだけで
 # quality-check-room(98B) + mori.a-times(418B累計) = 418B が既に400を
@@ -739,11 +737,11 @@ assert_eq "historyとthreadの重複メッセージは1回だけ出力される"
 # quality-check-room + mori.a-times の2ルームがちょうど収まり、
 # 3ルーム目(kawai.t-times)以降が確実に超過する 600 を使う。
 out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm --budget 600)"
-len="$(printf '%s' "$out" | wc -c)"
+len="$(printf '%s' "$out" | python3 -c 'import sys; print(len(sys.stdin.read()))')"
 if [ "$len" -le 800 ]; then   # 省略マーカー分の余裕を見て 800
-  echo "ok: 予算内に収まる（${len}バイト）"
+  echo "ok: 予算内に収まる（${len}字）"
 else
-  echo "NG: 予算超過（${len}バイト）"; fails=$((fails + 1))
+  echo "NG: 予算超過（${len}字）"; fails=$((fails + 1))
 fi
 assert_grep "省略マーカーが出る" "容量制限のため" "$out"
 # 空証明の修正: 省略マーカー自体に落ちたルーム名が列挙されるため、
@@ -762,6 +760,38 @@ assert_grep "優先度の高いルームが残る" "===== mori.a-times \[" "$out
 # 避けている。
 assert_absent "優先度の低いルームは先に落ちる" "===== mention-only-room \[" "$out"
 assert_grep   "優先度の低いルームが省略マーカーに載る" "mention-only-room" "$out"
+
+# ===== --budget は字数で数える（日本語はバイトの1/3） =====
+# 日本語だけの3ルーム（各 2,000字 = 6,000バイト）。--budget 5000 は字数なら2ルーム、
+# バイトなら1ルームしか入らない。LANG 未設定の cron（env -i）でも結果が変わらないこと。
+mkdir -p "$TMP/fx-jp"
+cat > "$TMP/fx-jp/rooms.json" <<'EOF2'
+{"update":[
+ {"_id":"room-own","t":"p","name":"jp-a","lm":"2026-07-22T05:00:00.000Z"},
+ {"_id":"room-other","t":"p","name":"jp-b","lm":"2026-07-22T06:00:00.000Z"},
+ {"_id":"room-noise","t":"p","name":"jp-c","lm":"2026-07-22T07:00:00.000Z"}
+]}
+EOF2
+python3 - "$TMP/fx-jp" <<'EOF2'
+import json, sys
+d = sys.argv[1]
+for f, i in (("hist-own", "a"), ("hist-other", "b"), ("hist-noise", "c")):
+    msg = "日" * 2000
+    json.dump({"messages": [{"_id": "jp" + i, "ts": "2026-07-22T00:42:00.000Z",
+               "u": {"username": "mori.a"}, "msg": msg}]},
+              open(f"{d}/{f}.json", "w"), ensure_ascii=False)
+EOF2
+run_rc_jp() {
+  env -i PATH="$PATH" \
+    RC_ENV_FILE="$TMP/env.local" RC_CURL="$TMP/bin/curl-stub.sh" \
+    RC_FIXTURE_DIR="$TMP/fx-jp" RC_ME=mori.a \
+    bash "$SCRIPT_DIR/rocketchat.sh" "$@"
+}
+out="$(run_rc_jp --from 2026-07-21 --to 2026-07-28 --budget 5000 2>/dev/null)"
+assert_eq "字数予算: 日本語3ルーム中2ルームが残る" "2" "$(grep -c '^===== jp-' <<<"$out")"
+assert_grep "字数予算: 3ルーム目が省略マーカーに載る" "1 ルームを省略: jp-c" "$out"
+out="$(run_rc_jp --from 2026-07-21 --to 2026-07-28 2>/dev/null)"
+assert_eq "字数予算: 予算なしなら3ルームとも残る" "3" "$(grep -c '^===== jp-' <<<"$out")"
 
 # 予算未指定なら省略マーカーは出ない
 out="$(run_rc --from 2026-07-21 --to 2026-07-28 --include-dm)"
