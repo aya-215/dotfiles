@@ -259,6 +259,10 @@ class HandRestore(Flow):
         ctx = self.ctx()
         self.assertIn("gb:r#1", [i["ref"] for i in ctx["items"]])
         self.assertEqual(ctx["deleted_refs"], [])
+        # 消す指示の意図（「不要」）は、書き戻した行への指示として出さない
+        self.assertEqual(self.item(ctx, "gb:r#1")["intents"], [])
+        self.user({"op": "note", "ref": "gb:r#1", "intent": "やっぱり要る"})
+        self.assertEqual([i["value"] for i in self.item(self.ctx(), "gb:r#1")["intents"]], ["やっぱり要る"])
 
     def test_restored_cleanup_lets_cleanup_resume(self):
         self.apply({"source": "ai", "ops": [{"op": "add", "section": "やる", "title": "後片付け（2026-11-10）", "next": "a"}]})

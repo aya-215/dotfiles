@@ -144,7 +144,7 @@ Claude Code で `/todo-edit`（「todo を直して」「資料の件は〜に�
 
 - `items[].intents`（その行の意図。新しい順で最大5件。key を付ける前・改名する前の ref の意図も含む）: 意図に反して完了・移動・next の上書きをしない。一次データが意図と食い違うとき（意図は「eas#60 のマージ後に依頼」なのに eas#60 がマージされた、GitBucket の PR がマージ・クローズされた等）は、op を作らず `conflict` の確認待ちで聞く。GitHub の key の行のマージ・クローズは毎時の同期が意図を読まずに完了へ移すので、conflict にはならない
 - `items[].answers`: その行への確認待ちの回答。`superseded: true` の conflict の回答（問いや回答より後に同じ行の意図が記録された）には従わず、食い違えばもう一度聞く。apply も、意図より後に記録された回答だけを回答済みとして扱う（ファイル内の位置で比べる）
-- `deleted_refs`: 消した行（key を付ける前の ref も）・key の無い行の改名前の ref。`add` も `attach` も確認待ちの問いにも使わない（後片付けは題の前方一致）。source ai の add/attach は apply が `skip: intent_deleted` で飛ばす。人が nvim で行を書き戻すと、その ref は外れてふつうの行に戻る
+- `deleted_refs`: 消した行（key を付ける前の ref も）・key の無い行の改名前の ref。`add` も `attach` も確認待ちの問いにも使わない（後片付けは題の前方一致）。source ai の add/attach は apply が `skip: intent_deleted` で飛ばす。人が nvim で行を書き戻すと、その ref は外れてふつうの行に戻る（消した指示とそれより前の意図も `items[].intents` に出なくなる）
 - `other_intents`: まだ台帳に無い key へのメモ。その候補を足すときの指示として従う
 
 apply は source user に `--allow-user` を必須とし、`TODO_AI_DENY_USER=1` なら常に拒む（無人実行が user を名乗っても通らない）。完了から出した行には `revert_move`（to=完了）の記録が付き、AI・同期が完了に戻さない。

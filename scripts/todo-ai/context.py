@@ -19,7 +19,8 @@
                   その回答には従わず、意図と一次データが食い違えばもう一度聞く。conflict 以外は常に false
   rejected_refs   人が消した AI の追加（reject_add）の ref
   archived_keys   todo-archive/*.md に移った完了行の key
-  intents         （各 item）ユーザー指示の意図。新しい順で最大5件の {ts, value}
+  intents         （各 item）ユーザー指示の意図。新しい順で最大5件の {ts, value}。/todo-edit で消した後に人が
+                  書き戻した行では、消した指示とそれより前の意図を出さない
   answers         （各 item）その行への確認待ちの回答。新しい順の {kind, value, ts, superseded}
   intent_refs     意図の記録がある全 ref（prev_ref 含む。todo.md から消えた行も）
   deleted_refs    ユーザー指示（delete・edit_title の旧 ref）で台帳から消えた ref。/todo は足し直さない
@@ -56,8 +57,14 @@ def _intent_refs(records: "list[dict]") -> "list[str]":
     return sorted(refs)
 
 
-def _intents(records: "list[dict]", ref: str) -> "list[dict]":
-    return [{"ts": r.get("ts"), "value": r.get("value")} for r in decisions.intents(records, ref)[:MAX_INTENTS]]
+def _intents(records: "list[dict]", ref: str, present: bool = False) -> "list[dict]":
+    """present（台帳にある行）では、最新の delete より前の意図を出さない。消した後に人が書き戻した行の指示ではない。"""
+    out = []
+    for r in decisions.intents(records, ref):
+        if present and r.get("op") == "delete":
+            break
+        out.append({"ts": r.get("ts"), "value": r.get("value")})
+    return out[:MAX_INTENTS]
 
 
 def _answers(records: "list[dict]", ref: str) -> "list[dict]":
@@ -147,7 +154,7 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
                 "added_date": added,
                 "age_days": (t - datetime.date.fromisoformat(added)).days if added else None,
                 "pinned_to": decisions.pinned_sections(records, it.ref),
-                "intents": _intents(records, it.ref),
+                "intents": _intents(records, it.ref, present=True),
                 "answers": _answers(records, it.ref),
             })
 
