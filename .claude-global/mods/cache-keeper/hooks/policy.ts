@@ -8,9 +8,29 @@ const DAY = 24 * HOUR
 
 export type Facts = {
   contextTokens: number
+  /** Date#getTimezoneOffset() at `now`: minutes to add to local time to get UTC. */
+  tzOffsetMinutes: number
 }
 
-export type StopReason = 'off' | 'expired' | 'short-ttl' | 'idle-limit' | 'small-context'
+export type StopReason = 'off' | 'expired' | 'short-ttl' | 'calendar' | 'ping-limit' | 'small-context'
+
+const WEEKDAY_UNTIL_HOUR = 12
+const FRIDAY_CUTOFF_HOUR = 17
+
+/**
+ * The last moment a session idle since `base` is kept warm: noon the next day
+ * when left Monday to Thursday, 17:00 when left on Friday before then, and
+ * null (not at all) when left on Friday from 17:00 or at the weekend.
+ */
+export const warmDeadline = (base: number, tzOffsetMinutes: number): number | null => {
+  const offset = tzOffsetMinutes * MIN
+  const local = new Date(base - offset)
+  const day = local.getUTCDay()
+  const localMidnight = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate())
+  if (day >= 1 && day <= 4) return localMidnight + DAY + WEEKDAY_UNTIL_HOUR * HOUR + offset
+  if (day === 5 && local.getUTCHours() < FRIDAY_CUTOFF_HOUR) return localMidnight + FRIDAY_CUTOFF_HOUR * HOUR + offset
+  return null
+}
 
 export type Decision =
   | { action: 'idle' }
@@ -40,11 +60,13 @@ export const decide = (s: Session, now: number, facts: Facts, config: Config): D
   if (now < pingAt) return { action: 'wait', at: pingAt }
 
   // lastTurnAt moves on every main-loop request and turn, typed or not (a
-  // background agent's result, a /loop wakeup): those extend the idle window by
-  // design. A question left open counts from the request that asked it.
-  // A /keepwarm for|until window extends that, never shortens it.
-  const keepUntil = Math.max(s.untilMs ?? 0, (s.lastTurnAt ?? s.lastRequestAt) + config.maxIdleMs)
-  if (now > keepUntil) return { action: 'stop', reason: 'idle-limit' }
+  // background agent's result, a /loop wakeup): those restart the calendar
+  // window by design. A /keepwarm for|until window overrides both limits.
+  if (!isInWindow) {
+    const deadline = warmDeadline(s.lastTurnAt ?? s.lastRequestAt, facts.tzOffsetMinutes)
+    if (deadline === null || now > deadline) return { action: 'stop', reason: 'calendar' }
+    if (s.pings >= config.maxPings) return { action: 'stop', reason: 'ping-limit' }
+  }
   if (facts.contextTokens < config.minContextTokens) return { action: 'stop', reason: 'small-context' }
   // No plan-usage ceiling: past the limit, extra usage bills per token, and a
   // ping costs about a twentieth of the re-cache it saves. A blocked ping is

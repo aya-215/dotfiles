@@ -4,7 +4,7 @@ export type Config = {
   enabled: boolean
   ttlMs: number
   leadMs: number
-  maxIdleMs: number
+  maxPings: number
   minContextTokens: number
 }
 

@@ -22,11 +22,11 @@
       "description": "How long before the cache would expire to ping.",
       "default": 5
     },
-    "maxIdleHours": {
+    "maxPings": {
       "type": "number",
-      "title": "Keep warm for (hours)",
-      "description": "Stop pinging this long after your last real turn; /keepwarm for or until can extend it. A ping costs about 1/35 of a 1h re-cache on Opus 5.5, so 8 hours of pings (~9) cost about a quarter of one rewrite.",
-      "default": 8
+      "title": "Max pings per idle stretch",
+      "default": 20,
+      "description": "Stop after this many automatic pings since your last real turn (manual /keepwarm now pings do not count). Pinging also stops at noon the next day (Mon-Thu) or 17:00 on Friday, and never starts after Friday 17:00 or at the weekend; /keepwarm for|until overrides both."
     },
     "minContextTokens": {
       "type": "number",

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { classifyPing, decide, parseKeepwarmArgs, retryAt } from './policy'
+import { classifyPing, decide, parseKeepwarmArgs, retryAt, warmDeadline } from './policy'
 import type { Config, Session } from '../types'
 
 const MIN = 60_000
@@ -10,7 +10,7 @@ const config: Config = {
   enabled: true,
   ttlMs: HOUR,
   leadMs: 5 * MIN,
-  maxIdleMs: 4 * HOUR,
+  maxPings: 20,
   minContextTokens: 60_000,
 }
 
@@ -28,10 +28,13 @@ const session = (over: Partial<Session> = {}): Session => ({
   lastPing: null,
   stopReason: null,
   probe: null,
+  model: null,
   ...over,
 })
 
-const facts = { contextTokens: 200_000 }
+// Epoch 0 is Thursday 1970-01-01 09:00 in JST, so the tests below that count from 0 sit on a Thursday.
+const facts = { contextTokens: 200_000, tzOffsetMinutes: -540 }
+const jst = (iso: string) => Date.parse(`${iso}+09:00`)
 
 describe('decide', () => {
   test('waits until the lead before expiry', () => {
@@ -54,14 +57,38 @@ describe('decide', () => {
     })
   })
 
-  test('stops past the idle limit after the last real turn', () => {
-    const s = session({ lastRequestAt: 4 * HOUR })
-    expect(decide(s, 4 * HOUR + 56 * MIN, facts, config)).toEqual({ action: 'stop', reason: 'idle-limit' })
+  test('stops past the calendar deadline after the last real turn', () => {
+    const last = jst('2026-11-12T15:00:00')
+    const now = jst('2026-11-13T12:01:00')
+    const s = session({ lastRequestAt: now - 56 * MIN, lastTurnAt: last })
+    expect(decide(s, now, facts, config)).toEqual({ action: 'stop', reason: 'calendar' })
   })
 
-  test('an explicit until overrides the idle limit', () => {
-    const s = session({ lastRequestAt: 4 * HOUR, untilMs: 9 * HOUR })
-    expect(decide(s, 4 * HOUR + 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  test('does not keep warm a session left on Friday evening', () => {
+    const last = jst('2026-11-13T17:30:00')
+    const s = session({ lastRequestAt: last, lastTurnAt: last })
+    expect(decide(s, last + 56 * MIN, facts, config)).toEqual({ action: 'stop', reason: 'calendar' })
+  })
+
+  test('stops after maxPings pings in one idle stretch', () => {
+    const last = jst('2026-11-12T10:00:00')
+    const now = jst('2026-11-12T20:00:00')
+    const s = (pings: number) => session({ lastRequestAt: now - 56 * MIN, lastTurnAt: last, pings })
+    expect(decide(s(20), now, facts, config)).toEqual({ action: 'stop', reason: 'ping-limit' })
+    expect(decide(s(19), now, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('an explicit until overrides the calendar rule', () => {
+    const last = jst('2026-11-13T17:30:00')
+    const s = session({ lastRequestAt: last, lastTurnAt: last, untilMs: last + 3 * HOUR })
+    expect(decide(s, last + 56 * MIN, facts, config)).toEqual({ action: 'ping' })
+  })
+
+  test('inside an explicit until window the ping limit does not apply', () => {
+    const last = jst('2026-11-12T10:00:00')
+    const now = jst('2026-11-12T20:00:00')
+    const s = session({ lastRequestAt: now - 56 * MIN, lastTurnAt: last, pings: 25, untilMs: now + HOUR })
+    expect(decide(s, now, facts, config)).toEqual({ action: 'ping' })
   })
 
   test('an until window that has passed falls back to the idle limit', () => {
@@ -116,6 +143,23 @@ describe('decide', () => {
     expect(decide(session({ lastRequestAt: null, lastTurnAt: null }), 56 * MIN, facts, config)).toEqual({
       action: 'idle',
     })
+  })
+})
+
+describe('warmDeadline', () => {
+  test('Mon-Thu: until noon the next day', () => {
+    expect(warmDeadline(jst('2026-11-12T23:59:00'), -540)).toBe(jst('2026-11-13T12:00:00'))
+    expect(warmDeadline(jst('2026-11-10T09:00:00'), -540)).toBe(jst('2026-11-11T12:00:00'))
+  })
+
+  test('Friday before 17:00: until 17:00 that day', () => {
+    expect(warmDeadline(jst('2026-11-13T16:59:00'), -540)).toBe(jst('2026-11-13T17:00:00'))
+  })
+
+  test('Friday from 17:00, Saturday and Sunday: not at all', () => {
+    expect(warmDeadline(jst('2026-11-13T17:00:00'), -540)).toBeNull()
+    expect(warmDeadline(jst('2026-11-14T10:00:00'), -540)).toBeNull()
+    expect(warmDeadline(jst('2026-11-15T10:00:00'), -540)).toBeNull()
   })
 })
 

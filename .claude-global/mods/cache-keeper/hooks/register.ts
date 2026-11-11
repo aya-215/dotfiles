@@ -56,7 +56,7 @@ function configFrom(options: PluginOptions): Config {
     enabled: options.enabled !== false,
     ttlMs: num(options.ttlMinutes, 60) * MIN,
     leadMs: num(options.leadMinutes, 5) * MIN,
-    maxIdleMs: num(options.maxIdleHours, 8) * HOUR,
+    maxPings: num(options.maxPings, 20),
     minContextTokens: num(options.minContextTokens, 60_000),
   }
 }
@@ -192,7 +192,7 @@ async function ping($: EngineInterface, isManual = false): Promise<PingRecord> {
       ...cur,
       lastPing: record,
       pingErrors: outcome !== 'error' ? 0 : isManual ? cur.pingErrors : cur.pingErrors + 1,
-      ...(outcome === 'hit' ? { lastRequestAt: now, pings: cur.pings + 1, stopReason: null } : {}),
+      ...(outcome === 'hit' ? { lastRequestAt: now, pings: isManual ? cur.pings : cur.pings + 1, stopReason: null } : {}),
     }))
     await appendLog($, {
       kind: 'ping',
@@ -397,7 +397,7 @@ async function schedule($: EngineInterface, isJustAnswered = false): Promise<voi
   const usage = await $.session.usage()
   const s = await catchUp($, usage, { isJustAnswered })
   const now = await $.clock.now()
-  const d = decide(s, now, { contextTokens: usage.context.tokens ?? 0 }, config)
+  const d = decide(s, now, { contextTokens: usage.context.tokens ?? 0, tzOffsetMinutes: new Date(now).getTimezoneOffset() }, config)
 
   switch (d.action) {
     case 'idle':

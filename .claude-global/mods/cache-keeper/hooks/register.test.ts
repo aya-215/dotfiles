@@ -217,14 +217,15 @@ describe('cache-keeper', () => {
     expect(w.forks.length).toBe(2)
   })
 
-  test('stops after the idle limit', async ($, on) => {
+  test('stops at the calendar deadline', async ($, on) => {
     const w = world(on)
     await startAndTurn($)
 
-    await w.clock.advance(12 * HOUR)
-    // pings every 55 minutes up to 440; the one due at 495 is past 8 hours
-    expect(w.forks.length).toBe(8)
-    expect(w.logLines().at(-1)).toEqual(expect.objectContaining({ kind: 'stop', reason: 'idle-limit' }))
+    await w.clock.advance(20 * HOUR)
+    // T0 is Tuesday 23:00 JST, so the deadline is Wednesday 12:00 (780 minutes on):
+    // pings every 55 minutes up to 770; the one due at 825 is past it
+    expect(w.forks.length).toBe(14)
+    expect(w.logLines().at(-1)).toEqual(expect.objectContaining({ kind: 'stop', reason: 'calendar' }))
   })
 
   test('a real turn resets the clock', async ($, on) => {
@@ -362,7 +363,7 @@ describe('cache-keeper', () => {
     await $.turn.start({ text: 'next', turnId: 't2' })
     await step($, w, 't2', 0, HIT)
     await w.clock.advance(24 * HOUR) // a question left open
-    expect(w.forks.length).toBe(8)
+    expect(w.forks.length).toBe(14)
   })
 
   test('a request that failed does not restart the cache clock', async ($, on) => {
@@ -407,15 +408,16 @@ describe('cache-keeper', () => {
     expect(w.forks.length).toBe(0)
   })
 
-  test('the idle limit counts from the last main request, not the turn start', async ($, on) => {
+  test('the calendar deadline counts from the last main request, not the turn start', async ($, on) => {
     const w = world(on)
     await startAndTurn($)
     await $.turn.start({ text: 'long', turnId: 't2' })
     await w.clock.advance(3 * HOUR)
-    await step($, w, 't2', 0, HIT) // three hours into the turn, then a question waits
+    await step($, w, 't2', 0, HIT) // Wednesday 02:00 JST, then a question waits: the deadline is Thursday 12:00
     await w.clock.advance(12 * HOUR)
-    expect(w.forks.length).toBe(8)
-    expect(w.logLines().at(-1)).toEqual(expect.objectContaining({ kind: 'stop', reason: 'idle-limit' }))
+    // counted from the turn start (Tuesday 23:00) it would have stopped at Wednesday 12:00, after 10 pings
+    expect(w.forks.length).toBe(13)
+    expect(w.logLines().some(l => l.kind === 'stop')).toBe(false)
   })
 
   test('a cache miss stops pinging', async ($, on) => {
@@ -642,6 +644,24 @@ describe('cache-keeper', () => {
     expect(w.store.has('refreshVerified')).toBe(false)
   })
 
+  test('a manual /keepwarm now does not count toward the ping limit', async ($, on) => {
+    const w = world(on)
+    await startAndTurn($)
+    await $.command.run({ command: 'keepwarm', args: 'now', ...COMMAND })
+    expect(w.forks.length).toBe(1)
+    const r = await $.command.run({ command: 'keepwarm', args: 'status', ...COMMAND })
+    expect(r.text).toContain('0 pings since last request')
+  })
+
+  test('after a calendar stop, the next real turn starts keeping warm again', async ($, on) => {
+    const w = world(on)
+    await startAndTurn($)
+    await w.clock.advance(20 * HOUR) // stopped at Wednesday 12:00 JST
+    await turnWithStep($, w, 't2') // Wednesday 19:00: a new deadline, Thursday 12:00
+    await w.clock.advance(56 * MIN)
+    expect(w.forks.length).toBe(15)
+  })
+
   test('seated: /keepwarm now after a compaction whose hook was skipped sends no fork', async ($, on) => {
     const w = world(on)
     await startAndTurn($)
@@ -817,13 +837,13 @@ describe('cache-keeper', () => {
     expect(status.text).not.toContain('keeping warm until')
   })
 
-  test('/keepwarm for keeps warm past the idle limit', async ($, on) => {
+  test('/keepwarm for keeps warm past the calendar deadline', async ($, on) => {
     const w = world(on)
     await startAndTurn($)
-    await $.command.run({ command: 'keepwarm', args: 'for 10h', ...COMMAND })
-    await w.clock.advance(12 * HOUR)
-    // pings every 55 minutes up to 550; the one due at 605 is past 10 hours
-    expect(w.forks.length).toBe(10)
+    await $.command.run({ command: 'keepwarm', args: 'for 16h', ...COMMAND })
+    await w.clock.advance(20 * HOUR)
+    // the calendar deadline is 780 minutes on; the window runs to 960: pings up to 935
+    expect(w.forks.length).toBe(17)
   })
 
   test('/keepwarm for while off keeps warm for the window, then off again', async ($, on) => {
@@ -927,12 +947,12 @@ describe('the /keepwarm setting survives a process move', () => {
     expect(w.store.get(KEY)).toEqual({ mode: 'off', untilMs: null, at: T0 })
   })
 
-  test('a new process restores a window that is still open, and keeps warm past the idle limit', async ($, on) => {
-    const w = world(on, { store: { [KEY]: { mode: 'auto', untilMs: T0 + 10 * HOUR, at: T0 - HOUR } } })
+  test('a new process restores a window that is still open, and keeps warm past the calendar deadline', async ($, on) => {
+    const w = world(on, { store: { [KEY]: { mode: 'auto', untilMs: T0 + 16 * HOUR, at: T0 - HOUR } } })
     await startAndTurn($)
     expect((await keepwarm($, 'status')).text).toContain('keeping warm until')
-    await w.clock.advance(12 * HOUR)
-    expect(w.forks.length).toBe(10)
+    await w.clock.advance(20 * HOUR)
+    expect(w.forks.length).toBe(17)
   })
 
   test('a window that ended while the session was away is not restored', async ($, on) => {
