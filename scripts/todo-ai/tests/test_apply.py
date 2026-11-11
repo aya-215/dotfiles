@@ -676,6 +676,9 @@ class UserSourceTest(unittest.TestCase):
             for op in ({"op": "edit_title", "ref": "epc#1163", "title": "x", "intent": "i"},
                        {"op": "delete", "ref": "epc#1163", "intent": "i"},
                        {"op": "note", "ref": "epc#1163", "intent": "i"}):
+                if source == "ai" and op["op"] == "edit_title":
+                    self.assertIn("skip: human title epc#1163", self.run_ops([op], source=source)[1])
+                    continue
                 with self.assertRaises(ChangeError):
                     self.run_ops([op], source=source)
 
@@ -1061,15 +1064,21 @@ class AiEditTitleTest(unittest.TestCase):
         self.assertTrue(any(l.startswith("edit_title epc#1210") for l in body))
         self.assertEqual(validate(self.doc, new, self.origins, "ai"), [])
 
-    def test_ai_cannot_retitle_human_line(self):
-        for ref in ("title:インターン資料修正", "epc#1163"):
-            with self.assertRaises(ChangeError, msg=ref):
-                self.run_ops([{"op": "edit_title", "ref": ref, "title": "短く"}])
+    def test_ai_retitle_of_human_line_skipped(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "title:インターン資料修正", "title": "短く"},
+                                  {"op": "edit_title", "ref": "epc#1163", "title": "短く"},
+                                  {"op": "set_next", "ref": "epc#1202", "next": "続ける"}])
+        self.assertEqual(titles(new, "やる")[0], "インターン資料修正")
+        self.assertEqual(new.sections["やる"][3].title, "PR レビュー")
+        self.assertIn("skip: human title title:インターン資料修正", body)
+        self.assertIn("skip: human title epc#1163", body)
+        self.assertEqual(new.sections["やる"][4].next, "続ける")
 
-    def test_retitle_human_and_readd_its_title_rejected(self):
-        with self.assertRaises(ChangeError):
-            self.run_ops([{"op": "edit_title", "ref": "title:インターン資料修正", "title": "別"},
-                          {"op": "add", "section": "やる", "title": "インターン資料修正"}])
+    def test_retitle_human_and_readd_its_title_changes_nothing(self):
+        new, body = self.run_ops([{"op": "edit_title", "ref": "title:インターン資料修正", "title": "別"},
+                                  {"op": "add", "section": "やる", "title": "インターン資料修正"}])
+        self.assertEqual(new.sections, self.doc.sections)
+        self.assertIn("skip: human title title:インターン資料修正", body)
 
     def test_sync_still_cannot_edit_title(self):
         with self.assertRaises(ChangeError):
@@ -1118,11 +1127,15 @@ class AiEditTitleCliTest(RepoMixin, unittest.TestCase):
         self.retitle("車両候補バブルの再レビュー")
         self.assertEqual(origin_of(self.repo, "todo.md", "車両候補バブルの再レビュー"), "ai")
 
-    def test_human_line_rejected_with_exit2(self):
+    def test_human_line_skipped_and_other_ops_applied(self):
         r = self.run_apply({"source": "ai", "ops": [
-            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "資料修正"}]})
-        self.assertEqual(r.returncode, 2)
-        self.assertEqual(self.todo.read_text(encoding="utf-8"), self.text)
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "資料修正"},
+            {"op": "set_next", "ref": "epc#1202", "next": "続ける"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = self.todo.read_text(encoding="utf-8")
+        self.assertIn("- [ ] インターン資料修正\n", text)
+        self.assertIn("— next: 続ける", text)
+        self.assertIn("skip: human title title:インターン資料修正", self.head("%b"))
 
     def test_keyless_rename_records_alias(self):
         self.commit(self.text.replace("- [ ] 坂西さんの対応\n", "- [ ] 坂西さんの対応\n- [ ] AI の長い鍵なし行\n"),

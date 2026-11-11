@@ -290,8 +290,8 @@ def apply_changes(
     後片付けは題の前方一致）の add/attach も飛ばす。
     source user（ユーザー指示）は例外: 戻し・却下の記録に縛られず、完了から戻せ、edit_title / delete / note を
     使える。各 op に intent が必須で、op を1つでも飛ばすなら全体を ChangeError にする（承認された変更を欠かさない）。
-    source ai も edit_title を使えるが、origins が "ai" の行（この実行で足した行を含む）だけで、人の行なら ChangeError。
-    完了の行と後片付けの行は飛ばす。
+    source ai も edit_title を使えるが、origins が "ai" の行（この実行で足した行を含む）だけ。人の行・完了の行・
+    後片付けの行への edit_title は飛ばす。
     effects を渡すと、source user の意図と validate の免除対象をそこに集める。
     変更案の形が不正なら ChangeError。人のタイトル保護などの結果の検証は validate が行う。
     """
@@ -445,9 +445,10 @@ def apply_changes(
                 if not it.key and _find(doc, "title:" + title):
                     raise ChangeError(f"edit_title: 同じ題の key の無い行が既にあり ref が重なる: {title!r}")
                 if not user:
-                    # validate は題の数で比べるので、人の行の改名と同じ題の add の組を見逃す。ここで行ごとに止める
+                    # validate は題の数で比べるので、人の行の改名と同じ題の add の組を見逃す。ここで行ごとに飛ばす
                     if all(it is not f for f in fresh) and origins(it.title) != "ai":
-                        raise ChangeError(f"edit_title: {source} は人の行の題を変えられない: {ref}")
+                        skip(f"human title {ref}")
+                        continue
                     if loc[0] == "完了":
                         skip(f"done {ref}")
                         continue

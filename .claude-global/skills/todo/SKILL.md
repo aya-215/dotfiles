@@ -135,7 +135,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 8. **conflict**: 完了にある行と同じ key の候補が `mine`/`theirs`（元がまだ開いている）→ `confirm kind=conflict`。question=`完了にした<行の呼び名>がまだ開いている。どうする？`、選択は「完了のまま（おすすめ）」と「自分でやるに戻す」。**AI は完了から動かせない**ので、戻す op は作らない
 9. **order**（やる）: 並べ替え後の順を `{"op": "order", "section": "やる", "refs": [...]}` で出す。順位は ① 対応する候補に `waiting_person` がある ② `deadline` が早い（null は後）③ `blocks` が多い ④ 元の順。候補の無い行は元の順のまま後ろ（人の行が下に回るのは今の挙動どおりでよい）。**refs は前の op を適用した後の ref**（attach した行は付けた key、add した行はその key、edit_title した key の無い行は `title:<新しい題>`）。順が変わらなければ出さない
 10. **policy / before_share / manual**: 候補の next が「方針を決める」「人に見せる前の確認」「ユーザーにしかできない手作業」のときだけ。多用しない
-11. **edit_title**（AI の行の題を短くする）: やる/待ちの `origin: ai` の行で、題が30字を超えるか key の番号（`PR #1210`・`#1224`・`eae#59` 等）を含むもの → `{"op": "edit_title", "ref": <行の ref>, "title": <縮めた題>, "reason": "題を短くする"}`。題は下の「題と next の書き方」に沿う。`origin: human` の行・完了の行・`後片付け（` で始まる行には出さない（apply が人の行なら全体を exit 2 で止め、完了・後片付けの行は `skip:` で飛ばす）。key の無い行は ref が `title:<新しい題>` に変わる（apply が `alias` で前の記録とつなぐ）。同じ実行の後の op はその新しい ref を使う
+11. **edit_title**（AI の行の題を短くする）: やる/待ちの `origin: ai` の行で、題が30字を超えるか key の番号（`PR #1210`・`#1224`・`eae#59` 等）を含むもの → `{"op": "edit_title", "ref": <行の ref>, "title": <縮めた題>, "reason": "題を短くする"}`。題は下の「題と next の書き方」に沿う。`origin: human` の行・完了の行・`後片付け（` で始まる行には出さない（出しても apply がその op だけ `skip:` で飛ばす）。key の無い行は ref が `title:<新しい題>` に変わる（apply が `alias` で前の記録とつなぐ）。同じ実行の後の op はその新しい ref を使う
 
 #### 題と next の書き方
 
@@ -178,7 +178,7 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 
 - `question` は「決めること」を1行で書く。`ref` と `kind` は必須。kind は `policy` `before_share` `manual` `conflict` `is_task` `still_needed` のどれか。apply が問いの末尾に ` [<kind> <ref>]` のタグを付け、次の実行はこのタグで回答の記録先を決める。タグを自分で書かない
 - `facts` は問いの後ろの括弧に入るので、判断に要る事実だけを20字目安で（件数・日付・状態・待ち相手）。推測・URL・長い引用を書かない。括弧を入れるなら閉じる
-- `origin: ai` の行の題の全文を問い・事実・選択肢に写さない。縮めた呼び名か key で書く（例 題 `坂西さんへの返信` → `坂西さんへの返事`）。origin は題の文字列を git 履歴で数えるので、確認待ちに題の全文が入るとその行が人の行の判定に変わり、以後 set_next・edit_title ができなくなる
+- `origin: ai` の行の題の全文を問い・事実・選択肢に写さない。縮めた呼び名か key で書く（例 題 `坂西さんへの返信` → `坂西さんへの返事`）。origin は同じ題を含む行が2本以上あると人の行に倒すので、確認待ちに題の全文が入っている間はその行が人の行の判定になり、set_next・edit_title ができなくなる
 - 問い・事実・選択肢に中の言葉を書かない: `title:`・`mine`・`theirs`・`ball`・`ref`・`既存行:`・`候補:` 等。「やる/待ち」「自分の番/相手待ち」「今の行」で書く
 - `options` は 2〜3 個、`label`（A/B/C）と `text` は空にしない。`recommended: true` はちょうど1つ
 - `confirm` は毎回全置換。次の順で並べる: ① `confirm_blocks` のうち `answer` が空のものを写す（状況が片付いた問いは落としてよい）② 今回新しく出す問い。①は `ref` `kind` と選択肢の並び・意味を変えずに、`question` `facts` `options` の言い回しをこの書き方に合わせて縮めてよい（旧書式の長い問いはここで縮める）
@@ -214,9 +214,8 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 - どの文字列にも改行を入れる
 - `title`・`next` に ` — next: ` や `](` を含める、`title` の前後に空白がある、`url` に空白や括弧がある（書き出すと別の行に読めてしまうため全体が止まる）
 - `options` の要素に `label`/`text` が無い・空、`confirm` の要素に `ref` が無い・`kind` が上の6種以外
-- `origin: human` の行（この実行で add した行を除き、apply が git 履歴で判定する）への `edit_title`
 
-存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、完了・後片付けの行への `edit_title` は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: done` / `skip: cleanup` としてコミット本文に残る）。
+存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、人の行（この実行で add した行を除き、apply が git 履歴で判定する）・完了・後片付けの行への `edit_title` は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: human title` / `skip: done` / `skip: cleanup` としてコミット本文に残る）。
 
 ### 7. 適用
 
