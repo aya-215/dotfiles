@@ -79,14 +79,14 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 
 | フィールド | 使い方 |
 |---|---|
-| `items[]` | 台帳の各行。`ref` `section` `title` `key` `url` `next` `done` `origin`（ai/human）`added_date` `age_days` `pinned_to`（人が AI/同期の移動を戻したため、その行を移してはいけないセクション。空なら制限なし）`intents`（ユーザーが `/todo-edit` で残したその行の意図。新しい順で最大5件の `{ts, value}`。下の「意図の扱い」） |
+| `items[]` | 台帳の各行。`ref` `section` `title` `key` `url` `next` `done` `origin`（ai/human）`added_date` `age_days` `pinned_to`（人が AI/同期の移動を戻したため、その行を移してはいけないセクション。空なら制限なし）`intents`（ユーザーが `/todo-edit` で残したその行の意図。新しい順で最大5件の `{ts, value}`。下の「意図の扱い」）`answers`（その行への確認待ちの回答。新しい順の `{kind, value, ts, superseded}`）。`pinned_to`・`intents`・`answers` は、key を付ける前・改名する前の ref の記録も含む |
 | `intent_refs[]` | 意図の記録がある全 ref（改名前の ref、todo.md から消えた行も含む）。意図の中身は `items[].intents` と `other_intents` で読む |
-| `deleted_refs[]` | ユーザーが `/todo-edit` の delete で消した ref と、edit_title で変わる前の ref。**足し直さない**（apply も source ai の add/attach を `skip: intent_deleted` で飛ばす） |
-| `other_intents[]` | 台帳に行が無く `deleted_refs` にも無い ref の意図（`{ref, intents}`。まだ台帳に無い key へのメモ等）。その ref の候補を扱うときに意図として従う |
+| `deleted_refs[]` | ユーザーが `/todo-edit` の delete で消した ref と、edit_title で変わる前の ref。**足し直さない**（apply も source ai の add/attach を `skip: intent_deleted` で飛ばす）。人が書き戻して台帳にある ref は入らない |
+| `other_intents[]` | 台帳に行が無く（key 付け・改名で今の行につながる旧 ref も除く）`deleted_refs` にも無い ref の意図（`{ref, intents}`。まだ台帳に無い key へのメモ等）。その ref の候補を扱うときに意図として従う |
 | `confirm_blocks[]` | 今の確認待ち（回答済みのものも含む）。`ref` `kind` `question`（タグを外した問い）`facts` `options` `answer` |
 | `confirm_errors[]` | 確認待ちを書き換えられない理由。空でなければ下の「確認待ちが壊れているとき」 |
-| `answered_now[]` | 回答欄が埋まった分（ref, kind, answer）。apply が回答欄から同じものを記録する。Claude はこれを見て回答に沿った op を作る |
-| `answered_refs[]` | 判断記録にある過去の回答（ref, kind, value）。同じ ref・kind の問いは出さない |
+| `answered_now[]` | 回答欄が埋まった分（ref, kind, answer, superseded）。apply が回答欄から同じものを記録する。Claude はこれを見て回答に沿った op を作る。`superseded: true` は問いを書いた後に同じ行の意図が記録された conflict の回答で、従わない |
+| `answered_refs[]` | 判断記録にある過去の回答（ref, kind, value, ts, superseded）。同じ ref・kind の問いは出さない（`superseded: true` の conflict は除く） |
 | `rejected_refs[]` | 人が消した AI の追加（まだ記録されていない分も含む）。この key は二度と `add`・`attach` しない |
 | `archived_keys[]` | 30日でアーカイブされた完了行の key。完了済みなので `add` しない |
 
@@ -153,7 +153,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 `items[].intents` は、ユーザーがその行について `/todo-edit` で指示した内容で、守るべき指示として読む（新しい順。食い違えば新しい方）。
 
 - 意図のある行には、意図に反する op を作らない: 完了への `move`（手順5の GitBucket のマージ・クローズも含む）、やる⇄待ちの `move`、`set_next`（意図が next の中身・順番を指定しているとき）、`order` での位置。例: 「eas#60 のマージ後にレビュー依頼する」の行は、eas#60 がマージされるまで完了にも待ちにもせず、next をその指示と違う文に変えない
-- 一次データ（候補の `evidence`・PR/Issue の状態）が意図と食い違う（意図は「残す」なのに決着している、意図の待ち条件が満たされた等）ときは、その行に op を作らず `confirm kind=conflict`（ref は行の ref）で聞く。question に意図と事実の食い違いを1行で書き、facts に意図の文と一次データの引用、options は A `意図どおりにする`（おすすめ）/ B `<一次データに沿った op の内容>`。`answered_refs` にその行の `(ref, conflict)` があり、その `ts` が最新の意図の `ts` より新しければ、その回答に従う
+- 一次データ（候補の `evidence`・PR/Issue の状態）が意図と食い違う（意図は「残す」なのに決着している、意図の待ち条件が満たされた等）ときは、その行に op を作らず `confirm kind=conflict`（ref は行の ref）で聞く。question に意図と事実の食い違いを1行で書き、facts に意図の文と一次データの引用、options は A `意図どおりにする`（おすすめ）/ B `<一次データに沿った op の内容>`。行の `answers` に `superseded: false` の conflict の回答があれば、問わずにその回答に従う。`superseded: true` だけなら回答の後に新しい意図が記録されているので、食い違えばもう一度聞く（apply も、意図より後に記録された回答だけを回答済みとして扱う。ts は比べない）
 - 意図に反しない op（意図が指示していない側面の更新）はふつうに作ってよい。意図が読み取れないときは op を作らず報告に書く
 - `deleted_refs` の ref は、`add`・`attach`・確認待ちの問いのどれにも使わない（ふるい分けで落とす）。`other_intents` の意図は、その ref の候補を足すときの指示として従う
 
@@ -174,7 +174,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
   - `既存の『…』と同じ作業？`（規則 4b の1件）に「同じ（既存の行に紐付ける）」→ `facts` の `既存行:` の ref へ、問いの ref の key と候補の `url`（今回の候補に無ければ `facts` の url）で `attach`（行の `next` が null のときだけ候補の `next` も付ける）。その行に既に key があれば attach せず報告に書く。「別の作業」→ 括弧のセクションへ `add`。「足さない」→ op なし（回答の記録が以後の add を止める）
   - `既存の『…』に含まれる作業。別の行で足す？`（規則 4b の傘の行）に「別の行で足す」→ `facts` の各候補を、今回の候補の ball（今回の JSON に無ければ facts の ball）でやる/待ちへ `add`（`key` と `url` は今回の候補から。今回に無い候補は足さず報告に書く）。「足さない」→ op なし
   - conflict（意図との食い違い）に回答 → 選ばれた側の op を作る。「意図どおり」なら op なし
-- 回答に沿った op にも「意図の扱い」を当てる（回答の ts が行の最新の意図より新しければ回答に従う）。`deleted_refs` の ref は、回答が何であっても `add`・`attach` しない（apply も飛ばす。報告に書く）
+- 回答に沿った op にも「意図の扱い」を当てる（`superseded: false` の回答なら回答に従い、`superseded: true` の回答には従わない）。`deleted_refs` の ref は、回答が何であっても `add`・`attach` しない（apply も飛ばす。報告に書く）
 
 #### 確認待ちが壊れているとき（`confirm_errors` が空でない）
 

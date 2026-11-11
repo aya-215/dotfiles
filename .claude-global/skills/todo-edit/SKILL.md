@@ -1,6 +1,6 @@
 ---
 name: todo-edit
-description: ユーザーの指示で業務TODO（~/memo/todo.md）を直し、直した意図を記録して /todo の次の判断基準にする。「/todo-edit」「todo を直して」「A5 は〜にして」「この行を消して」「〇〇は待ちに移して」「〇〇は完了じゃなくてまだやる」等で使用。対話専用（無人実行・他のスキルからは使わない）。
+description: ユーザーの指示で業務TODO（~/memo/todo.md）を直し、直した意図を記録して /todo の次の判断基準にする。「/todo-edit」「todo を直して」「資料の件は〜にして」「この行を消して」「〇〇は待ちに移して」「〇〇は完了じゃなくてまだやる」等で使用。対話専用（無人実行・他のスキルからは使わない）。
 ---
 
 # /todo-edit
@@ -33,14 +33,14 @@ L=~/.local/log/todo-ai/$(date +%F); mkdir -p $L; python3 -I ~/.dotfiles/scripts/
 
 ### 2. 指示を行に対応づける
 
-ユーザーの指示（番号・タイトルの一部・key・「A5」等）を `items` の行に対応づける。`ref` は行の `key`、key の無い行は `title:<タイトル完全一致>`。
+ユーザーの指示（タイトルの一部・key。例「資料作成の件」「epc#1163」）を `items` の行に対応づける。todo.md の行に番号は無いので、番号で言われたら `AskUserQuestion` でタイトルか key を聞く。`ref` は行の `key`、key の無い行は `title:<タイトル完全一致>`。
 
 - 当てはまる行が複数ある・1つも無い・指示がどの操作か読めない → 候補を出して `AskUserQuestion` で聞く。推測で進めない
 - 行の `intents` に既に意図があれば、指示がそれを覆すのか確認する（新しい指示が優先。覆すときも新しい意図に理由を残す）
 
 ### 3. 変更案を作る
 
-`~/.local/log/todo-ai/<今日 YYYY-MM-DD>/edit-<HHMMSS>.json` に Write で書く。`source` は常に `"user"`。**すべての op に `intent` が必須**（無い・空白だけだと apply が全体を止める）。
+`~/.local/log/todo-ai/<今日 YYYY-MM-DD>/edit-<HHMMSS>.json` に Write で書く（`~` を展開した絶対パスで書き、そのパスを手順5でそのまま使う）。`source` は常に `"user"`。**すべての op に `intent` が必須**（無い・空白だけだと apply が全体を止める）。
 
 ```json
 {"source": "user",
@@ -63,12 +63,13 @@ L=~/.local/log/todo-ai/$(date +%F); mkdir -p $L; python3 -I ~/.dotfiles/scripts/
 
 - どの文字列にも改行を入れない。`title`・`next` に ` — next: ` と `](` を入れない。`title` の前後に空白を入れない
 - `move` の `to` が今のセクションと同じなら op にしない
-- `edit_title` した行は、元の ref が `deleted_refs` に入り、新しい ref に意図が付く
+- `edit_title` した行は、新しい ref に意図が付く。key の無い行（ref が `title:`）だけ、元の ref が `deleted_refs` に入る（key のある行は ref が変わらない）
 - `confirm`・`answered` キーは入れない（user は確認待ちを書き換えられない）。確認待ちへの回答は、人が todo.md の回答欄に書く
 
 #### 操作ごとにユーザーへ伝えること
 
 - **完了からの `move`（reopen）**: 「完了から出した行は、以後 `/todo` も GitHub 同期も **自動で完了に戻さない**。本当に終わったら自分で完了にしてください」と伝える
+- **GitHub の key（`epc#` `emm#` `eae#` `eas#`）の行を開いたまま残したい（PR はマージ・クローズ済み）**: 毎時の GitHub 同期（`sync_github.py`）は意図を読まず、マージ・クローズ済みの PR の行を完了へ移す。止められるのは完了からの `move`（reopen。完了に戻さない pin が付く）だけ。やる/待ちにある行へ `note` や `set_next` で意図を残しても同期は止まらないので、「同期で一度完了に移った後に、完了から出す指示をもう一度ください」と伝える
 - **`delete`**: 「この行は `/todo` が二度と足し直さない」と伝える。対象が `後片付け（` で始まる行なら、「**後片付け行は今後一切（別の日の分も）足されなくなる**」と伝える。後片付けの1回分を終わらせたいだけなら、delete でなく `move → 完了` を勧める（完了なら翌日以降に新しい後片付け行が足される）。ユーザーが delete を望むなら従う
 - **`edit_title`**: 人の行のタイトルを直す正規の手段。元のタイトルは `/todo` が足し直さない
 - **`note`**: 行は変わらない。意図だけが残り、以後の `/todo` がそれに従う
@@ -77,7 +78,7 @@ L=~/.local/log/todo-ai/$(date +%F); mkdir -p $L; python3 -I ~/.dotfiles/scripts/
 
 変更案を次の形で見せ、`AskUserQuestion`（OK / 直す / やめる）で承認を取る。
 
-- 各 op: 行（番号か ref・タイトル）、変更前 → 変更後
+- 各 op: 行（ref・タイトル）、変更前 → 変更後
 - 各 op の `intent`（記録される文そのまま）
 - 上の「操作ごとにユーザーへ伝えること」に当たる注意
 
@@ -85,10 +86,10 @@ L=~/.local/log/todo-ai/$(date +%F); mkdir -p $L; python3 -I ~/.dotfiles/scripts/
 
 ### 5. 適用
 
-OK をもらってから実行する。`<HHMMSS>` は手順3で使った値。
+OK をもらってから実行する。`<変更案の絶対パス>` は手順3で Write した絶対パスをそのまま入れる（`$(date +%F)` で組み直さない。日付をまたぐと別の日のディレクトリを指す）。
 
 ```bash
-python3 -I ~/.dotfiles/scripts/todo-ai/apply.py --allow-user --changes ~/.local/log/todo-ai/$(date +%F)/edit-<HHMMSS>.json; echo "exit=$?"
+python3 -I ~/.dotfiles/scripts/todo-ai/apply.py --allow-user --changes <変更案の絶対パス>; echo "exit=$?"
 ```
 
 | 終了コード | 意味 | すること |
@@ -103,11 +104,11 @@ user の変更は、op を1つでも飛ばす場合は全体が止まる（承�
 ### 6. 結果を見せる
 
 ```bash
-R=$(dirname "${TODO_MD_PATH:-$HOME/memo/todo.md}"); git -C "$R" show --stat HEAD; git -C "$R" show HEAD -- todo.md; tail -n 5 "$R/todo-decisions.jsonl"
+R=$(dirname "${TODO_MD_PATH:-$HOME/memo/todo.md}"); git -C "$R" show --stat HEAD; git -C "$R" show HEAD -- todo.md; git -C "$R" show HEAD -- todo-decisions.jsonl
 ```
 
 - コミット（件名 `todo(user): ...`）と todo.md の差分
-- 記録された意図（`kind: intent` の行。ref と value）
+- 記録された意図（このコミットで足された `kind: intent` の行。ref と value）
 
 を短くまとめて出す。最後に「この意図は次の `/todo` から判断基準になる」と一言添える。
 
