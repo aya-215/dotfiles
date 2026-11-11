@@ -70,12 +70,32 @@ function M.unlock()
   end
 end
 
--- 書き込み → commit → unlock の順。先に外すと apply.py が未コミットの人の編集に AI の変更を重ねる
+-- ~/.config/nvim は dotfiles へのシンボリックリンクなので、実体のパスから scripts/ を辿る
+M.answers_script = vim.fn.fnamemodify(vim.fn.resolve(debug.getinfo(1, "S").source:sub(2)), ":p:h:h:h:h:h")
+  .. "/scripts/todo-ai/answers.py"
+
+-- 選択肢の文字1つの回答を AI なしで反映する。ポップアップは閉じるので待たず、結果は answers.py のログに残る
+function M.reflect_answers()
+  pcall(function()
+    if vim.fn.has("unix") == 0 or vim.fn.executable("python3") == 0 or vim.fn.filereadable(M.answers_script) == 0 then
+      return
+    end
+    -- nvim が先に終わるので、子の出力を nvim のパイプに残さない
+    vim.fn.jobstart({ "sh", "-c", 'exec python3 -I "$0" >/dev/null 2>&1 </dev/null', M.answers_script },
+      { detach = true, env = { TODO_MD_PATH = M.path } })
+  end)
+end
+
+-- 書き込み → commit → unlock → 回答の反映の順。先に外すと apply.py が未コミットの人の編集に AI の変更を重ねる
 function M.leave()
-  if vim.fn.bufnr(M.path) ~= -1 and vim.fn.filereadable(M.path) == 1 then
+  local mine = vim.fn.bufnr(M.path) ~= -1 and vim.fn.filereadable(M.path) == 1
+  if mine then
     M.commit()
   end
   M.unlock()
+  if mine then
+    M.reflect_answers()
+  end
 end
 
 -- exit の後は処理が走らないので、unlock は VimLeavePre の M.leave に任せる

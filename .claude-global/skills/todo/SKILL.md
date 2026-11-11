@@ -16,7 +16,7 @@ description: 業務TODO（~/memo/todo.md）を一次データから AI が更新
 - 外部アクション（PR/Issue コメント、Rocket Chat 送信、Issue 作成、`mcp__gitbucket__` の書き込み系）
 - 過去の実行ログ（`~/.local/log/todo-ai/` のうち今回の `<RUN>` 以外のファイル）・過去の `/my-tasks` 出力を読む。AI の過去の推測が事実として戻ってくるため（例外は `review` モードの review.py だけ）
 - todo.md をタスクの根拠にする。台帳は重複検出と人の行の把握にだけ使い、それも context-<RUN>.json 経由で見る
-- 人が完了にした行を未完了に戻す・人の行のタイトルを書き換える（apply.py も止めるが、案にも入れない）
+- 人が完了にした行を未完了に戻す・人の行のタイトルを書き換える・行を消す（apply.py も止めるが、案にも入れない）。例外は確認待ちの回答がその行への指示のときだけで、下の「回答の反映」の `by_answer` 付きの op で行う
 - ユーザーの意図（context の `intents`）に反して行を完了・移動する、next を上書きする。人が `/todo-edit` で消した行（`deleted_refs`）を足し直す
 
 ## 準備
@@ -83,7 +83,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 | `intent_refs[]` | 意図の記録がある全 ref（改名前の ref、todo.md から消えた行も含む）。意図の中身は `items[].intents` と `other_intents` で読む |
 | `deleted_refs[]` | ユーザーが `/todo-edit` の delete で消した ref と、edit_title で変わる前の ref。**足し直さない**（apply も source ai の add/attach を `skip: intent_deleted` で飛ばす）。人が書き戻して台帳にある ref は入らない |
 | `other_intents[]` | 台帳に行が無く（key 付け・改名で今の行につながる旧 ref も除く）`deleted_refs` にも無い ref の意図（`{ref, intents}`。まだ台帳に無い key へのメモ等）。その ref の候補を扱うときに意図として従う |
-| `confirm_blocks[]` | 今の確認待ち（回答済みのものも含む）。`ref` `kind` `question`（タグと末尾の（事実）を外した問い）`facts` `options` `answer`。旧書式（4行）のブロックも同じ形で出る |
+| `confirm_blocks[]` | 今の確認待ち（回答済みのものも含む）。`ref` `kind` `question`（タグと末尾の（事実）を外した問い）`facts` `options` `answer` `scope`（このブロックの回答に基づく op で触ってよい今の行の ref。ブロックの ref の行と、問い・事実の『』の題に完全一致する行）`on_answer`（保存済みの選択肢ごとの変更案。無ければ null）。旧書式（4行）のブロックも同じ形で出る |
 | `confirm_errors[]` | 確認待ちを書き換えられない理由。空でなければ下の「確認待ちが壊れているとき」 |
 | `answered_now[]` | 回答欄が埋まった分（ref, kind, answer, superseded）。apply が回答欄から同じものを記録する。Claude はこれを見て回答に沿った op を作る。`superseded: true` は問いを書いた後に同じ行の意図が記録された conflict の回答で、従わない |
 | `answered_refs[]` | 判断記録にある過去の回答（ref, kind, value, ts, superseded）。同じ ref・kind の問いは出さない（`superseded: true` の conflict は除く） |
@@ -106,7 +106,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
  "confirm": [{"ref": "...", "kind": "...", "question": "...", "facts": "...", "options": [{"label": "A", "text": "...", "recommended": true}]}]}
 ```
 
-- op は `add` / `move` / `set_next` / `attach` / `order` / `edit_title`（`origin: ai` の行の題を短くするときだけ。下の規則 11）。各 op の `reason` に根拠（候補の `evidence` の引用・URL）を書く。apply がコミット本文に残す
+- op は `add` / `move` / `set_next` / `attach` / `order` / `edit_title`（`origin: ai` の行の題を短くするときだけ。下の規則 11）。回答に基づく op だけは `delete` と、人の行への `edit_title`・完了からの `move` も使える（下の「回答の反映」）。各 op の `reason` に根拠（候補の `evidence` の引用・URL）を書く。apply がコミット本文に残す
 - `ref` は行の `key`、key の無い行は `title:<タイトル完全一致>`。`context-<RUN>.json` の `ref` をそのまま使う
 - 候補と台帳の突き合わせは **key の完全一致**（`items` の全セクション、完了も含む）
 
@@ -132,7 +132,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 5. **set_next**: 行の `next` と候補の `next` が違うとき。ただし `origin: human` で `next` が既にある行は上書きしない。自分の PR に未対応のレビュー指摘があるときの next は `N1,N2 残` の形で始める
 6. **still_needed**: やる/待ちの行で、key が `rc:` か `mail:` で始まり、`age_days` が 14 より大きく（null は対象外）、同じ key の候補が今回の `my-tasks-<RUN>.json` に無く、`answered_refs` に `(ref, still_needed)` が無いもの。ただし `my-tasks-<RUN>.json` の `sources_failed` に `rocketchat` があれば `rc:` の行、`mail` があれば `mail:` の行には適用しない（取れなかったことを「進展なし」と扱わない） → `confirm kind=still_needed`（question=`<行の呼び名>はまだ要る？`（呼び名は下の「確認待ちの書き方」の題を写さない規則に従う）、facts=`<age_days>日動きなし`、選択: A `要る` / B `不要（完了にする）`）
 7. **is_task**: `mine`/`theirs` の候補で、`key` が null のもの、または `key` はあるが `url` が null のもの（`wt:` 等。apply は url の無い key を受け付けない）で、同じ作業の行が無いもの → `confirm kind=is_task`。**`maybe_done` の候補は出さない**（足す作業が残っていないので雑音になる）。ref は key があれば key、無ければ `title:<候補の title>`（ref は候補の題のまま。question の題だけを縮める）。question=`『<候補の題を縮めたもの>』をタスクに足す？`、facts は判断の決め手を1つ（例 `期限 11/14`・`内堀さんの返事待ち`）。options は文言を固定する: A `追加する（<やる|待ち>）`（括弧は ball が mine ならやる、theirs なら待ち）/ B `タスクではない（追加しない）`。おすすめは evidence から選び、迷えば B（表示した追加先と反映先を一致させるため、文言を変えない）。`answered_refs` に同じ ref の is_task があれば出さない。ref の表記が違っても同じ作業への回答が `answered_refs` にあれば出さない
-8. **conflict**: 完了にある行と同じ key の候補が `mine`/`theirs`（元がまだ開いている）→ `confirm kind=conflict`。question=`完了にした<行の呼び名>がまだ開いている。どうする？`、選択は「完了のまま（おすすめ）」と「自分でやるに戻す」。**AI は完了から動かせない**ので、戻す op は作らない
+8. **conflict**: 完了にある行と同じ key の候補が `mine`/`theirs`（元がまだ開いている）→ `confirm kind=conflict`。question=`完了にした<行の呼び名>がまだ開いている。どうする？`、選択は「完了のまま（おすすめ）」と「自分でやるに戻す」。**AI は完了から動かせない**ので、戻す op は回答に基づく op（`by_answer`）でだけ作る
 9. **order**（やる）: 並べ替え後の順を `{"op": "order", "section": "やる", "refs": [...]}` で出す。順位は ① 対応する候補に `waiting_person` がある ② `deadline` が早い（null は後）③ `blocks` が多い ④ 元の順。候補の無い行は元の順のまま後ろ（人の行が下に回るのは今の挙動どおりでよい）。**refs は前の op を適用した後の ref**（attach した行は付けた key、add した行はその key、edit_title した key の無い行は `title:<新しい題>`）。順が変わらなければ出さない
 10. **policy / before_share / manual**: 候補の next が「方針を決める」「人に見せる前の確認」「ユーザーにしかできない手作業」のときだけ。多用しない
 11. **edit_title**（AI の行の題を短くする）: やる/待ちの `origin: ai` の行で、題が30字を超えるか key の番号（`PR #1210`・`#1224`・`eae#59` 等）を含むもの → `{"op": "edit_title", "ref": <行の ref>, "title": <縮めた題>, "reason": "題を短くする"}`。題は下の「題と next の書き方」に沿う。`origin: human` の行・完了の行・`後片付け（` で始まる行には出さない（出しても apply がその op だけ `skip:` で飛ばす）。key の無い行は ref が `title:<新しい題>` に変わる（apply が `alias` で前の記録とつなぐ）。同じ実行の後の op はその新しい ref を使う
@@ -181,13 +181,33 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 - `origin: ai` の行の題の全文を問い・事実・選択肢に写さない。縮めた呼び名か key で書く（例 題 `坂西さんへの返信` → `坂西さんへの返事`）。origin は同じ題を含む行が2本以上あると人の行に倒すので、確認待ちに題の全文が入っている間はその行が人の行の判定になり、set_next・edit_title ができなくなる
 - 問い・事実・選択肢に中の言葉を書かない: `title:`・`mine`・`theirs`・`ball`・`ref`・`既存行:`・`候補:` 等。「やる/待ち」「自分の番/相手待ち」「今の行」で書く
 - `options` は 2〜3 個、`label`（A/B/C）と `text` は空にしない。`recommended: true` はちょうど1つ
-- `confirm` は毎回全置換。次の順で並べる: ① `confirm_blocks` のうち `answer` が空のものを写す（状況が片付いた問いは落としてよい）② 今回新しく出す問い。①は `ref` `kind` と選択肢の並び・意味を変えずに、`question` `facts` `options` の言い回しをこの書き方に合わせて縮めてよい（旧書式の長い問いはここで縮める）
+- `confirm` は毎回全置換。次の順で並べる: ① `confirm_blocks` のうち `answer` が空のものを写す（状況が片付いた問いは落としてよい）② 今回新しく出す問い。①は `ref` `kind` と選択肢の並び・意味を変えずに、`question` `facts` `options` の言い回しをこの書き方に合わせて縮めてよい（旧書式の長い問いはここで縮める）。`on_answer` が null でなければそのまま写す（写さないと、閉じたら反映する分が消える。言い回しを変えたときも中身が合っていれば写す）
+
+##### 選択肢ごとの変更案（on_answer）
+
+ユーザーが確認待ちに選択肢の文字1つ（`A`・`Ｂ`・` b ` 等）だけを書いてポップアップを閉じると、`answers.py` が AI なしで、問いを出したときに保存した変更案をそのまま適用する（apply が `todo-pending.json` に保存し、同じコミットに入れる）。文の回答は次の `/todo` に回る。
+
+- 問いを出すときは、可能な限り `"on_answer": {"A": [ops...], "B": [ops...]}` を付ける。ops の形は通常の op と同じで、使える op は `add` `move` `set_next` `attach` `edit_title` `delete` だけ（`order` は不可）。`by_answer` は付けない（answers.py が付ける）。何もしない選択肢は `[]`。中身は今回の候補の `key`・`url`・`title`・`next` から作り、題と next は下の「題と next の書き方」に沿って縮める
+  - is_task（規則 7）: A `追加する（<やる|待ち>）` → `[{"op": "add", "section": <やる|待ち>, "title", "next", "key"・"url"（両方あるときだけ）}]`、B → `[]`
+  - is_task（規則 4b の1件）: A `同じ` → `[{"op": "attach", "ref": <行の ref>, "key", "url", "next"（行の next が null のときだけ）}]`、B `別の作業` → その add、C → `[]`
+  - is_task（規則 4b の傘の行）: A `足す` → 各候補の add、B → `[]`
+  - still_needed: A → `[]`、B `不要` → `[{"op": "move", "ref": <行の ref>, "to": "完了"}]`
+  - conflict（規則 8）: A → `[]`、B `自分でやるに戻す` → `[{"op": "move", "ref": <行の ref>, "to": "やる"}]`。意図との食い違いの conflict は A → `[]`、B → 一次データに沿った op
+  - policy / before_share / manual: 選択肢が決まった op に対応するときだけ。対応しなければ付けない
+- 回答の反映で触れる行は、問いの ref の行か、問い・事実に『』で題をそのまま引用した行だけ（apply が `skip: out of answer scope` で止める）。人の行を直す選択肢があるなら、その行の題を『』で問いに入れる
+- `on_answer` の形が違う（選択肢に無い文字・配列でない・上の6つ以外の op・op の中に `by_answer`）と、apply はその問いの変更案だけ保存せず `skip: bad on_answer <ref>` を残す（問いは出る）
 
 #### 回答の反映
 
 - 回答の記録は apply が回答欄とタグから行う。`answered` キーは入れない（入れる場合は `answered_now` と完全に一致しないと exit 2）
 - 回答したブロックは `confirm` に写さない（写しても apply が、回答欄が埋まっている・判断記録にある (ref, kind) の問いを `skip: answered` で落とす）
+- 選択肢の文字1つの回答で `on_answer` があったものは、ポップアップを閉じたときに `answers.py` が反映済みで、確認待ちから消えている。`/todo` に残るのは、文の回答・変更案の無い問いへの回答・conflict の問いが残っていて閉じても反映しなかった回答・閉じた後の反映が止まった（`~/.local/log/todo-ai/<日付>/answers-<HHMMSS>.err`）回答
 - 回答の内容に沿った op を作る。回答は選択の `label`（A/B/C）か `text` の言葉で読む。問いの中身は `confirm_blocks` の同じ ref・kind のブロック（回答済みも載っている）の `question`・`facts` で見る。回答が読み取れない自由文なら op は作らず、記録だけして報告に書く
+- **回答で人の行を直す（by_answer）**: 自由文の回答が既存の行への指示（消す・完了にする・題を直す・移す・next を変える。例「既存行を削除して」「これは対応済み」「坂西さんの対応も完了」）を含むときは、その op に `"by_answer": {"ref": <ブロックの ref>, "kind": <ブロックの kind>, "answer": <answered_now のその回答の answer をそのまま>}` を付けて実行する。付けた op だけ、人の行にも `delete`・`edit_title`・完了からの `move`・`set_next` ができ、apply が意図（回答の文に基づく、by human）を残す（`delete` した行は以後足し直さない。完了から出した行は自動で完了に戻さない）
+  - 対象にできるのは、そのブロックの `scope` に出ている行だけ。回答の文に別の行の題が出ていても、`scope` に無い行には作らない（apply も `skip: out of answer scope <ref>` で飛ばす）。`scope` に無い行への指示は op にせず報告に書く
+  - `answer` は `context-<RUN>.json` の `answered_now` の文字列を一字も変えずに入れる。収集の間にユーザーが回答を書き換えていると、apply は今の回答欄と比べて `skip: answer changed <ref>` で飛ばし、その問いを回答欄ごと確認待ちに残す（新しい回答は次の `/todo` が読む）。`answer` が無いのも同じ
+  - 回答が今回の確認待ちに無い・空のブロックを指す `by_answer` は `skip: no answer <ref>` になる。`confirm` を出さない実行（`confirm_errors` があるとき）では使えない
+  - 回答が曖昧（どの行か・消すのか完了なのかが読めない）なら op を作らず、`conflict` ではなく `is_task` か `policy` の問いを1つ出し直す（`ref` は同じ行、対象の行の題を『』で問いに入れ、選択肢は具体的な op に、`on_answer` も付ける）
   - still_needed に「不要」→ `move → 完了`
   - is_task に `A 追加する（<やる|待ち>）` → 括弧のセクションへ `add`（F3: 相手ボールは待ち）。候補に `url` が無ければ `key` も入れず `title` だけ（`wt:` も同じ）。`B タスクではない` → op なし
   - `『…』と同じ作業？`（規則 4b の1件。旧書式では `既存の『…』と同じ作業？`）に「同じ」→ 問いの『』の題と title が完全一致するやる/待ちの行（旧書式で `facts` に `既存行:` があればその ref）へ、問いの ref の key と今回の候補の `url`（今回に無ければ旧書式の `facts` の url。どちらも無ければ attach せず報告に書く）で `attach`（行の `next` が null のときだけ候補の `next` も付ける）。行が見つからない・その行に既に key があれば attach せず報告に書く。「別の作業」→ 括弧のセクションへ `add`。「足さない」→ op なし（回答の記録が以後の add を止める）
@@ -209,13 +229,14 @@ apply は1問を次の3行で書く（`facts` が空なら括弧ごと出さな�
 
 #### apply が全体を止める書き方（1つでもあると何も書かれない）
 
-- 完了にある行への `move`
+- `by_answer` の無い、完了にある行への `move` と `delete`
+- `by_answer` が `{ref, kind, answer}`（kind は確認待ちの6種、answer は文字列）の形でない、`order` に付けた
 - `add` の `section` がやる/待ち以外、`key` があるのに `url` が null、key の形式違い（`epc#N` `emm#N` `eae#N` `eas#N` `gb:<repo>#N` `rc:<id>` `rc:<id>#N` `mail:<id>` `wt:<name>` `ebpm:No<数字>`）
 - どの文字列にも改行を入れる
 - `title`・`next` に ` — next: ` や `](` を含める、`title` の前後に空白がある、`url` に空白や括弧がある（書き出すと別の行に読めてしまうため全体が止まる）
 - `options` の要素に `label`/`text` が無い・空、`confirm` の要素に `ref` が無い・`kind` が上の6種以外
 
-存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、人の行（この実行で add した行を除き、apply が git 履歴で判定する）・完了・後片付けの行への `edit_title`、key の無い行で別の行と題が重なる `edit_title` は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: human title` / `skip: done` / `skip: cleanup` / `skip: duplicate title` としてコミット本文に残る）。
+存在しない ref への op、`deleted_refs`（後片付けは `title:後片付け（` の前方一致）を足し直す add/attach、人の行（この実行で add した行を除き、apply が git 履歴で判定する）・完了・後片付けの行への `edit_title`、key の無い行で別の行と題が重なる `edit_title`、回答の無いブロック・回答文が変わったブロック・`scope` の外の行への `by_answer` 付きの op は、apply がその op だけ飛ばす（`skip:` / `skip: intent_deleted` / `skip: human title` / `skip: done` / `skip: cleanup` / `skip: duplicate title` / `skip: no answer` / `skip: answer changed` / `skip: out of answer scope` としてコミット本文に残る）。
 
 ### 7. 適用
 

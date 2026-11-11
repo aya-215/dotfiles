@@ -3,6 +3,7 @@
 1行 = {"ts", "ref", "kind", "value", "by": "human"} と、任意の "commit"（検出元の AI/同期コミット）。
 kind は確認待ちの kind、または revert_move / reject_add / intent。
 intent はユーザー指示（source user）の意図で、key の無い行の改名では "prev_ref" に旧 ref を持つ。
+確認待ちの回答に基づく意図（source ai の by_answer）は "by_answer": {ref, kind} を持ち、edit_title なら "title" に新しい題を持つ。
 "op" は意図を残した op（delete / edit_title 等。古い記録には無い）。
 revert_move は戻された AI/同期の移動を "from"→"to" で持つ（value は人が戻した先 = from）。
 "to" の無い古い記録は、戻し先以外への移動をすべて止める。
@@ -155,6 +156,12 @@ def newest_intent_pos(records: "list[dict]", ref: str) -> int:
 def intents(records: "list[dict]", ref: str) -> "list[dict]":
     """ref の意図の記録を新しい順に返す。系譜（key 付け・改名より前の旧 ref）の記録も含める。"""
     return [r for _, r in lineage(records, ref) if r.get("kind") == "intent"]
+
+
+def answer_titles(records: "list[dict]") -> "set[str]":
+    """確認待ちの回答（by_answer）に基づく edit_title で付けた題。人の言葉なので、todo(ai) のコミットでも人の題として扱う。"""
+    return {r["title"] for r in records if r.get("kind") == "intent" and r.get("op") == "edit_title"
+            and r.get("by_answer") and isinstance(r.get("title"), str)}
 
 
 def now_iso() -> str:
