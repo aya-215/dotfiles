@@ -159,6 +159,23 @@ class Records(unittest.TestCase):
         self.assertTrue(decisions.is_rejected(recs, "epc#9"))
         self.assertFalse(decisions.is_rejected(recs, "epc#8"))
 
+    def test_intents_newest_first(self):
+        recs = [{"ts": "t1", "ref": "epc#1", "kind": "intent", "value": "古い", "by": "human"},
+                {"ts": "t1", "ref": "epc#1", "kind": "policy", "value": "A", "by": "human"},
+                {"ts": "t2", "ref": "epc#2", "kind": "intent", "value": "別の行", "by": "human"},
+                {"ts": "t3", "ref": "epc#1", "kind": "intent", "value": "新しい", "by": "human"},
+                {"kind": "intent", "value": "ref なし"}]
+        self.assertEqual([r["value"] for r in decisions.intents(recs, "epc#1")], ["新しい", "古い"])
+        self.assertEqual(decisions.intents(recs, "epc#9"), [])
+
+    def test_intents_follow_rename_only_backwards(self):
+        recs = [{"ts": "t1", "ref": "title:旧", "kind": "intent", "value": "改名前"},
+                {"ts": "t2", "ref": "title:新", "kind": "intent", "value": "改名", "prev_ref": "title:旧"},
+                {"ts": "t3", "ref": "title:旧", "kind": "intent", "value": "改名後に同名で作った別行"}]
+        self.assertEqual([r["value"] for r in decisions.intents(recs, "title:新")], ["改名", "改名前"])
+        self.assertEqual([r["value"] for r in decisions.intents(recs, "title:旧")],
+                         ["改名後に同名で作った別行", "改名前"])
+
     def test_load_keeps_unicode_line_separators_inside_a_record(self):
         with tempfile.TemporaryDirectory() as t:
             p = Path(t) / "d.jsonl"

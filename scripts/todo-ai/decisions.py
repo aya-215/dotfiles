@@ -1,7 +1,8 @@
 """人の判断の記録（todo-decisions.jsonl）と、人による AI/同期の変更の戻しの検出。
 
 1行 = {"ts", "ref", "kind", "value", "by": "human"} と、任意の "commit"（検出元の AI/同期コミット）。
-kind は確認待ちの kind、または revert_move / reject_add。
+kind は確認待ちの kind、または revert_move / reject_add / intent。
+intent はユーザー指示（source user）の意図で、key の無い行の改名では "prev_ref" に旧 ref を持つ。
 revert_move は戻された AI/同期の移動を "from"→"to" で持つ（value は人が戻した先 = from）。
 "to" の無い古い記録は、戻し先以外への移動をすべて止める。
 """
@@ -71,6 +72,19 @@ def is_rejected(records: "list[dict]", ref: str) -> bool:
 def already_answered(records: "list[dict]", ref: str, kind: str) -> "dict | None":
     hits = [r for r in records if r.get("ref") == ref and r.get("kind") == kind]
     return hits[-1] if hits else None
+
+
+def intents(records: "list[dict]", ref: str) -> "list[dict]":
+    """ref の意図の記録を新しい順に返す。prev_ref を辿り、改名より前の旧 ref の記録も含める。"""
+    # 同じ実行の記録は ts が同じなので、追記順（ファイル内の位置）を時系列とみなす
+    refs, out = {ref}, []
+    for r in reversed(records):
+        if r.get("kind") != "intent" or r.get("ref") not in refs:
+            continue
+        out.append(r)
+        if isinstance(r.get("prev_ref"), str):
+            refs.add(r["prev_ref"])
+    return out
 
 
 def now_iso() -> str:
