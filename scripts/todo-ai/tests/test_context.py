@@ -184,7 +184,7 @@ class BuildTest(unittest.TestCase):
             {"ts": "t2", "ref": "epc#9", "kind": "reject_add", "value": "やる", "by": "human"},
             {"ts": "t3", "ref": "epc#8", "kind": "revert_move", "value": "やる", "by": "human"},
         ])
-        self.assertEqual(ctx["answered_refs"], [{"ref": "title:x", "kind": "is_task", "value": "B", "ts": "t1"}])
+        self.assertEqual(ctx["answered_refs"], [{"ref": "title:x", "kind": "is_task", "value": "B", "ts": "t1", "superseded": False}])
         self.assertEqual(ctx["rejected_refs"], ["epc#9"])
 
     def test_answered_block_becomes_answered_now(self):
@@ -197,7 +197,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual([(b["number"], b["ref"], b["kind"], b["answer"]) for b in ctx["confirm_blocks"]],
                          [(1, "epc#1", "policy", "B で"), (2, "rc:x", "manual", "")])
         self.assertEqual(ctx["confirm_blocks"][0]["question"], "相談する？")
-        self.assertEqual(ctx["answered_now"], [{"ref": "epc#1", "kind": "policy", "answer": "B で"}])
+        self.assertEqual(ctx["answered_now"], [{"ref": "epc#1", "kind": "policy", "answer": "B で", "superseded": False}])
 
     def test_free_text_in_confirm_is_error(self):
         self.r.commit(doc(confirm="メモ: あとで\n"), "todo: base")

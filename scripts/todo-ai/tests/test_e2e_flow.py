@@ -123,15 +123,15 @@ class E2EFlow(unittest.TestCase):
         # 2回目: 回答の反映（apply が回答欄のタグから記録する。未回答の問いは context から写し直す）
         ctx = self.context()
         self.assertEqual(ctx["confirm_errors"], [])
-        self.assertEqual(ctx["answered_now"], [{"ref": "rc:old1", "kind": "still_needed", "answer": "B"}])
+        self.assertEqual(ctx["answered_now"], [{"ref": "rc:old1", "kind": "still_needed", "answer": "B", "superseded": False}])
         keep = [{k: b[k] for k in ("ref", "kind", "question", "facts", "options")}
                 for b in ctx["confirm_blocks"] if not b["answer"]]
         res = self.apply({"source": "ai", "ops": [
             {"op": "move", "ref": "rc:old1", "to": "完了", "reason": "確認待ちの回答 B（不要）"},
         ], "confirm": keep}, 2)
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertEqual([(r["ref"], r["kind"], r["value"]) for r in self.records()],
-                         [("rc:old1", "still_needed", "B")])
+        self.assertEqual([(r["ref"], r["kind"], r.get("value", r.get("prev_ref"))) for r in self.records()],
+                         [("rc:Xk3p9aQ2#1", "alias", "title:インターン資料修正"), ("rc:old1", "still_needed", "B")])
         done = {it.ref: it for it in self.section("完了")}
         self.assertEqual(done["rc:old1"].done_date, TODAY)
         self.assertIn("title:済んだこと", done)
@@ -141,7 +141,8 @@ class E2EFlow(unittest.TestCase):
         self.assertEqual([(b["ref"], b["kind"], b["question"]) for b in ctx["confirm_blocks"]],
                          [(is_task_ref, "is_task", "検証環境の利用申請はタスク？")])
         self.assertEqual(ctx["answered_now"], [])
-        self.assertIn({"ref": "rc:old1", "kind": "still_needed", "value": "B", "ts": self.records()[0]["ts"]},
+        self.assertIn({"ref": "rc:old1", "kind": "still_needed", "value": "B", "ts": self.records()[1]["ts"],
+                       "superseded": False},
                       ctx["answered_refs"])
         self.assertIsNotNone(decisions.already_answered(self.records(), "rc:old1", "still_needed"))
         keep = [{k: b[k] for k in ("ref", "kind", "question", "facts", "options")} for b in ctx["confirm_blocks"]]
@@ -149,7 +150,7 @@ class E2EFlow(unittest.TestCase):
         res = self.apply({"source": "ai", "ops": [], "confirm": keep, "answered": ctx["answered_now"]}, 3)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(self.git("rev-parse", "HEAD"), head)
-        self.assertEqual(len(self.records()), 1)
+        self.assertEqual(len(self.records()), 2)
 
     def test_human_edited_question_reported_and_ops_still_apply_without_confirm(self):
         self.human_commit(migrate.migrate(OLD), "2026-10-01")
