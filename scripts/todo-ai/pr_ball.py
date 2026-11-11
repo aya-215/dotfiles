@@ -26,9 +26,10 @@ def get_me(env=os.environ) -> "set[str]":
 
 def _ts(s):
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        t = datetime.fromisoformat(s.replace("Z", "+00:00"))
     except (AttributeError, ValueError):
         return None
+    return t if t.tzinfo else None  # naive と aware の比較で TypeError になるため拒否
 
 
 def validate(pr) -> "str | None":
@@ -62,10 +63,13 @@ def decide(pr: dict, me: "set[str]") -> dict:
         return {"ball": "mine", "reason": "レビュアー未設定"}
     if all(e["user"] in me for e in pr["events"]):
         return {"ball": "theirs", "reason": "反応待ち"}
-    last = max(pr["events"], key=lambda e: _ts(e["ts"]))
-    if last["user"] in me:
+    newest = max(_ts(e["ts"]) for e in pr["events"])
+    tied = [e for e in pr["events"] if _ts(e["ts"]) == newest]
+    # 同時刻に相手が混じるなら保守側（自分ボール）
+    other = next((e for e in tied if e["user"] not in me), None)
+    if other is None:
         return {"ball": "theirs", "reason": "自分が最後に発言"}
-    return {"ball": "mine", "reason": f"{last['user']} が最後に発言"}
+    return {"ball": "mine", "reason": f"{other['user']} が最後に発言"}
 
 
 class FetchError(Exception):
@@ -97,15 +101,16 @@ def _login(obj):
     return u.get("login") if isinstance(u, dict) and isinstance(u.get("login"), str) else None
 
 
+def _is_bot(u) -> bool:
+    return isinstance(u, dict) and (u.get("type") == "Bot" or str(u.get("login", "")).endswith("[bot]"))
+
+
 def fetch_pr(repo: str, number: int, token: str) -> dict:
     base = f"repos/{sync_github.ORG}/{repo}"
-    try:
-        p = gh_json(f"{base}/pulls/{number}", token)
-        reviews = gh_json(f"{base}/pulls/{number}/reviews", token, True)
-        issue_comments = gh_json(f"{base}/issues/{number}/comments", token, True)
-        review_comments = gh_json(f"{base}/pulls/{number}/comments", token, True)
-    except FetchError:
-        raise
+    p = gh_json(f"{base}/pulls/{number}", token)
+    reviews = gh_json(f"{base}/pulls/{number}/reviews", token, True)
+    issue_comments = gh_json(f"{base}/issues/{number}/comments", token, True)
+    review_comments = gh_json(f"{base}/pulls/{number}/comments", token, True)
     if not isinstance(p, dict):
         raise FetchError("pulls 応答が object ではありません")
     author = _login(p)
@@ -116,17 +121,19 @@ def fetch_pr(repo: str, number: int, token: str) -> dict:
         state = "open"
     else:
         raise FetchError(f"状態を解釈できません: {st!r}")
-    reviewers = [x.get("login") for x in p.get("requested_reviewers") or [] if isinstance(x, dict)]
+    reviewers = [x.get("login") for x in p.get("requested_reviewers") or [] if isinstance(x, dict) and not _is_bot(x)]
+    reviewers += [f"team:{t['slug']}" for t in p.get("requested_teams") or [] if isinstance(t, dict) and t.get("slug")]
     events = []
     for rv in reviews:
-        u = _login(rv)
-        if u and rv.get("submitted_at"):
-            events.append({"user": u, "ts": rv["submitted_at"], "kind": "review", "state": rv.get("state")})
+        if not isinstance(rv, dict) or not rv.get("submitted_at"):
+            continue
+        u = _login(rv) or "ghost"
+        events.append({"user": u, "ts": rv["submitted_at"], "kind": "review", "state": rv.get("state")})
+        if u != "ghost" and not _is_bot(rv.get("user")):
             reviewers.append(u)
     for c in list(issue_comments) + list(review_comments):
-        u = _login(c)
-        if u and c.get("created_at"):
-            events.append({"user": u, "ts": c["created_at"], "kind": "comment", "state": None})
+        if isinstance(c, dict) and c.get("created_at"):
+            events.append({"user": _login(c) or "ghost", "ts": c["created_at"], "kind": "comment", "state": None})
     reviewers = list(dict.fromkeys(r for r in reviewers if isinstance(r, str) and r != author))
     events.sort(key=lambda e: _ts(e["ts"]))
     return {"state": state, "author": author or "", "reviewers": reviewers, "events": events}

@@ -50,6 +50,10 @@ class TestDecide(unittest.TestCase):
                   ev("claude[bot]", "2026-01-03T00:00:00Z")]
         self.assertEqual(pr_ball.decide(pr(events=events), ME)["ball"], "mine")
 
+    def test_tied_latest_with_other_mine(self):
+        events = [ev("alice", "2026-01-01T00:00:00Z"), ev("eBASE-Mori", "2026-01-01T00:00:00Z")]
+        self.assertEqual(pr_ball.decide(pr(events=events), ME)["ball"], "mine")
+
     def test_unsorted_events_use_ts(self):
         events = [ev("eBASE-Mori", "2026-01-03T00:00:00Z"), ev("alice", "2026-01-01T00:00:00Z")]
         self.assertEqual(pr_ball.decide(pr(events=events), ME)["ball"], "theirs")
@@ -59,7 +63,8 @@ class TestValidate(unittest.TestCase):
     def test_invalid(self):
         for bad in (None, [], {}, {"state": "open"}, pr(state="weird"),
                     {**pr(), "reviewers": "alice"}, {**pr(), "events": [{"user": "a"}]},
-                    {**pr(), "events": [ev("a", "not-a-date")]}):
+                    {**pr(), "events": [ev("a", "not-a-date")]},
+                    {**pr(), "events": [ev("a", "2026-01-01T00:00:00")]}):
             self.assertIsNotNone(pr_ball.validate(bad), bad)
 
     def test_valid(self):
@@ -103,6 +108,35 @@ class TestGithub(unittest.TestCase):
         a = self.answers()
         a["/pulls/5"]["requested_reviewers"] = []
         a["/issues/5/comments"] = [[]]
+        with mock.patch.object(pr_ball, "get_token", return_value="t"), \
+             mock.patch("subprocess.run", side_effect=self.run_gh(a)):
+            r = pr_ball.run_github("epc#5", ME)
+        self.assertEqual(r["ball"], "mine")
+
+    def test_bot_review_not_reviewer(self):
+        a = self.answers()
+        a["/pulls/5"]["requested_reviewers"] = [{"login": "copilot", "type": "Bot"}]
+        a["/pulls/5/reviews"] = [[{"user": {"login": "claude[bot]", "type": "Bot"},
+                                   "submitted_at": "2026-01-02T00:00:00Z", "state": "COMMENTED"}]]
+        a["/issues/5/comments"] = [[]]
+        with mock.patch.object(pr_ball, "get_token", return_value="t"), \
+             mock.patch("subprocess.run", side_effect=self.run_gh(a)):
+            r = pr_ball.run_github("epc#5", ME)
+        self.assertEqual((r["ball"], r["reason"]), ("mine", "レビュアー未設定"))
+
+    def test_requested_team_counts(self):
+        a = self.answers()
+        a["/pulls/5"]["requested_reviewers"] = []
+        a["/pulls/5"]["requested_teams"] = [{"slug": "core"}]
+        a["/pulls/5/reviews"] = [[]]
+        with mock.patch.object(pr_ball, "get_token", return_value="t"), \
+             mock.patch("subprocess.run", side_effect=self.run_gh(a)):
+            r = pr_ball.run_github("epc#5", ME)
+        self.assertEqual((r["ball"], r["reason"]), ("theirs", "反応待ち"))
+
+    def test_null_user_is_ghost_other(self):
+        a = self.answers()
+        a["/issues/5/comments"] = [[{"user": None, "created_at": "2026-01-04T00:00:00Z"}]]
         with mock.patch.object(pr_ball, "get_token", return_value="t"), \
              mock.patch("subprocess.run", side_effect=self.run_gh(a)):
             r = pr_ball.run_github("epc#5", ME)
