@@ -104,6 +104,24 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(len(hits), 1, ctx["items"])
         return hits[0]
 
+    def test_confirm_block_scope_and_on_answer(self):
+        confirm = ("1. 『手で書いた』に足す？ [is_task rc:abc]\n   A 足す★ / B 足さない\n   回答:\n"
+                   "2. まだ要る？ [still_needed epc#1]\n   A 要る★ / B 不要\n   回答:\n")
+        self.r.commit(doc(confirm=confirm, yaru="- [ ] 手で書いた\n- [ ] 手で\n- [ ] x [epc#1](https://g/1)\n"), "todo(ai): q")
+        pending = {"blocks": [
+            {"ref": "rc:abc", "kind": "is_task", "line": "『手で書いた』に足す？ [is_task rc:abc]",
+             "options": "A 足す★ / B 足さない", "on_answer": {"A": []}},
+            {"ref": "epc#1", "kind": "still_needed", "line": "別の問い [still_needed epc#1]",
+             "options": "A 要る★ / B 不要", "on_answer": {"B": []}}]}
+        pfile = self.r.dir / "todo-pending.json"
+        pfile.write_text(json.dumps(pending, ensure_ascii=False), encoding="utf-8")
+        a, b = self.build()["confirm_blocks"]
+        self.assertEqual((a["scope"], a["on_answer"]), (["title:手で書いた"], {"A": []}))
+        # 問いの文が変わったブロックには、前の選択肢ごとの変更案を当てない
+        self.assertEqual((b["scope"], b["on_answer"]), (["epc#1"], None))
+        pfile.write_text("{", encoding="utf-8")
+        self.assertEqual([x["on_answer"] for x in self.build()["confirm_blocks"]], [None, None])
+
     def test_items_with_origin_added_date_age(self):
         self.r.commit(doc(yaru="- [ ] 手で書いた\n"), "todo: 2026-10-01 10:00", date="2026-10-01")
         self.r.commit(doc(yaru="- [ ] 手で書いた\n", matsu="- [ ] 返事待ち [rc:abc](https://rc/x?msg=abc) — next: 待つ\n"),

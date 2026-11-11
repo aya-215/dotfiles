@@ -273,6 +273,27 @@ def _answer_value(block: dict) -> str:
     return f"確認待ち「{strip_tag(block['question'])}」への回答「{shown}」に基づく"
 
 
+def load_pending(repo: Path) -> "list[dict]":
+    """todo-pending.json のブロック。無い・読めない・形が違うときは空。"""
+    try:
+        data = json.loads((Path(repo) / PENDING_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    blocks = data.get("blocks") if isinstance(data, dict) else None
+    return [b for b in blocks if isinstance(b, dict)] if isinstance(blocks, list) else []
+
+
+def pending_for(block: dict, pending: "list[dict]") -> "dict | None":
+    """block の選択肢ごとの変更案。apply が書いたときと問い・選択肢の行が一字一句同じで、1つに決まるときだけ。"""
+    kind, ref = parse_tag(block["question"])
+    line = _CONFIRM_Q.match(block["lines"][0]).group(2)
+    hits = [p for p in pending if (p.get("ref"), p.get("kind")) == (ref, kind)]
+    if len(hits) != 1 or hits[0].get("line") != line or hits[0].get("options") != block["選択"]:
+        return None
+    on = hits[0].get("on_answer")
+    return on if isinstance(on, dict) else None
+
+
 def _bad_on_answer(e: dict) -> bool:
     on = e.get("on_answer")
     labels = {o.get("label") for o in e.get("options") or []}
