@@ -135,27 +135,59 @@ rocketchat_log="$(bash "$ROCKETCHAT_BIN" \
 # worktree は ../<略称>-<ブランチ名> という兄弟ディレクトリに作られる（worktree スキルの規約）ため、
 # glob では本体と別リポジトリに見えてしまう。--git-common-dir は worktree でも本体の .git を指すので、
 # その親ディレクトリ名を正規リポジトリ名として集約キーに使う。
+# 正規名は origin の末尾要素（.git 抜き）。clone 名や worktree 名が違っても同じリポジトリを1見出しにまとめる。
+# origin が無ければ共通 .git の親ディレクトリ名、それも取れなければ自身のディレクトリ名。
 canonical_repo_name() {
-  local repo="$1" common
+  local repo="$1" url common name
+  if url="$(git -C "$repo" remote get-url origin 2>/dev/null)" && [ -n "$url" ]; then
+    name="$(printf '%s' "$url" | sed -E 's#/+$##; s#\.git$##; s#.*[/:]##')"
+    [ -n "$name" ] && { printf '%s\n' "$name"; return; }
+  fi
   common="$(git -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
     || { basename "$repo"; return; }
   basename "$(dirname "$common")"
 }
 
+# origin が個人の GitHub（SSH ホスト別名含む）なら Personal、それ以外（origin 無しも）は Work
+repo_label() {
+  case "$(git -C "$1" remote get-url origin 2>/dev/null)" in
+    *github.com/aya-215/*|*github.com:aya-215/*|*github-aya215:aya-215/*) echo Personal ;;
+    *) echo Work ;;
+  esac
+}
+
+# 収集先の glob（改行区切り）。FIRE_GIT_ROOTS でテストから丸ごと差し替えられる
+default_git_roots() {
+  printf '%s\n' \
+    "$HOME/.dotfiles" \
+    "$HOME/src/github.com/aya-215/*/" \
+    "$HOME/src/github.com/ebase-dev/*/" \
+    "$HOME/src/192.168.208.80/gitbucket/*/*/" \
+    "$HOME/worktrees/*/" \
+    "/mnt/d/tomcat/webapps/*/" \
+    "/mnt/d/git/*/"
+}
+
 collect_git_log() {
-  local out="" label repo key lines
+  local out="" label repo key lines glob_line
   # 集約順を保つための正規リポジトリ名リストと、名前→本文の対応
   local order=() bodies=() seen_shas=""
-  for label in Personal Work; do
-    local repos=()
-    if [ "$label" = "Personal" ]; then
-      repos=("$HOME/.dotfiles" "$HOME"/src/github.com/aya-215/*/)
-    else
-      repos=("$HOME"/src/github.com/ebase-dev/*/ /mnt/d/tomcat/webapps/*/)
-    fi
-    order=() bodies=()
-    for repo in "${repos[@]}"; do
+  local all_repos=() repo_labels=()
+  while IFS= read -r glob_line; do
+    [ -n "$glob_line" ] || continue
+    # shellcheck disable=SC2086
+    for repo in $glob_line; do
       [ -e "$repo/.git" ] || continue
+      all_repos+=("$repo")
+      repo_labels+=("$(repo_label "$repo")")
+    done
+  done <<< "${FIRE_GIT_ROOTS:-$(default_git_roots)}"
+  for label in Personal Work; do
+    order=() bodies=()
+    local ri
+    for ri in "${!all_repos[@]}"; do
+      [ "${repo_labels[$ri]}" = "$label" ] || continue
+      repo="${all_repos[$ri]}"
       local branch
       branch="$(git -C "$repo" branch --show-current 2>/dev/null)"
       [ -z "$branch" ] && branch="detached"

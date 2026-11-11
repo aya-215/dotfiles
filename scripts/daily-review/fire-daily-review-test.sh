@@ -50,7 +50,7 @@ run_fire() {
   set +e
   HOME="$C/home" FIRE_ENV_FILE="$TMP/env" ROCKETCHAT_BIN="$TMP/rc.sh" MAIL_ARCHIVE_BIN="$TMP/mail.sh" \
     SLICE_BIN="${SLICE_BIN:-$TMP/slice.sh}" SESSIONS_ROOT="$C/sessions" SLICES_ROOT="$C/slices" \
-    FIRE_LOG_FILE="$C/fire.log" STUB_SLICES_SRC="$C/src" \
+    FIRE_LOG_FILE="$C/fire.log" STUB_SLICES_SRC="$C/src" FIRE_GIT_ROOTS="${FIRE_GIT_ROOTS:-$C/home/.dotfiles}" \
     bash "$SCRIPT_DIR/fire-daily-review.sh" "$@" > "$C/stdout" 2> "$C/stderr"
   RC=$?
   set -e
@@ -157,6 +157,44 @@ GIT_AUTHOR_DATE="2026-11-03T23:00:00+09:00" GIT_COMMITTER_DATE="2026-11-03T23:00
 run_fire "$C" --dry-run --date 2026-11-04
 has "c12 git 行に月日" "$C/slices/2026-11-04/payload.txt" "11/03 23:00"
 has "c12 git 見出し" "$C/slices/2026-11-04/payload.txt" "【git活動（区切り内のコミット"
+
+# ---- ケース13: リポジトリ名とラベルは origin で決まる ----
+C="$TMP/c13"; mkdir -p "$C/home" "$C/roots"
+mk_md "$C/src/2026-11-04/projA-aaaaaaaa.md" projA aaaaaaaa-1 2026-11-04T10:00:00+09:00 "SLICE_A_BODY"
+# mkcommit <repo> <msg> <author-email>
+mkcommit() {
+  GIT_AUTHOR_DATE="2026-11-03T23:00:00+09:00" GIT_COMMITTER_DATE="2026-11-03T23:00:00+09:00" \
+    git -C "$1" -c user.name=t -c user.email="$3" commit -q --allow-empty -m "$2" --author="t <$3>"
+}
+ME=mori.a@ebase.co.jp
+R="$C/roots"
+git init -q "$R/dotfiles" && git -C "$R/dotfiles" remote add origin git@github-aya215:aya-215/dotfiles.git
+mkcommit "$R/dotfiles" PERS_COMMIT $ME
+git init -q --bare "$C/bare.git"
+git init -q "$R/main-clone" && git -C "$R/main-clone" remote add origin "$C/bare/eb-api-extended.git"
+mkcommit "$R/main-clone" SHARED_COMMIT $ME
+mkcommit "$R/main-clone" OTHER_AUTHOR_COMMIT someone@example.com
+git -C "$R/main-clone" worktree add -q "$R/wt-feat" -b feat >/dev/null 2>&1
+git clone -q "$R/main-clone" "$R/eae-docs-x" 2>/dev/null
+git -C "$R/eae-docs-x" remote set-url origin "$C/bare/eb-api-extended.git"
+git init -q "$R/gb" && git -C "$R/gb" remote add origin http://192.168.208.80:8080/gitbucket/git/eBASE/release-skills-repo.git
+mkcommit "$R/gb" GB_COMMIT $ME
+git init -q "$R/localonly"
+mkcommit "$R/localonly" LOCAL_COMMIT $ME
+mkdir -p "$R/notarepo"
+FIRE_GIT_ROOTS="$R/*/
+$C/missing/*/" run_fire "$C" --dry-run --date 2026-11-04
+P="$C/slices/2026-11-04/payload.txt"
+check "c13 exit 0" 0 "$RC"
+has "c13 個人 GitHub は Personal" "$P" "### [Personal] dotfiles"
+has "c13 origin 名で集約（Work）" "$P" "### [Work] eb-api-extended"
+check "c13 同名見出しは1つ" 1 "$(grep -c '^### \[Work\] eb-api-extended' "$P")"
+check "c13 同じコミットは1行" 1 "$(grep -c SHARED_COMMIT "$P")"
+has "c13 GitBucket は Work" "$P" "### [Work] release-skills-repo"
+has "c13 origin 無しはディレクトリ名で Work" "$P" "### [Work] localonly"
+lacks "c13 他人の author は入らない" "$P" "OTHER_AUTHOR_COMMIT"
+lacks "c13 clone 名の見出しは出ない" "$P" "eae-docs-x"
+check "c13 Personal が Work より先" 1 "$([ "$(grep -n '\[Personal\]' "$P" | head -1 | cut -d: -f1)" -lt "$(grep -n '\[Work\]' "$P" | head -1 | cut -d: -f1)" ] && echo 1 || echo 0)"
 
 # ---- ケース5: --overwrite ----
 C="$TMP/c5"; mkdir -p "$C/home"
