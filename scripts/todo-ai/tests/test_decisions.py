@@ -127,6 +127,59 @@ class DetectReverts(unittest.TestCase):
         self.assertEqual((rec["value"], rec["from"], rec["to"]), ("やる", "やる", "待ち"))
 
 
+C = "- [ ] 後片付け（2026-11-10） — next: a\n"
+C_DONE = "- [x] 後片付け（2026-11-10） — next: a (done: 2026-11-10)\n"
+C_REF = "title:後片付け（2026-11-10）"
+
+
+class CleanupRejectAdd(unittest.TestCase):
+    def setUp(self):
+        self._t = tempfile.TemporaryDirectory()
+        self.addCleanup(self._t.cleanup)
+        self.r = Repo(self._t.name)
+        self.r.commit(doc(), "todo: base")
+        self.r.commit(doc(yaru=C), "todo(ai): 追加1")
+
+    def refs(self):
+        return [(x["ref"], x["kind"]) for x in decisions.detect_reverts(self.r.dir, "todo.md")]
+
+    def test_deleted_from_yaru_rejected(self):
+        self.r.commit(doc(), "todo: 消した")
+        self.assertEqual(self.refs(), [(C_REF, "reject_add")])
+
+    def test_deleted_from_matsu_rejected(self):
+        self.r.commit(doc(matsu=C), "todo: 待ちへ")
+        self.r.commit(doc(), "todo: 消した")
+        self.assertEqual(self.refs(), [(C_REF, "reject_add")])
+
+    def test_deleted_from_done_not_rejected(self):
+        self.r.commit(doc(kanryo=C_DONE), "todo: 完了にした")
+        self.r.commit(doc(), "todo: 完了から片付けた")
+        self.assertEqual(self.refs(), [])
+
+    def test_rename_keeping_cleanup_prefix_not_rejected(self):
+        self.r.commit(doc(yaru="- [ ] 後片付け（2026-11-10）ブランチ — next: a\n"), "todo: 直した")
+        self.assertEqual(self.refs(), [])
+
+    def test_renamed_cleanup_later_done_and_tidied_not_rejected(self):
+        self.r.commit(doc(yaru="- [ ] 後片付け（2026-11-10）ブランチ — next: a\n"), "todo: 直した")
+        self.r.commit(doc(kanryo="- [x] 後片付け（2026-11-10）ブランチ — next: a (done: 2026-11-10)\n"), "todo: 完了")
+        self.assertEqual(self.refs(), [])
+        self.r.commit(doc(), "todo: 完了から片付けた")
+        self.assertEqual(self.refs(), [])
+
+    def test_deleted_beside_other_cleanup_not_rejected_after_other_done(self):
+        other = "- [ ] 後片付け（2026-11-09） — next: b\n"
+        self.r.commit(doc(yaru=C + other), "todo: 別の後片付け")
+        self.r.commit(doc(yaru=other), "todo: 消した")
+        self.r.commit(doc(), "todo: もう1つも消した")
+        self.assertEqual(self.refs(), [])
+
+    def test_rename_dropping_cleanup_prefix_rejected(self):
+        self.r.commit(doc(yaru="- [ ] ブランチ掃除 — next: a\n"), "todo: 直した")
+        self.assertEqual(self.refs(), [(C_REF, "reject_add")])
+
+
 class Records(unittest.TestCase):
     def test_load_append_pinned_answered(self):
         with tempfile.TemporaryDirectory() as t:
@@ -158,6 +211,35 @@ class Records(unittest.TestCase):
         recs = [{"ref": "epc#9", "kind": "reject_add", "value": "やる"}, {"kind": "reject_add"}]
         self.assertTrue(decisions.is_rejected(recs, "epc#9"))
         self.assertFalse(decisions.is_rejected(recs, "epc#8"))
+
+    def test_intents_newest_first(self):
+        recs = [{"ts": "t1", "ref": "epc#1", "kind": "intent", "value": "古い", "by": "human"},
+                {"ts": "t1", "ref": "epc#1", "kind": "policy", "value": "A", "by": "human"},
+                {"ts": "t2", "ref": "epc#2", "kind": "intent", "value": "別の行", "by": "human"},
+                {"ts": "t3", "ref": "epc#1", "kind": "intent", "value": "新しい", "by": "human"},
+                {"kind": "intent", "value": "ref なし"}]
+        self.assertEqual([r["value"] for r in decisions.intents(recs, "epc#1")], ["新しい", "古い"])
+        self.assertEqual(decisions.intents(recs, "epc#9"), [])
+
+    def test_intents_follow_rename_only_backwards(self):
+        recs = [{"ts": "t1", "ref": "title:旧", "kind": "intent", "value": "改名前"},
+                {"ts": "t2", "ref": "title:新", "kind": "intent", "value": "改名", "prev_ref": "title:旧"},
+                {"ts": "t3", "ref": "title:旧", "kind": "intent", "value": "改名後に同名で作った別行"}]
+        self.assertEqual([r["value"] for r in decisions.intents(recs, "title:新")], ["改名", "改名前"])
+        self.assertEqual([r["value"] for r in decisions.intents(recs, "title:旧")],
+                         ["改名後に同名で作った別行", "改名前"])
+
+    def test_deleted_refs_only_from_delete_and_renamed_away(self):
+        recs = [{"ref": "epc#1", "kind": "intent", "value": "不要", "op": "delete"},
+                {"ref": "title:新", "kind": "intent", "value": "改名", "op": "edit_title", "prev_ref": "title:旧"},
+                {"ref": "rc:a", "kind": "intent", "value": "台帳に無い key へのメモ", "op": "note"},
+                {"ref": "rc:b", "kind": "intent", "value": "紐付け", "op": "attach", "prev_ref": "title:手書き"},
+                {"ref": "epc#2", "kind": "intent", "value": "古い記録（op 無し）"},
+                {"ref": "epc#3", "kind": "intent", "value": "消す", "op": "delete"},
+                {"ref": "epc#3", "kind": "intent", "value": "やっぱり要る", "op": "add"},
+                {"ref": "epc#1", "kind": "intent", "value": "消した後のメモ", "op": "note"},
+                {"ref": "epc#4", "kind": "reject_add", "value": "やる", "op": "delete"}]
+        self.assertEqual(decisions.deleted_refs(recs), ["epc#1", "title:旧"])
 
     def test_load_keeps_unicode_line_separators_inside_a_record(self):
         with tempfile.TemporaryDirectory() as t:

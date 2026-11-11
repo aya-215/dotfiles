@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """todo.md の唯一の書き込み口。変更案 JSON を検証して適用し、git にコミットする。
 
-使い方: apply.py --changes <json> [--todo PATH] [--decisions PATH] [--today YYYY-MM-DD]
+使い方: apply.py --changes <json> [--todo PATH] [--decisions PATH] [--today YYYY-MM-DD] [--allow-user]
+source user（ユーザー指示の変更）は --allow-user のときだけ受け付け、環境変数 TODO_AI_DENY_USER=1 なら常に拒む。
 終了コード: 0 適用（変更なし含む） / 3 nvim で編集中のためスキップ / 2 検証違反で未適用 / 1 その他
 """
 import argparse
@@ -16,6 +17,7 @@ import subprocess
 import sys
 import time
 from collections import Counter
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -25,11 +27,14 @@ import todo_md
 from origin import origin_of
 from todo_md import TASK_SECTIONS, Doc, Item
 
-SOURCES = ("ai", "sync")
+SOURCES = ("ai", "sync", "user")
+USER_OPS = ("edit_title", "delete", "note")
+CLEANUP_PREFIX = decisions.CLEANUP_PREFIX
 OPEN_SECTIONS = ("やる", "待ち")
 ARCHIVE_DAYS = 30
 OP_LABELS = {
     "add": "追加", "move": "移動", "set_next": "next更新", "attach": "紐付け",
+    "edit_title": "タイトル変更", "delete": "削除", "note": "意図",
     "order": "並べ替え", "confirm": "確認待ち", "archive": "アーカイブ",
 }
 CONFIRM_FIELDS = ("事実", "選択", "回答")
@@ -42,6 +47,23 @@ GIT_RETRIES = 10
 
 class ChangeError(ValueError):
     """変更案そのものが不正、または適用すると人の記述を失う。"""
+
+
+@dataclass
+class Effects:
+    """apply_changes が source user の op について集める副産物。
+
+    intents は記録する意図（{"ref", "value", "op", 任意で "prev_ref"}）。deleted / retitled は適用前から
+    あった行のうち delete で消した行・edit_title で題を変えた行（変更前の状態）で、validate の免除に使う。
+    reopened は完了から出した行の (ref, 今の節)。完了へ戻さない pin として記録する。
+    aliases は key の無い行に key を付けた (key, 旧 ref)。source を問わず集め、alias として記録する。
+    """
+
+    intents: "list[dict]" = field(default_factory=list)
+    reopened: "list[tuple[str, str]]" = field(default_factory=list)
+    deleted: "list[Item]" = field(default_factory=list)
+    retitled: "list[Item]" = field(default_factory=list)
+    aliases: "list[tuple[str, str]]" = field(default_factory=list)
 
 
 def _str(op: dict, name: str, required: bool = True) -> "str | None":
@@ -189,38 +211,78 @@ def _render_confirm(entries: list) -> "list[str]":
 
 
 def apply_changes(
-    doc: Doc, changes: dict, origins: Callable[[str], str], today: str, records: "list[dict]" = ()
+    doc: Doc, changes: dict, origins: Callable[[str], str], today: str, records: "list[dict]" = (),
+    effects: "Effects | None" = None, asked_at: "int | None" = None,
 ) -> "tuple[Doc, list[str]]":
     """変更案を適用した新しい Doc とコミット本文の行を返す（doc は変更しない）。
 
     存在しない・複数に当たる ref への op はその op だけ飛ばし `skip: ...` を本文に残す。
     records（判断記録。未記録の戻しも含めて渡す）に従い、人が消した key の add/attach、
-    人が戻した移動先への move、回答済みの (ref, kind) の確認待ちも飛ばす。source を問わない。
+    人が戻した移動先への move、回答済みの (ref, kind) の確認待ちも飛ばす（行の系譜で見る。conflict は、回答より後に
+    同じ行の意図が記録されていれば回答済みにしない）。asked_at は今の確認待ちを書いたときの判断記録の件数で、
+    それ以降に意図が記録された行の conflict は、回答欄が埋まっていても回答済みにしない（None なら見ない）。
+    source ai では、ユーザー指示で消えた ref（decisions.deleted_refs。今の台帳にある ref は除く。
+    後片付けは題の前方一致）の add/attach も飛ばす。
+    source user（ユーザー指示）は例外: 戻し・却下の記録に縛られず、完了から戻せ、edit_title / delete / note を
+    使える。各 op に intent が必須で、op を1つでも飛ばすなら全体を ChangeError にする（承認された変更を欠かさない）。
+    effects を渡すと、source user の意図と validate の免除対象をそこに集める。
     変更案の形が不正なら ChangeError。人のタイトル保護などの結果の検証は validate が行う。
-    origins は現状の op では使わない（タイトルを書き換える op が無いため）。
+    origins は現状の op では使わない。
     """
     if not isinstance(changes, dict):
         raise ChangeError("変更案が object でない")
     source = changes.get("source")
     if source not in SOURCES:
         raise ChangeError(f"source が不正: {source!r}")
+    user = source == "user"
     ops = changes.get("ops", [])
     if not isinstance(ops, list):
         raise ChangeError("ops が配列でない")
+    if user and ("confirm" in changes or "answered" in changes):
+        # 確認待ちの基準は ai/sync のコミットから取るので、user が書き換えると以後の ai 実行が止まる
+        raise ChangeError("user は確認待ちを書き換えられない")
+    fx = effects if effects is not None else Effects()
     doc = copy.deepcopy(doc)
     body: "list[str]" = []
+    fresh: "list[Item]" = []
+    reopened: "list[Item]" = []
+
+    def skip(msg: str) -> None:
+        if user:
+            raise ChangeError(f"user の変更を適用できない: {msg}")
+        body.append(f"skip: {msg}")
+
+    present = {it.ref for s in TASK_SECTIONS for it in doc.sections[s]}
+    deleted = set(decisions.deleted_refs(records, present)) if source == "ai" else set()
+    gone_cleanup = sorted(r for r in deleted | {x.get("ref") for x in records if x.get("kind") == "reject_add"}
+                          if isinstance(r, str) and r.startswith("title:" + CLEANUP_PREFIX) and r not in present)
+
+    def deleted_by_user(ref: str, title: "str | None" = None) -> "str | None":
+        """source ai が足し直そうとしている、ユーザーが消した ref（無ければ None）。"""
+        if ref in deleted:
+            return ref
+        # 後片付けは日付で題が変わるので、一度消されたら別の日の行も足さない
+        if source == "ai" and title is not None and title.startswith(CLEANUP_PREFIX) and gone_cleanup:
+            return gone_cleanup[0]
+        return None
 
     def locate(ref: str) -> "tuple[str, int] | None":
         hits = _find(doc, ref)
         if len(hits) == 1:
             return hits[0]
-        body.append(f"skip: {'unknown' if not hits else 'ambiguous'} ref {ref}")
+        skip(f"{'unknown' if not hits else 'ambiguous'} ref {ref}")
         return None
 
     for op in ops:
         if not isinstance(op, dict):
             raise ChangeError(f"op が object でない: {op!r}")
         kind = op.get("op")
+        intent = _str(op, "intent", required=user)
+        if user and not intent.strip():
+            raise ChangeError(f"{kind}: intent が空白だけ")
+        if kind in USER_OPS and not user:
+            raise ChangeError(f"{kind} は user だけが使える")
+        refs_out: "list[tuple[str, str]]" = []
         if kind == "add":
             section = op.get("section")
             if section not in OPEN_SECTIONS:
@@ -229,34 +291,45 @@ def apply_changes(
             key = _key(op) if op.get("key") is not None else None
             nxt = _str(op, "next", required=False)
             it = Item(title, key, op.get("url") if key else None, nxt or None)
-            if key and decisions.is_rejected(records, key):
-                body.append(f"skip: rejected {key}")
+            if key and not user and decisions.is_rejected(records, key):
+                skip(f"rejected {key}")
+                continue
+            gone = deleted_by_user(it.ref, title)
+            if gone:
+                skip(f"intent_deleted {gone}")
                 continue
             # key の無い行は is_task の「追加」の回答で足すので、同じ題の完了行があっても新しい作業として足す
             if any(s in (TASK_SECTIONS if key else OPEN_SECTIONS) for s, _ in _find(doc, it.ref)):
-                body.append(f"skip: duplicate {it.ref}")
+                skip(f"duplicate {it.ref}")
                 continue
             doc.sections[section].append(it)
+            fresh.append(it)
             body.append(_note(op, f"add {it.ref} → {section}", it.url))
+            refs_out.append((it.ref, it.ref))
         elif kind == "move":
             ref, to = _str(op, "ref"), op.get("to")
             if to not in TASK_SECTIONS:
                 raise ChangeError(f"move: to が不正: {to!r}")
             loc = locate(ref)
-            if loc is None or loc[0] == to:
+            if loc is None:
                 continue
-            if decisions.is_pinned(records, ref, to):
-                body.append(f"skip: pinned {ref}")
-                continue
-            if loc[0] == "完了":
-                raise ChangeError(f"{source} は完了から戻せない: {ref}")
-            it = doc.sections[loc[0]].pop(loc[1])
-            if to == "完了":
-                it.done, it.done_date = True, today
-                doc.sections[to].insert(0, it)
-            else:
-                doc.sections[to].append(it)
-            body.append(_note(op, f"move {ref} → {to}", op.get("url") or it.url))
+            refs_out.append((ref, ref))
+            if loc[0] != to:
+                if not user and decisions.is_pinned(records, ref, to):
+                    skip(f"pinned {ref}")
+                    continue
+                if loc[0] == "完了" and not user:
+                    raise ChangeError(f"{source} は完了から戻せない: {ref}")
+                it = doc.sections[loc[0]].pop(loc[1])
+                if loc[0] == "完了":
+                    reopened.append(it)
+                if to == "完了":
+                    it.done, it.done_date = True, today
+                    doc.sections[to].insert(0, it)
+                else:
+                    it.done, it.done_date = False, None
+                    doc.sections[to].append(it)
+                body.append(_note(op, f"move {ref} → {to}", op.get("url") or it.url))
         elif kind == "set_next":
             ref = _str(op, "ref")
             nxt = _str(op, "next", required=False)
@@ -266,6 +339,7 @@ def apply_changes(
             it = doc.sections[loc[0]][loc[1]]
             it.next = nxt or None
             body.append(_note(op, f"set_next {ref}", op.get("url") or it.url))
+            refs_out.append((ref, ref))
         elif kind == "attach":
             ref = _str(op, "ref")
             key = _key(op)
@@ -275,21 +349,57 @@ def apply_changes(
                 continue
             it = doc.sections[loc[0]][loc[1]]
             if it.key:
-                body.append(f"skip: already linked {ref}")
+                skip(f"already linked {ref}")
                 continue
-            if decisions.is_rejected(records, key):
-                body.append(f"skip: rejected {key}")
+            if not user and decisions.is_rejected(records, key):
+                skip(f"rejected {key}")
+                continue
+            if deleted_by_user(key):
+                skip(f"intent_deleted {key}")
                 continue
             if _find(doc, key):
-                body.append(f"skip: duplicate {key}")
+                skip(f"duplicate {key}")
                 continue
             if nxt and it.next:
-                body.append(f"skip: next already set {ref}")
+                skip(f"next already set {ref}")
                 continue
+            fx.aliases.append((key, ref))
             it.key, it.url = key, op["url"]
             if nxt:
                 it.next = nxt
             body.append(_note(op, f"attach {ref} ← {key}", it.url))
+            refs_out.append((it.ref, ref))
+        elif kind == "edit_title":
+            ref, title = _str(op, "ref"), _str(op, "title")
+            loc = locate(ref)
+            if loc is None:
+                continue
+            it = doc.sections[loc[0]][loc[1]]
+            if title != it.title:
+                if not it.key and _find(doc, "title:" + title):
+                    raise ChangeError(f"edit_title: 同じ題の key の無い行が既にあり ref が重なる: {title!r}")
+                if all(it is not f for f in fresh):
+                    fx.retitled.append(copy.deepcopy(it))
+                it.title = title
+                body.append(_note(op, f"edit_title {ref} → {title}", it.url))
+            refs_out.append((it.ref, ref))
+        elif kind == "delete":
+            ref = _str(op, "ref")
+            loc = locate(ref)
+            if loc is None:
+                continue
+            it = doc.sections[loc[0]].pop(loc[1])
+            if all(it is not f for f in fresh):
+                fx.deleted.append(it)
+            body.append(_note(op, f"delete {ref}", it.url))
+            refs_out.append((ref, ref))
+        elif kind == "note":
+            ref = _str(op, "ref")
+            # 台帳に無い key には、足される前に意図を残せる。key の無い行は題だけが手がかりなので実在を求める
+            if not todo_md.is_key(ref) and locate(ref) is None:
+                continue
+            body.append(f"note {ref}")
+            refs_out.append((ref, ref))
         elif kind == "order":
             section, refs = op.get("section"), op.get("refs")
             if section not in TASK_SECTIONS or not isinstance(refs, list):
@@ -299,9 +409,10 @@ def apply_changes(
             for ref in refs:
                 hits = [i for i, it in enumerate(items) if it.ref == ref]
                 if len(hits) != 1:
-                    body.append(f"skip: {'unknown' if not hits else 'ambiguous'} ref {ref}")
+                    skip(f"{'unknown' if not hits else 'ambiguous'} ref {ref}")
                 elif items[hits[0]] not in first:
                     first.append(items[hits[0]])
+                    refs_out.append((ref, ref))
             rest = [it for it in items if all(it is not f for f in first)]
             new = first + rest
             if any(a is not b for a, b in zip(new, items)):
@@ -309,6 +420,15 @@ def apply_changes(
                 body.append(_note(op, f"order {section}", None))
         else:
             raise ChangeError(f"未知の op: {kind!r}")
+        if user:
+            for now, prev in refs_out:
+                fx.intents.append({"ref": now, "value": intent, "op": kind,
+                                   **({"prev_ref": prev} if prev != now else {})})
+    # 後の op で改名・再移動されうるので、最後の状態で取る
+    for it in reopened:
+        sec = next((s for s in OPEN_SECTIONS if any(x is it for x in doc.sections[s])), None)
+        if sec:
+            fx.reopened.append((it.ref, sec))
 
     if "confirm" in changes:
         entries = changes["confirm"]
@@ -316,14 +436,21 @@ def apply_changes(
         if not isinstance(entries, list) or not isinstance(answered, (list, type(None))):
             raise ChangeError("confirm/answered が配列でない")
         old_blocks = parse_confirm(doc.confirm)
-        done = {(ref, kind) for ref, kind, _ in answer_records(old_blocks)}
-        done |= {(r.get("ref"), r.get("kind")) for r in records
-                 if r.get("kind") in KINDS and r.get("by", "human") == "human"}
+        done_now = {(ref, kind) for ref, kind, _ in answer_records(old_blocks)
+                    if not stale_answer(records, ref, kind, asked_at)}
         if answered is not None:
             _check_answers(old_blocks, answered)
+
+        def done(e: dict) -> bool:
+            ref, kind = e.get("ref"), e.get("kind")
+            if not isinstance(ref, str) or kind not in KINDS:
+                return False
+            refs = decisions.lineage_refs(records, ref)
+            return any((r, kind) in done_now for r in refs) or decisions.already_answered(records, ref, kind) is not None
+
         kept = []
         for e in entries:
-            if isinstance(e, dict) and (e.get("ref"), e.get("kind")) in done:
+            if isinstance(e, dict) and done(e):
                 body.append(f"skip: answered {e['kind']} {e['ref']}")
             else:
                 kept.append(e)
@@ -339,6 +466,11 @@ def apply_changes(
     return doc, body
 
 
+def stale_answer(records: "list[dict]", ref: str, kind: str, asked_at: "int | None") -> bool:
+    """確認待ちに今ある conflict の回答が、問いを書いた後に記録された同じ行の意図で古くなったか。"""
+    return kind == "conflict" and asked_at is not None and decisions.newest_intent_pos(records, ref) >= asked_at
+
+
 def _ident(it: Item) -> str:
     return it.title or it.key or ""
 
@@ -347,21 +479,29 @@ def _items(doc: Doc, sections=TASK_SECTIONS) -> "list[Item]":
     return [it for s in sections for it in doc.sections[s] if _ident(it)]
 
 
-def validate(before: Doc, after: Doc, origins: Callable[[str], str], source: str) -> "list[str]":
-    """適用前後を比べ、人の行・判断を壊す変更なら違反メッセージを返す（空なら OK）。"""
+def validate(before: Doc, after: Doc, origins: Callable[[str], str], source: str,
+             exempt: "Effects | None" = None) -> "list[str]":
+    """適用前後を比べ、人の行・判断を壊す変更なら違反メッセージを返す（空なら OK）。
+
+    source user のときだけ、exempt（apply_changes の effects）が名指しした行の消失・題の変更と、
+    完了から戻すことを許す。それ以外の source では exempt を無視する。
+    """
+    ex = exempt if source == "user" and exempt is not None else Effects()
+    gone = [it for it in ex.deleted if _ident(it)]
     errs = []
-    nb, na = len(_items(before)), len(_items(after))
+    nb, na = len(_items(before)) - len(gone), len(_items(after))
     if na < nb:
         errs.append(f"タスク行が減る: {nb} → {na}")
-    keys_b = Counter(it.key for it in _items(before) if it.key)
+    keys_b = Counter(it.key for it in _items(before) if it.key) - Counter(it.key for it in gone if it.key)
     keys_a = Counter(it.key for it in _items(after) if it.key)
     for k in keys_b - keys_a:
         errs.append(f"リンク付きの行が消える: {k}")
     titles_a = Counter(it.title for it in _items(after))
+    titles_ex = Counter(it.title for it in gone + ex.retitled if it.title)
     for t, n in Counter(it.title for it in _items(before) if it.title).items():
-        if titles_a[t] < n and origins(t) == "human":
+        if titles_a[t] < n - titles_ex[t] and origins(t) == "human":
             errs.append(f"人が書いたタイトルが変わる: {t!r}")
-    if source in SOURCES:
+    if source != "user":
         done_b, done_a = _items(before, ["完了"]), _items(after, ["完了"])
         pairs_a = Counter((it.title, it.key) for it in done_a if it.key)
         for (t, k), n in Counter((it.title, it.key) for it in done_b if it.key).items():
@@ -486,8 +626,8 @@ def _confirms_at(repo: Path, revs: "list[str]") -> "list[list[str] | None]":
 CONFIRM_SCAN_CHUNK = 50
 
 
-def _last_written_confirm(repo: Path, name: str) -> "list[str]":
-    """確認待ちを実際に変えた最後の ai/sync コミットの確認待ち。件数で打ち切らない。"""
+def _last_confirm_commit(repo: Path, name: str) -> "tuple[str | None, list[str]]":
+    """確認待ちを実際に変えた最後の ai/sync コミットと、その確認待ち。件数で打ち切らない。"""
     # 確認待ちを変えなかった AI/同期コミットは人の追記をそのまま運ぶので、基準にすると追記を apply の内容と取り違える
     commits = _git(repo, "log", "--format=%H", "-E", r"--grep=^todo\((ai|sync)\): ", "--", name).split()
     for i in range(0, len(commits), CONFIRM_SCAN_CHUNK):
@@ -496,8 +636,25 @@ def _last_written_confirm(repo: Path, name: str) -> "list[str]":
         for j in range(len(chunk)):
             mine, parent = got[2 * j], got[2 * j + 1]
             if mine is not None and mine != parent:
-                return mine
-    return []
+                return chunk[j], mine
+    return None, []
+
+
+def _last_written_confirm(repo: Path, name: str) -> "list[str]":
+    return _last_confirm_commit(repo, name)[1]
+
+
+def confirm_asked_at(repo: Path, name: str, dpath: Path) -> "int | None":
+    """今の確認待ちを書いたコミット時点の判断記録の件数。判断記録が repo の外・確認待ちを書いたことが無いなら None。"""
+    if dpath.parent != repo:
+        return None
+    commit, _ = _last_confirm_commit(repo, name)
+    if commit is None:
+        return None
+    r = subprocess.run(["git", "-C", str(repo), "show", f"{commit}:{dpath.name}"], capture_output=True)
+    if r.returncode != 0:
+        return 0
+    return len(decisions.parse_text(r.stdout.decode("utf-8", errors="replace")))
 
 
 def _write_atomic(path: Path, text: str, expect: "str | None" = None) -> None:
@@ -525,17 +682,32 @@ def _restore(originals: "dict[Path, str | None]") -> None:
 
 def summarize(body: "list[str]") -> str:
     counts = Counter(l.split(" ", 1)[0].rstrip(":") for l in body)
-    parts = [f"{label}{counts[k]}" for k, label in OP_LABELS.items() if counts[k]]
+    # 確認待ちは本文に「confirm: N 件」の1行だけなので、行数ではなく N を出す
+    m = next((re.match(r"confirm: (\d+) 件\Z", l) for l in body if l.startswith("confirm: ")), None)
+    parts = []
+    for k, label in OP_LABELS.items():
+        if k == "confirm" and m:
+            parts.append(f"{label}{m.group(1)}")
+        elif counts[k] and k != "confirm":
+            parts.append(f"{label}{counts[k]}")
     return " ".join(parts)
 
 
-def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None" = None) -> int:
+def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None" = None,
+        allow_user: bool = False) -> int:
     try:
         changes = json.loads(changes_path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as e:
         print(f"apply: 変更案を読めない: {e}", file=sys.stderr)
         return 2
     source = changes.get("source") if isinstance(changes, dict) else None
+    # source は変更案の自己申告なので、無人の /todo が user を名乗っても保護が外れないよう呼び出し側で絞る
+    if source == "user" and os.environ.get("TODO_AI_DENY_USER", "") not in ("", "0"):
+        print("apply: 未適用: TODO_AI_DENY_USER が立っているので source user は受け付けない", file=sys.stderr)
+        return 2
+    if source == "user" and not allow_user:
+        print("apply: 未適用: source user は --allow-user を付けたときだけ受け付ける", file=sys.stderr)
+        return 2
     repo, name = todo.parent, todo.name
     dpath = (decisions_path or repo / decisions.DECISIONS_NAME).expanduser().absolute()
     if not todo.is_file():
@@ -554,20 +726,33 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
             before = todo_md.parse(text)
             old_records = decisions.load(dpath)
             new_records = decisions.detect_reverts(repo, name, old_records)
+            blocks_now = answer_records(parse_confirm(before.confirm)) if "confirm" in changes else []
+            asked_at = (confirm_asked_at(repo, name, dpath)
+                        if any(kind == "conflict" for _, kind, _ in blocks_now) else None)
+            fx = Effects()
             after, body = apply_changes(before, changes, lambda t: origin_of(repo, name, t), today,
-                                        old_records + new_records)
+                                        old_records + new_records, effects=fx, asked_at=asked_at)
         except ValueError as e:
             print(f"apply: 未適用: {e}", file=sys.stderr)
             return 2
-        errs = validate(before, after, lambda t: origin_of(repo, name, t), source) + roundtrip_errors(after)
+        errs = validate(before, after, lambda t: origin_of(repo, name, t), source, fx) + roundtrip_errors(after)
         if "confirm" in changes:
             errs += confirm_edit_errors(before.confirm, _last_written_confirm(repo, name))
         if errs:
             print("apply: 検証違反のため未適用:\n" + "\n".join(errs), file=sys.stderr)
             return 2
         ts = decisions.now_iso()
-        for ref, kind, ans in answer_records(parse_confirm(before.confirm)) if "confirm" in changes else []:
-            new_records.append({"ts": ts, "ref": ref, "kind": kind, "value": ans, "by": "human"})
+        for ref, kind, ans in blocks_now:
+            new_records.append({"ts": ts, "ref": ref, "kind": kind, "value": ans, "by": "human",
+                                **({"stale": True} if stale_answer(old_records, ref, kind, asked_at) else {})})
+        for i in fx.intents:
+            new_records.append({"ts": ts, "ref": i["ref"], "kind": "intent", "value": i["value"], "by": "human",
+                                "op": i["op"], **({"prev_ref": i["prev_ref"]} if "prev_ref" in i else {})})
+        for ref, sec in fx.reopened:
+            new_records.append({"ts": ts, "ref": ref, "kind": "revert_move", "value": sec, "from": sec,
+                                "to": "完了", "by": "human"})
+        for key, prev in fx.aliases:
+            new_records.append({"ts": ts, "ref": key, "kind": "alias", "prev_ref": prev, "by": "ai"})
         body += [f"record {r['kind']} {r['ref']}" for r in new_records]
         kept, archived = split_archive(after, today)
         new_text = todo_md.render(kept)
@@ -630,11 +815,12 @@ def main(argv=None) -> int:
     p.add_argument("--todo", type=Path)
     p.add_argument("--decisions", type=Path, help="判断記録（既定は todo.md と同じディレクトリの todo-decisions.jsonl）")
     p.add_argument("--today", default=datetime.date.today().isoformat())
+    p.add_argument("--allow-user", action="store_true", help="source user（/todo-edit のユーザー指示）を受け付ける")
     a = p.parse_args(argv)
     todo = a.todo or Path(os.environ.get("TODO_MD_PATH") or Path.home() / "memo" / "todo.md")
     try:
         datetime.date.fromisoformat(a.today)
-        return run(a.changes, todo.expanduser().absolute(), a.today, a.decisions)
+        return run(a.changes, todo.expanduser().absolute(), a.today, a.decisions, a.allow_user)
     except Exception as e:
         print(f"apply: {type(e).__name__}: {e}", file=sys.stderr)
         return 1

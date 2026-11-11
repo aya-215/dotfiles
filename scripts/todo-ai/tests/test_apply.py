@@ -86,6 +86,29 @@ class ApplyChangesTest(unittest.TestCase):
         self.assertFalse(it.done)
         self.assertTrue(any("PR が来た" in l and "pull/1300" in l for l in body))
 
+    def test_ai_add_and_attach_of_user_deleted_ref_are_skipped(self):
+        recs = [{"ref": "epc#1300", "kind": "intent", "value": "不要", "op": "delete"},
+                {"ref": "title:手書き", "kind": "intent", "value": "不要", "op": "delete"},
+                {"ref": "title:後片付け（2026-11-01）", "kind": "intent", "value": "要らない", "op": "delete"},
+                {"ref": "epc#1301", "kind": "intent", "value": "来たらやる", "op": "note"}]
+        url = "https://github.com/x/epc/pull/"
+        changes = {"source": "ai", "ops": [
+            {"op": "add", "section": "やる", "key": "epc#1300", "url": url + "1300", "title": "a"},
+            {"op": "add", "section": "やる", "title": "手書き"},
+            {"op": "add", "section": "やる", "title": "後片付け（2026-11-10）", "next": "x"},
+            {"op": "attach", "ref": "title:インターン資料修正", "key": "epc#1300", "url": url + "1300"},
+            {"op": "add", "section": "やる", "key": "epc#1301", "url": url + "1301", "title": "b"}]}
+        new, body = apply_changes(self.doc, changes, human, TODAY, recs)
+        self.assertEqual([l for l in body if l.startswith("skip:")], [
+            "skip: intent_deleted epc#1300", "skip: intent_deleted title:手書き",
+            "skip: intent_deleted title:後片付け（2026-11-01）", "skip: intent_deleted epc#1300"])
+        self.assertEqual([it.ref for it in new.sections["やる"]][-1], "epc#1301")
+        # user は消した ref でも足し直せる
+        new, body = apply_changes(self.doc, {"source": "user", "ops": [
+            {"op": "add", "section": "やる", "key": "epc#1300", "url": url + "1300", "title": "a", "intent": "戻す"}]},
+            human, TODAY, recs)
+        self.assertEqual(new.sections["やる"][-1].ref, "epc#1300")
+
     def test_add_duplicate_key_is_skipped(self):
         new, body = self.run_ops([{
             "op": "add", "section": "やる", "key": "epc#1163",
@@ -393,11 +416,12 @@ class RepoMixin:
         git(self.repo, "add", "todo.md")
         git(self.repo, "commit", "-q", "-m", msg)
 
-    def run_apply(self, changes, wait=True):
+    def run_apply(self, changes, wait=True, extra=(), **env_extra):
         cf = self.repo / "changes.json"
         cf.write_text(json.dumps(changes, ensure_ascii=False), encoding="utf-8")
-        cmd = [sys.executable, APPLY, "--changes", str(cf), "--todo", str(self.todo), "--today", TODAY]
-        env = dict(os.environ, LANG="C.UTF-8")
+        cmd = [sys.executable, APPLY, "--changes", str(cf), "--todo", str(self.todo), "--today", TODAY, *extra]
+        env = {k: v for k, v in os.environ.items() if k != "TODO_AI_DENY_USER"}
+        env.update(LANG="C.UTF-8", **env_extra)
         if not wait:
             return subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
         return subprocess.run(cmd, capture_output=True, text=True, env=env)
@@ -610,6 +634,271 @@ class CliTest(RepoMixin, unittest.TestCase):
         _, err = p.communicate(timeout=10)
         self.assertEqual(p.returncode, 0, err)
         self.assertIn("(done: 2026-11-10)", self.todo.read_text(encoding="utf-8"))
+
+
+def confirm_entries(n):
+    return [{"ref": f"epc#{2000 + i}", "kind": "policy", "question": f"問い{i}", "facts": "f",
+             "options": [{"label": "A", "text": "x"}]} for i in range(n)]
+
+
+class UserSourceTest(unittest.TestCase):
+    def setUp(self):
+        self.doc = todo_md.parse(BASE)
+
+    def run_ops(self, ops, source="user", effects=None, records=(), **extra):
+        return apply_changes(self.doc, {"source": source, "ops": ops, **extra}, human, TODAY, records,
+                             effects=effects)
+
+    def test_user_reopen_allowed(self):
+        fx = apply.Effects()
+        new, body = self.run_ops([{"op": "move", "ref": "epc#1100", "to": "やる", "intent": "まだ終わっていない"}],
+                                 effects=fx)
+        it = new.sections["やる"][-1]
+        self.assertEqual((it.key, it.done, it.done_date), ("epc#1100", False, None))
+        self.assertEqual(new.sections["完了"], [])
+        self.assertEqual(validate(self.doc, new, human, "user", fx) + apply.roundtrip_errors(new), [])
+        self.assertEqual(fx.intents, [{"ref": "epc#1100", "value": "まだ終わっていない", "op": "move"}])
+
+    def test_ai_reopen_still_rejected(self):
+        for source in ("ai", "sync"):
+            with self.assertRaises(ChangeError):
+                self.run_ops([{"op": "move", "ref": "epc#1100", "to": "やる", "intent": "x"}], source=source)
+        reopened = copy.deepcopy(self.doc)
+        it = reopened.sections["完了"].pop(0)
+        it.done, it.done_date = False, None
+        reopened.sections["やる"].append(it)
+        self.assertTrue(validate(self.doc, reopened, human, "ai"))
+        self.assertTrue(validate(self.doc, reopened, human, "sync"))
+        self.assertEqual(validate(self.doc, reopened, human, "user"), [])
+
+    def test_user_ops_rejected_for_ai_and_sync(self):
+        for source in ("ai", "sync"):
+            for op in ({"op": "edit_title", "ref": "epc#1163", "title": "x", "intent": "i"},
+                       {"op": "delete", "ref": "epc#1163", "intent": "i"},
+                       {"op": "note", "ref": "epc#1163", "intent": "i"}):
+                with self.assertRaises(ChangeError):
+                    self.run_ops([op], source=source)
+
+    def test_exemptions_ignored_for_ai(self):
+        fx = apply.Effects()
+        new, _ = self.run_ops([
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "別名", "intent": "i"},
+            {"op": "delete", "ref": "epc#1202", "intent": "i"}], effects=fx)
+        self.assertEqual(validate(self.doc, new, human, "user", fx), [])
+        errs = validate(self.doc, new, human, "ai", fx)
+        self.assertTrue(any("タスク行が減る" in e for e in errs))
+        self.assertTrue(any("リンク付きの行が消える" in e for e in errs))
+        self.assertTrue(any("人が書いたタイトル" in e for e in errs))
+
+    def test_user_validate_still_protects_lines_not_named(self):
+        fx = apply.Effects()
+        new, _ = self.run_ops([{"op": "delete", "ref": "epc#1202", "intent": "i"}], effects=fx)
+        del new.sections["待ち"][0]
+        self.assertTrue(validate(self.doc, new, human, "user", fx))
+        fx = apply.Effects()
+        new, _ = self.run_ops([{"op": "delete", "ref": "epc#1202", "intent": "i"}], effects=fx)
+        new.sections["やる"][0].title = "AI が変えた"
+        self.assertTrue(any("人が書いたタイトル" in e for e in validate(self.doc, new, human, "user", fx)))
+
+    def test_delete_of_line_added_in_same_run_gives_no_exemption(self):
+        fx = apply.Effects()
+        new, _ = self.run_ops([
+            {"op": "add", "section": "やる", "title": "一時", "intent": "i"},
+            {"op": "delete", "ref": "title:一時", "intent": "i"}], effects=fx)
+        self.assertEqual(fx.deleted, [])
+        del new.sections["待ち"][0]
+        self.assertTrue(validate(self.doc, new, human, "user", fx))
+
+    def test_user_ignores_pins_and_rejects(self):
+        recs = [{"ref": "epc#1202", "kind": "revert_move", "value": "やる", "from": "やる", "to": "待ち"},
+                {"ref": "epc#1300", "kind": "reject_add", "value": "やる"}]
+        new, body = self.run_ops([
+            {"op": "move", "ref": "epc#1202", "to": "待ち", "intent": "i"},
+            {"op": "add", "section": "やる", "key": "epc#1300", "url": "https://g/1300", "title": "x", "intent": "i"},
+        ], records=recs)
+        self.assertEqual(new.sections["待ち"][-1].key, "epc#1202")
+        self.assertEqual(new.sections["やる"][-1].key, "epc#1300")
+        self.assertFalse(any(l.startswith("skip:") for l in body))
+
+    def test_user_skip_is_an_error(self):
+        for op in ({"op": "move", "ref": "epc#9999", "to": "完了", "intent": "i"},
+                   {"op": "note", "ref": "title:無い行", "intent": "i"},
+                   {"op": "add", "section": "やる", "title": "インターン資料修正", "intent": "i"},
+                   {"op": "order", "section": "やる", "refs": ["epc#9999"], "intent": "i"}):
+            with self.assertRaises(ChangeError):
+                self.run_ops([op])
+
+    def test_edit_title_collision_rejected(self):
+        with self.assertRaises(ChangeError):
+            self.run_ops([{"op": "edit_title", "ref": "title:坂西さんの対応", "title": "インターン資料修正",
+                           "intent": "i"}])
+
+    def test_user_confirm_rejected(self):
+        with self.assertRaises(ChangeError):
+            self.run_ops([], confirm=[])
+
+    def test_ai_intent_checked_but_not_recorded(self):
+        fx = apply.Effects()
+        self.run_ops([{"op": "set_next", "ref": "epc#1163", "next": "n", "intent": "AI の考え"}], source="ai",
+                     effects=fx)
+        self.assertEqual(fx.intents, [])
+        with self.assertRaises(ChangeError):
+            self.run_ops([{"op": "set_next", "ref": "epc#1163", "next": "n", "intent": 3}], source="ai")
+
+    def test_attach_on_keyless_line_records_new_ref(self):
+        fx = apply.Effects()
+        self.run_ops([{"op": "attach", "ref": "title:インターン資料修正", "key": "rc:abc",
+                       "url": "https://chat.example/abc", "intent": "RC の依頼と同じ"}], effects=fx)
+        self.assertEqual(fx.intents, [{"ref": "rc:abc", "value": "RC の依頼と同じ", "op": "attach",
+                                       "prev_ref": "title:インターン資料修正"}])
+
+
+class UserCliTest(RepoMixin, unittest.TestCase):
+    def run_apply(self, changes, wait=True, extra=("--allow-user",), **env_extra):
+        return super().run_apply(changes, wait, extra, **env_extra)
+
+    def test_user_source_needs_allow_user(self):
+        note = {"source": "user", "ops": [{"op": "note", "ref": "epc#1202", "intent": "i"}]}
+        r = self.run_apply(note, extra=())
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("--allow-user", r.stderr)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+        r = self.run_apply(note, TODO_AI_DENY_USER="1")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("TODO_AI_DENY_USER", r.stderr)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+        self.assertEqual(self.run_apply(note).returncode, 0)
+
+    def test_allow_user_does_not_change_ai(self):
+        r = self.run_apply({"source": "ai", "ops": [{"op": "move", "ref": "epc#1100", "to": "やる"}]},
+                           TODO_AI_DENY_USER="1")
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(self.run_apply(self.move_1202(), TODO_AI_DENY_USER="1").returncode, 0)
+
+    def test_user_reopen_pins_against_done(self):
+        r = self.run_apply({"source": "user", "ops": [{"op": "move", "ref": "epc#1100", "to": "待ち",
+                                                       "intent": "相手の返事待ちに戻す"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        pins = [x for x in self.records() if x["kind"] == "revert_move"]
+        self.assertEqual([{k: v for k, v in x.items() if k != "ts"} for x in pins], [
+            {"ref": "epc#1100", "kind": "revert_move", "value": "待ち", "from": "待ち", "to": "完了", "by": "human"}])
+        for source in ("sync", "ai"):
+            r = self.run_apply({"source": source, "ops": [
+                {"op": "move", "ref": "epc#1100", "to": "完了"},
+                {"op": "set_next", "ref": "epc#1163", "next": f"{source} が来た"}]}, extra=())
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("- [ ] 済んだ [epc#1100]", self.todo.read_text(encoding="utf-8"))
+            self.assertIn("skip: pinned epc#1100", self.head("%b"))
+
+    def test_user_reopen_pin_follows_rename(self):
+        self.commit(BASE.replace("(done: 2026-11-01)\n", "(done: 2026-11-01)\n- [x] 鍵なし (done: 2026-11-02)\n"))
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "move", "ref": "title:鍵なし", "to": "やる", "intent": "i"},
+            {"op": "edit_title", "ref": "title:鍵なし", "title": "鍵なし（続き）", "intent": "i"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual([x["ref"] for x in self.records() if x["kind"] == "revert_move"], ["title:鍵なし（続き）"])
+
+    def test_whitespace_intent_exit2(self):
+        r = self.run_apply({"source": "user", "ops": [{"op": "note", "ref": "epc#1202", "intent": "  　"}]})
+        self.assertEqual(r.returncode, 2)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+
+    def records(self):
+        p = self.repo / "todo-decisions.jsonl"
+        if not p.exists():
+            return []
+        return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()]
+
+    def test_user_edit_title_records_intent_with_prev_ref(self):
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "インターン資料の修正",
+             "intent": "資料は来週の研修用"},
+            {"op": "edit_title", "ref": "epc#1163", "title": "PR を見る", "intent": "題を短く"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = self.todo.read_text(encoding="utf-8")
+        self.assertIn("- [ ] インターン資料の修正\n", text)
+        self.assertIn("- [ ] PR を見る [epc#1163]", text)
+        self.assertTrue(self.head("%s").startswith("todo(user): "))
+        recs = self.records()
+        self.assertEqual([{k: v for k, v in x.items() if k != "ts"} for x in recs], [
+            {"ref": "title:インターン資料の修正", "kind": "intent", "value": "資料は来週の研修用", "by": "human",
+             "op": "edit_title", "prev_ref": "title:インターン資料修正"},
+            {"ref": "epc#1163", "kind": "intent", "value": "題を短く", "by": "human", "op": "edit_title"}])
+        self.assertTrue(all(x["ts"] for x in recs))
+        self.assertEqual(git(self.repo, "status", "--porcelain", "--untracked-files=no").strip(), "")
+
+    def test_user_delete_allowed_ai_delete_rejected(self):
+        r = self.run_apply({"source": "ai", "ops": [{"op": "delete", "ref": "epc#1202", "intent": "不要"}]})
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "delete", "ref": "epc#1202", "intent": "別チケットで対応済み"},
+            {"op": "delete", "ref": "title:坂西さんの対応", "intent": "もう不要"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        text = self.todo.read_text(encoding="utf-8")
+        self.assertNotIn("epc#1202", text)
+        self.assertNotIn("坂西さんの対応", text)
+        self.assertEqual([(x["ref"], x["value"]) for x in self.records()],
+                         [("epc#1202", "別チケットで対応済み"), ("title:坂西さんの対応", "もう不要")])
+
+    def test_user_reopen_cli(self):
+        r = self.run_apply({"source": "user", "ops": [{"op": "move", "ref": "epc#1100", "to": "待ち",
+                                                       "intent": "相手の返事待ちに戻す"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("## 待ち\n- [ ] 坂西さんの対応\n- [ ] 済んだ [epc#1100](https://github.com/x/epc/pull/1100)\n",
+                      self.todo.read_text(encoding="utf-8"))
+
+    def test_user_op_without_intent_exit2(self):
+        for op in ({"op": "move", "ref": "epc#1202", "to": "完了"},
+                   {"op": "note", "ref": "epc#1202", "intent": ""}):
+            r = self.run_apply({"source": "user", "ops": [op]})
+            self.assertEqual(r.returncode, 2, op)
+            self.assertIn("intent", r.stderr)
+            self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+            self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+
+    def test_user_validation_failure_records_no_intent(self):
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "edit_title", "ref": "title:インターン資料修正", "title": "a — next: b", "intent": "i"}]})
+        self.assertEqual(r.returncode, 2)
+        self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+
+    def test_user_lock_records_no_intent(self):
+        (self.repo / ".todo.lock").write_text(f"{os.getpid()}\n")
+        r = self.run_apply({"source": "user", "ops": [{"op": "note", "ref": "epc#1202", "intent": "i"}]})
+        self.assertEqual(r.returncode, 3)
+        self.assertFalse((self.repo / "todo-decisions.jsonl").exists())
+
+    def test_note_records_intent_only(self):
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "note", "ref": "epc#1202", "intent": "A5 は eas#60 のマージ後にレビュー依頼する"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+        self.assertEqual([(x["ref"], x["kind"], x["value"]) for x in self.records()],
+                         [("epc#1202", "intent", "A5 は eas#60 のマージ後にレビュー依頼する")])
+        self.assertEqual(self.head("%s"), "todo(user): 意図1")
+        self.assertEqual(git(self.repo, "show", "--name-only", "--format=", "HEAD").split(), ["todo-decisions.jsonl"])
+
+    def test_user_commit_is_human_origin(self):
+        r = self.run_apply({"source": "user", "ops": [
+            {"op": "add", "section": "やる", "title": "見積もり作成", "intent": "金曜までに"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        from origin import origin_of
+        self.assertEqual(origin_of(self.repo, "todo.md", "見積もり作成"), "human")
+
+    def test_subject_confirm_count(self):
+        r = self.run_apply({"source": "ai", "ops": [], "confirm": confirm_entries(19)})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("確認待ち19", self.head("%s"))
+        self.assertIn("confirm: 19 件", self.head("%b"))
+
+    def test_subject_confirm_cleared(self):
+        self.commit(BASE.replace("## 確認待ち\n", "## 確認待ち\n1. q [policy epc#1202]\n   事実: f\n   選択: A x\n   回答:\n"),
+                    "todo(ai): 確認待ち1")
+        r = self.run_apply({"source": "ai", "ops": [], "confirm": []})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.head("%s"), "todo(ai): 確認待ち0")
 
 
 class InProcessRunTest(RepoMixin, unittest.TestCase):

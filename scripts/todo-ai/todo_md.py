@@ -18,7 +18,8 @@ KEY_RE = re.compile(
     r"|gb:[\w.-]+#\d+"
     r"|rc:[\w-]+(?:#\d+)?"
     r"|mail:[^\s\[\]()]+"
-    r"|wt:[^\s\[\]()]+)"
+    r"|wt:[^\s\[\]()]+"
+    r"|ebpm:No\d+)"
 )
 _KEY_FULL = re.compile(KEY_RE.pattern + r"\Z")
 _LINK_TAIL = re.compile(r"(?:^|(?<= ))\[(" + KEY_RE.pattern + r")\]\(([^\s()]+)\)\Z")

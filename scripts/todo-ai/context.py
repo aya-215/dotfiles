@@ -6,16 +6,27 @@
 
 出力:
   items           やる・待ち・完了の各行（ref, section, title, key, url, next, done, done_date,
-                  origin, added_date, age_days, pinned_to）。pinned_to は人が戻したため
-                  その行を移してはいけないセクション
+                  origin, added_date, age_days, pinned_to, intents, answers）。pinned_to は人が戻したため
+                  その行を移してはいけないセクション。pinned_to・intents・answers は行の系譜（key を付ける前・
+                  改名する前の ref の記録）も含める
   confirm_blocks  確認待ちの各ブロック（number, ref, kind, question, facts, options, answer）。
                   ref/kind は apply.py が書いた問い末尾のタグから読み、question はタグを外したもの。
                   ref, kind, question, facts, options をそのまま confirm に写せば同じ行に戻る
   confirm_errors  確認待ちを全置換できない理由（空でなければ /todo は confirm を出さない）
-  answered_now    回答欄が埋まったブロックの (ref, kind, answer)。apply.py も同じものを記録する
-  answered_refs   判断記録にある確認待ちへの回答（ref, kind, value, ts）
+  answered_now    回答欄が埋まったブロックの (ref, kind, answer, superseded)。apply.py も同じものを記録する
+  answered_refs   判断記録にある確認待ちへの回答（ref, kind, value, ts, superseded）
+  superseded      conflict の回答のうち、問いを書いた後・回答の後に同じ行の意図が記録されたもの（true）。
+                  その回答には従わず、意図と一次データが食い違えばもう一度聞く。conflict 以外は常に false
   rejected_refs   人が消した AI の追加（reject_add）の ref
   archived_keys   todo-archive/*.md に移った完了行の key
+  intents         （各 item）ユーザー指示の意図。新しい順で最大5件の {ts, value}。/todo-edit で消した後に人が
+                  書き戻した行では、消した指示とそれより前の意図を出さない
+  answers         （各 item）その行への確認待ちの回答。新しい順の {kind, value, ts, superseded}
+  intent_refs     意図の記録がある全 ref（prev_ref 含む。todo.md から消えた行も）
+  deleted_refs    ユーザー指示（delete・edit_title の旧 ref）で台帳から消えた ref。/todo は足し直さない
+                  （apply.py も source ai の add/attach を skip する）。今の台帳にある ref（人が書き戻した行）は除く
+  other_intents   items に無く、items の行の系譜にも deleted_refs にも無い ref の意図（まだ台帳に無い key への note 等）。
+                  {ref, intents}。intents は items と同じ形
 pinned_to と rejected_refs には、まだ記録していない戻しも git 履歴から足す（ここでは書かない）。
 """
 import argparse
@@ -34,6 +45,33 @@ import todo_md
 from origin import origin_of
 
 KINDS = apply.KINDS
+MAX_INTENTS = 5
+
+
+def _intent_refs(records: "list[dict]") -> "list[str]":
+    """行が todo.md から消えていても残す（/todo が消した行を足し直さないため）。prev_ref も含む。"""
+    refs = set()
+    for r in records:
+        if r.get("kind") == "intent":
+            refs |= {x for x in (r.get("ref"), r.get("prev_ref")) if isinstance(x, str) and x}
+    return sorted(refs)
+
+
+def _intents(records: "list[dict]", ref: str, present: bool = False) -> "list[dict]":
+    """present（台帳にある行）では、最新の delete より前の意図を出さない。消した後に人が書き戻した行の指示ではない。"""
+    out = []
+    for r in decisions.intents(records, ref):
+        if present and r.get("op") == "delete":
+            break
+        out.append({"ts": r.get("ts"), "value": r.get("value")})
+    return out[:MAX_INTENTS]
+
+
+def _answers(records: "list[dict]", ref: str) -> "list[dict]":
+    return [{"kind": r.get("kind"), "value": r.get("value"), "ts": r.get("ts"),
+             "superseded": decisions.superseded(records, i)} for i, r in decisions.answers(records, ref, KINDS)]
+
+
 _OPTION = re.compile(r"(\S+) (.*?)(（おすすめ）)?\Z")
 
 
@@ -116,8 +154,13 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
                 "added_date": added,
                 "age_days": (t - datetime.date.fromisoformat(added)).days if added else None,
                 "pinned_to": decisions.pinned_sections(records, it.ref),
+                "intents": _intents(records, it.ref, present=True),
+                "answers": _answers(records, it.ref),
             })
 
+    present = {i["ref"] for i in items}
+    deleted = decisions.deleted_refs(records, present)
+    covered = set().union(*(decisions.lineage_refs(records, ref) for ref in present))
     errors: "list[str]" = []
     try:
         blocks = confirm_blocks(doc.confirm)
@@ -127,11 +170,14 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
     else:
         errors += apply.confirm_edit_errors(doc.confirm, _last_written_confirm(repo, name))
     answered_now = []
+    asked_at = (apply.confirm_asked_at(repo, name, Path(decisions_path).absolute())
+                if any(b["answer"] and b["kind"] == "conflict" for b in blocks) else None)
     for b in blocks:
         if b["ref"] is None:
             errors.append(f"確認待ちのブロックに [kind ref] のタグが無い（記録先が分からない）: {b['number']}. {b['question']}")
         elif b["answer"]:
-            answered_now.append({"ref": b["ref"], "kind": b["kind"], "answer": b["answer"]})
+            answered_now.append({"ref": b["ref"], "kind": b["kind"], "answer": b["answer"],
+                                 "superseded": apply.stale_answer(records, b["ref"], b["kind"], asked_at)})
 
     return {
         "today": today,
@@ -140,10 +186,15 @@ def build(todo: Path, decisions_path: Path, today: str) -> dict:
         "confirm_blocks": blocks,
         "confirm_errors": errors,
         "answered_now": answered_now,
-        "answered_refs": [{"ref": r.get("ref"), "kind": r.get("kind"), "value": r.get("value"), "ts": r.get("ts")}
-                          for r in records if r.get("kind") in KINDS],
+        "answered_refs": [{"ref": r.get("ref"), "kind": r.get("kind"), "value": r.get("value"), "ts": r.get("ts"),
+                           "superseded": decisions.superseded(records, i)}
+                          for i, r in enumerate(records) if r.get("kind") in KINDS],
         "rejected_refs": sorted({r["ref"] for r in records if r.get("kind") == "reject_add" and r.get("ref")}),
         "archived_keys": archived_keys(repo),
+        "intent_refs": _intent_refs(records),
+        "deleted_refs": deleted,
+        "other_intents": [{"ref": ref, "intents": _intents(records, ref)} for ref in _intent_refs(records)
+                          if ref not in deleted and ref not in covered],
     }
 
 

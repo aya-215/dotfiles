@@ -156,6 +156,27 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(ctx["rejected_refs"], ["epc#9"])
         self.assertFalse((self.r.dir / "todo-decisions.jsonl").exists())
 
+    def test_intents_on_items_and_intent_refs(self):
+        self.r.commit(doc(yaru="- [ ] 残す [epc#1](https://g/1)\n- [ ] 手書き\n"), "todo(user): base")
+        recs = [{"ts": f"t{i}", "ref": "epc#1", "kind": "intent", "value": f"v{i}", "by": "human"} for i in range(7)]
+        recs.append({"ts": "t9", "ref": "title:新", "kind": "intent", "value": "改名後", "by": "human", "prev_ref": "title:旧"})
+        recs.append({"ts": "t10", "ref": "epc#gone", "kind": "intent", "value": "消した", "by": "human"})
+        ctx = self.build(recs)
+        self.assertEqual([i["value"] for i in self.item(ctx, "epc#1")["intents"]], ["v6", "v5", "v4", "v3", "v2"])
+        self.assertEqual(self.item(ctx, "epc#1")["intents"][0], {"ts": "t6", "value": "v6"})
+        self.assertEqual(self.item(ctx, "title:手書き")["intents"], [])
+        self.assertEqual(ctx["intent_refs"], ["epc#1", "epc#gone", "title:新", "title:旧"])
+
+    def test_deleted_refs_and_other_intents(self):
+        self.r.commit(doc(yaru="- [ ] 残す [epc#1](https://g/1)\n"), "todo(user): base")
+        ctx = self.build([
+            {"ts": "t1", "ref": "epc#gone", "kind": "intent", "value": "消した", "by": "human", "op": "delete"},
+            {"ts": "t2", "ref": "epc#7", "kind": "intent", "value": "来たら待ちへ", "by": "human", "op": "note"},
+            {"ts": "t3", "ref": "epc#1", "kind": "intent", "value": "残す", "by": "human", "op": "set_next"},
+        ])
+        self.assertEqual(ctx["deleted_refs"], ["epc#gone"])
+        self.assertEqual(ctx["other_intents"], [{"ref": "epc#7", "intents": [{"ts": "t2", "value": "来たら待ちへ"}]}])
+
     def test_decision_lists(self):
         self.r.commit(doc(), "todo: base")
         ctx = self.build([
@@ -163,7 +184,7 @@ class BuildTest(unittest.TestCase):
             {"ts": "t2", "ref": "epc#9", "kind": "reject_add", "value": "やる", "by": "human"},
             {"ts": "t3", "ref": "epc#8", "kind": "revert_move", "value": "やる", "by": "human"},
         ])
-        self.assertEqual(ctx["answered_refs"], [{"ref": "title:x", "kind": "is_task", "value": "B", "ts": "t1"}])
+        self.assertEqual(ctx["answered_refs"], [{"ref": "title:x", "kind": "is_task", "value": "B", "ts": "t1", "superseded": False}])
         self.assertEqual(ctx["rejected_refs"], ["epc#9"])
 
     def test_answered_block_becomes_answered_now(self):
@@ -176,7 +197,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual([(b["number"], b["ref"], b["kind"], b["answer"]) for b in ctx["confirm_blocks"]],
                          [(1, "epc#1", "policy", "B で"), (2, "rc:x", "manual", "")])
         self.assertEqual(ctx["confirm_blocks"][0]["question"], "相談する？")
-        self.assertEqual(ctx["answered_now"], [{"ref": "epc#1", "kind": "policy", "answer": "B で"}])
+        self.assertEqual(ctx["answered_now"], [{"ref": "epc#1", "kind": "policy", "answer": "B で", "superseded": False}])
 
     def test_free_text_in_confirm_is_error(self):
         self.r.commit(doc(confirm="メモ: あとで\n"), "todo: base")
