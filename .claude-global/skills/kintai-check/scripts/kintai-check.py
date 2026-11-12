@@ -83,6 +83,7 @@ def summarize(rows, today):
 
     日別値はカンマ区切りで [0]出社 [1]退社 [2]理由 [4]実働(休憩控除後) [18]所定開始。
     今日以降の日は打刻前でも所定時刻が予定値として埋まっているため実績に混ぜない。
+    ただし今日の出社は打刻済みなら実値なので遅刻判定に使う（未打刻なら所定開始と同じ値で遅刻0になる）。
     """
     s = {"days": 0, "work": 0, "plan_days": 0, "plan_work": 0, "lates": []}
     for d, raw in rows:
@@ -90,12 +91,16 @@ def summarize(rows, today):
         cin, note, work, sched_in = f[0], f[2], mins(f[4]), f[18] or "09:30"
         if not cin and not work:
             continue
-        if d >= today:
+        if d > today:
             s["plan_days"] += 1
             s["plan_work"] += work
             continue
-        s["days"] += 1
-        s["work"] += work
+        if d == today:
+            s["plan_days"] += 1
+            s["plan_work"] += work
+        else:
+            s["days"] += 1
+            s["work"] += work
         late = mins(cin) - mins(sched_in) if cin else 0
         if late >= LATE_MIN:
             s["lates"].append((d, cin, late, note))
@@ -104,7 +109,7 @@ def summarize(rows, today):
     return s
 
 
-def print_month(ym, s, is_current):
+def print_month(ym, s, is_current, today):
     print(f"## {ym}")
     verdict = "足りている" if s["diff"] >= 0 else "足りていない"
     print(f"実績: 出社{s['days']}日 実働{fmt(s['work'])[1:]} 基準{fmt(s['days'] * DAY_MIN)[1:]} 差{fmt(s['diff'])} → {verdict}")
@@ -113,7 +118,8 @@ def print_month(ym, s, is_current):
         print(f"見込み: 残り{s['plan_days']}日を勤怠えびすの予定値どおり働いた場合 差{fmt(s['plan_diff'])} → {pv}")
     print(f"30分以上の遅刻: {len(s['lates'])}回（月末で差がマイナスなら、この回数が年度の遅刻カウントに入る）")
     for d, cin, late, note in s["lates"]:
-        print(f"  {d:%m/%d}({WD[d.weekday()]}) 出社{cin} 遅刻{fmt(late)[1:]} {note}")
+        mark = "（今日）" if d == today else ""
+        print(f"  {d:%m/%d}({WD[d.weekday()]}){mark} 出社{cin} 遅刻{fmt(late)[1:]} {note}")
 
 
 def main():
@@ -135,7 +141,7 @@ def main():
     is_current = (y, m) == (today.year, today.month)
 
     s = summarize(fetch_month(url, headers, item_id, y, m), today)
-    print_month(f"{y}/{m:02d}", s, is_current)
+    print_month(f"{y}/{m:02d}", s, is_current, today)
 
     if not args.fiscal_year:
         return
