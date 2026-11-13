@@ -15,7 +15,7 @@ import todo_md
 BALLS = ("mine", "theirs", "maybe_done")
 SOURCES = ("daily", "rocketchat", "github", "gitbucket", "worktree", "sessions", "mail", "ebpm")
 _REQUIRED = ("key", "url", "title", "ball", "next", "evidence", "deadline",
-             "waiting_person", "blocks")
+             "waiting_person", "blocks", "sources")
 _DATE = re.compile(r"\d{4}-\d{2}-\d{2}\Z")
 
 
@@ -65,6 +65,9 @@ def validate_candidates(data) -> "list[str]":
         b = c.get("blocks")
         if "blocks" in c and not (isinstance(b, list) and all(isinstance(x, str) for x in b)):
             errs.append(f"{p}: blocks must be a list of strings")
+        s = c.get("sources")
+        if "sources" in c and not (isinstance(s, list) and s and all(x in SOURCES for x in s)):
+            errs.append(f"{p}: sources must be a non-empty list of {SOURCES}")
     return errs
 
 
