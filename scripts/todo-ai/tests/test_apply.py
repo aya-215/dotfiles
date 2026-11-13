@@ -641,6 +641,21 @@ def confirm_entries(n):
              "options": [{"label": "A", "text": "x"}]} for i in range(n)]
 
 
+class GroupWriteTest(RepoMixin, unittest.TestCase):
+    def test_regroups_on_write(self):
+        (self.repo / "todo-groups.json").write_text(
+            json.dumps({"groups": [{"name": "S", "keys": ["epc#"], "words": []}]}), encoding="utf-8")
+        r = self.run_apply({"source": "ai", "ops": []})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        todo = todo_md.parse(self.todo.read_text(encoding="utf-8"))
+        self.assertEqual([i.title for i in todo.sections["やる"]], ["PR レビュー", "調査", "インターン資料修正"])
+
+    def test_no_groups_file_keeps_order(self):
+        r = self.run_apply({"source": "ai", "ops": []})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.todo.read_text(encoding="utf-8"), BASE)
+
+
 class UserSourceTest(unittest.TestCase):
     def setUp(self):
         self.doc = todo_md.parse(BASE)
