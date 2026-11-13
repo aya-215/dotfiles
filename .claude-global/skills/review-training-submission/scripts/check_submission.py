@@ -170,11 +170,14 @@ def main():
 
     # F04 自己評価
     se = sec.get("自己評価", "")
-    stars = re.search(r"★[★☆]{2}", se)
-    reason = re.sub(r"★[★☆]{2}", "", se).strip()
+    # 「★ ★ ★」のように★の間に空白を入れて書く受講者がいる
+    star_pat = r"★[ \t　]*[★☆][ \t　]*[★☆]"
+    stars = re.search(star_pat, se)
+    reason = re.sub(star_pat, "", se).strip()
     # 理由の中身（何を確かめてどう判断したか）は C6 で見るので、ここでは有無だけ見る
     if stars and reason:
-        row("F04", "自己評価に★と理由", "PASS", f"{stars.group(0)}／理由 {len([l for l in reason.splitlines() if l.strip()])}行")
+        star_text = re.sub(r"[ \t　]", "", stars.group(0))
+        row("F04", "自己評価に★と理由", "PASS", f"{star_text}／理由 {len([l for l in reason.splitlines() if l.strip()])}行")
     else:
         row("F04", "自己評価に★と理由", "FAIL", "★" + ("あり" if stars else "なし") + "・理由" + ("あり" if reason else "なし"))
 
@@ -240,8 +243,17 @@ def main():
     row("F11", "フェーズの README.md を削除していない", "FAIL" if deleted else "PASS", ", ".join(deleted) or "OK")
 
     # F12〜F13 チェックリスト
-    claimed = [task_text(l) for l in sec.get("消化したチェックリスト項目", "").splitlines() if task_state(l)]
-    claimed_none = sec.get("消化したチェックリスト項目", "").strip() in ("なし", "特になし")
+    claimed_sec = sec.get("消化したチェックリスト項目", "")
+    claimed = []
+    for l in claimed_sec.splitlines():
+        if task_state(l):
+            claimed.append(task_text(l))
+        # 雛形のチェックボックスを外し「- 項目」とだけ書く受講者がいる
+        elif re.match(r"^\s*[-*]\s+\S", l):
+            t = re.sub(r"^\s*[-*]\s+", "", l).strip()
+            if t not in ("なし", "特になし"):
+                claimed.append(t)
+    claimed_none = re.sub(r"^\s*[-*]\s+", "", claimed_sec.strip()) in ("なし", "特になし")
     cl_path = f"progress/{track}/checklist.md" if track else None
     if cl_path and cl_path in dict((p, s) for s, p in changes):
         newly = [l for l in added_lines.get(cl_path, []) if l.startswith("| [x]")]

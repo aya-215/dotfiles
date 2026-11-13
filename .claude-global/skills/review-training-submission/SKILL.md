@@ -16,18 +16,23 @@ tamaki-ai-training の提出PRについて、**形式はスクリプトで、内
    - `gitbucket_get_pr` → `head` / `base`
    - 本文の `closes #N` の Issue を**すべて** `gitbucket_get_issue` → `labels` / `body`
    - `gitbucket_list_comments` をPR番号で呼ぶ → メンターのコメントに**依頼**があり、そのコメントより後に head へコミットが積まれていれば**再レビュー**（下の「再レビュー」）。「明日返します」「確認しました」のような依頼の無いコメントは数えない
-3. **meta.json を Write ツールで scratchpad に書く**（形式は `scripts/check_submission.py` の docstring。Issue が複数なら `issue` を配列にする）。body は MCP の値を改変せずに入れる
-4. **形式チェックを実行する**
+3. **レビューするPRの head ブランチに切り替える**（ユーザーがエディタで提出物を開けるように）
+   - 先に `git -C <clone> status --short` を見る。未コミットの変更があれば切り替えずに止め、ユーザーに伝える
+   - `git -C <clone> fetch origin` のあと、`git -C <clone> switch <head>`。ローカルに無ければ `git -C <clone> switch -c <head> --track origin/<head>`
+   - ローカルにあって origin より古ければ `git -C <clone> pull --ff-only`（再レビューでは必ず要る）
+   - 切り替えたことを1行で伝える。レビュー後に元のブランチへは戻さない
+4. **meta.json を Write ツールで scratchpad に書く**（形式は `scripts/check_submission.py` の docstring。Issue が複数なら `issue` を配列にする）。body は MCP の値を改変せずに入れる
+5. **形式チェックを実行する**
    ```bash
    python3 ~/.claude/skills/review-training-submission/scripts/check_submission.py \
      --repo-dir <tamaki-ai-training の clone> --meta <meta.json>
    ```
-   - clone に `refs/review/head` / `refs/review/base` を fetch する（作業ツリーは触らない）
+   - clone に `refs/review/head` / `refs/review/base` を fetch する（スクリプト自体は作業ツリーを触らない）
    - 出力はユーザーに貼らない。FAIL / WARN / UNKNOWN の行だけを「気になる点」に理由付きで書く
    - マージ済みPRを見直すときは `--merge-commit <sha>` を足す
-5. **内容チェック**: `references/criteria.md` の正本を読み、C1〜C8 を判定する。提出物は `git show refs/review/head:<path>` で読む。指摘の重さは criteria.md の「指摘の重さ」で決める
-6. **取り直し**: 結論の直前に `get_issue`（本文）と `git ls-remote origin <head>`（head SHA が `refs/review/head` と同じか）を確認する。変わっていたら 2 からやり直す
-7. **1段目を出して止まる**（下の出力形式）
+6. **内容チェック**: `references/criteria.md` の正本を読み、C1〜C8 を判定する。提出物は切り替えた作業ツリーのファイルを読む。指摘の重さは criteria.md の「指摘の重さ」で決める
+7. **取り直し**: 結論の直前に `get_issue`（本文）と `git ls-remote origin <head>`（head SHA が `refs/review/head` と同じか）を確認する。変わっていたら `pull --ff-only` して 2 からやり直す
+8. **1段目を出して止まる**（下の出力形式）
 
 ## 再レビュー（修正が push された後）
 
@@ -37,7 +42,7 @@ tamaki-ai-training の提出PRについて、**形式はスクリプトで、内
 
 ## 出力形式
 
-判定（手順1〜6）は最初に全部済ませ、表示は次の3段に分けて**この順に1段ずつ**出す。判定の表（形式チェック・C1〜C8）とカリキュラム側の修正候補は出さない。判定の結果は「気になる点」にだけ反映する。
+判定（手順1〜7）は最初に全部済ませ、表示は次の3段に分けて**この順に1段ずつ**出す。判定の表（形式チェック・C1〜C8）とカリキュラム側の修正候補は出さない。判定の結果は「気になる点」にだけ反映する。
 
 進め方:
 - 1回の返答で出すのは1段だけ。段の最後は「次は〈次の段の名前〉です」の1行で止める（どれを出すかは聞かない）
