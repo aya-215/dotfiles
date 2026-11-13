@@ -65,6 +65,14 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/my_ta
 
 0 以外（ファイルが無い・形が違う）なら **ここで止める**。適用はせず、検証エラーを報告して終わる。
 
+0 なら、候補に `self_note_only`（key が無く、根拠が日報・セッション要約だけ）の印を付ける。
+
+```bash
+L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/screen_candidates.py $L/my-tasks-<RUN>.json >$L/screen-<RUN>.json 2>$L/screen-<RUN>.err; echo "exit=$?"; cat $L/screen-<RUN>.err
+```
+
+0 以外なら止めて `screen-<RUN>.err` を報告する。`screen-<RUN>.json` は `my-tasks-<RUN>.json` と同じ形で、各候補に `self_note_only` が足してある。以降は候補をこのファイルから読む。
+
 ### 4. 台帳の材料を作る
 
 収集の間に人が todo.md を触っていてもよいように、手順2と同じコマンドで作り直す。
@@ -90,7 +98,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 | `rejected_refs[]` | 人が消した AI の追加（まだ記録されていない分も含む）。この key は二度と `add`・`attach` しない |
 | `archived_keys[]` | 30日でアーカイブされた完了行の key。完了済みなので `add` しない |
 
-`my-tasks-<RUN>.json` と `context-<RUN>.json` だけを読んで次へ進む。todo.md 本体は読まない（最後の報告で適用後の確認待ち欄を見るときだけ読む）。
+`screen-<RUN>.json` と `context-<RUN>.json` だけを読んで次へ進む。todo.md 本体は読まない（最後の報告で適用後の確認待ち欄を見るときだけ読む）。
 
 ### 5. GitBucket の状態（読み取りのみ）
 
@@ -112,11 +120,12 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
 
 #### 規則
 
-以下の「候補」は `my-tasks-<RUN>.json` の `candidates[]`、「行」は `context-<RUN>.json` の `items[]`。
+以下の「候補」は `screen-<RUN>.json` の `candidates[]`、「行」は `context-<RUN>.json` の `items[]`。
 
 **まず候補をふるい分ける（規則 1〜10 より前に、上から順に見る）。** 落とした候補は op にも確認待ちにもせず、報告の「足さなかった候補」に key（無ければ title）と理由を1行で書く。
 
 - **ユーザーが消した ref**: 候補の key（key が無ければ `title:<候補の title>`）が `deleted_refs` にある → 落とす。人が `/todo-edit` で消した・改名した行で、足し直すと人の判断を覆すため（後片付けにも入れない）。候補の ref が `other_intents` にあれば、その意図に従って扱う（例「来たら待ちへ」なら待ちへ add）
+- **自分のメモだけ（F5）**: `self_note_only: true` の候補 → `add`・`attach`・確認待ちの問い（規則 1・4・4b・7・後片付け）にしない。依頼も Issue/PR も無く、日報の残課題やセッションのメモだけを根拠にした候補は、人が足さないと答えることがほとんどだったため。同じ作業の行が台帳に既にあれば、その行の `set_next`（規則 5）にだけ使ってよい
 - **他人の担当（F2）**: `evidence`・`title`・`next` に、担当・assignee・依頼先が自分以外だと書かれている（他人に割り当てられた Issue/課題DB の課題、他人の PR で自分へのレビュー依頼が無い、他人への依頼を横で見ているだけ等）→ 落とす。`theirs` の候補は、自分の作業（自分の質問・依頼・提出物・自分の PR・自分が出したレビュー（Request Changes 等）への相手の修正）が相手の返答を待っていると `evidence` から読めるときだけ残す。読めなければ落とす。ただし同じ key の行が既にあれば落とさず、その行として規則 2〜5 にかける（足さないだけで、台帳の行の更新は止めない）
 - **後片付け（F4）**: 成果物を作らず、終わった作業の残りを片付けるだけの `mine`/`theirs` の候補（worktree・ブランチ・stash・一時ファイル・検証用のデータや環境の削除、不要になった PR/Issue のクローズ等）を、`title`・`next`・`evidence` の文言で判断する → 規則 1・4・7 にかけず、下の「後片付けの行」に回す。ただし同じ key の行が既にあれば後片付けにせず、その行として規則 2〜5 にかける。迷ったら後片付けにしない（通常の規則にかける）
 - **自分の PR の ball**: 自分の PR の候補の `ball` は `/my-tasks` が `pr_ball.py` で決めた値なので、そのまま使う（`evidence`・`next` の文言から mine/theirs を決め直さない。レビュー依頼済みで相手の反応が無い PR は `theirs` で、待ちに入る）。`evidence` に pr_ball の `unknown`（取得失敗等）が書かれている候補は、その ball を根拠に既存の行をやる⇄待ちへ動かさない
@@ -130,7 +139,7 @@ L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/conte
    - **2件以上（行が複数の作業をまとめた傘の行）**: 紐付けを勧めない（1件だけ紐付けると、その PR が閉じた時点で行ごと完了になり残りを追えなくなる）。問いは1つだけ: ref=行の ref、question=`『<行の title>』に <候補の key を・でつなぐ> を別の行で足す？`（行は ref で分かるので題は縮めてよい。key は `gb:` を外した短い形でよい。例 `『パイロット』に java-source#7・WEB#4・WEB#3 を別の行で足す？`）、facts は空でよい、options=A `足す`（おすすめ）/ B `足さない（今の行で追う）`
    - 傘の行の ref に is_task の回答が `answered_refs` にあれば、その行に当たる候補は問わず回答に従う（A なら規則 1 で add、B なら足さない）。後から当たった新しい候補も同じ
 5. **set_next**: 行の `next` と候補の `next` が違うとき。ただし `origin: human` で `next` が既にある行は上書きしない。自分の PR に未対応のレビュー指摘があるときの next は `N1,N2 残` の形で始める
-6. **still_needed**: やる/待ちの行で、key が `rc:` か `mail:` で始まり、`age_days` が 14 より大きく（null は対象外）、同じ key の候補が今回の `my-tasks-<RUN>.json` に無く、`answered_refs` に `(ref, still_needed)` が無いもの。ただし `my-tasks-<RUN>.json` の `sources_failed` に `rocketchat` があれば `rc:` の行、`mail` があれば `mail:` の行には適用しない（取れなかったことを「進展なし」と扱わない） → `confirm kind=still_needed`（question=`<行の呼び名>はまだ要る？`（呼び名は下の「確認待ちの書き方」の題を写さない規則に従う）、facts=`<age_days>日動きなし`、選択: A `要る` / B `不要（完了にする）`）
+6. **still_needed**: やる/待ちの行で、key が `rc:` か `mail:` で始まり、`age_days` が 14 より大きく（null は対象外）、同じ key の候補が今回の `screen-<RUN>.json` に無く、`answered_refs` に `(ref, still_needed)` が無いもの。ただし `screen-<RUN>.json` の `sources_failed` に `rocketchat` があれば `rc:` の行、`mail` があれば `mail:` の行には適用しない（取れなかったことを「進展なし」と扱わない） → `confirm kind=still_needed`（question=`<行の呼び名>はまだ要る？`（呼び名は下の「確認待ちの書き方」の題を写さない規則に従う）、facts=`<age_days>日動きなし`、選択: A `要る` / B `不要（完了にする）`）
 7. **is_task**: `mine`/`theirs` の候補で、`key` が null のもの、または `key` はあるが `url` が null のもの（`wt:` 等。apply は url の無い key を受け付けない）で、同じ作業の行が無いもの → `confirm kind=is_task`。**`maybe_done` の候補は出さない**（足す作業が残っていないので雑音になる）。ref は key があれば key、無ければ `title:<候補の title>`（ref は候補の題のまま。question の題だけを縮める）。question=`『<候補の題を縮めたもの>』をタスクに足す？`、facts は判断の決め手を1つ（例 `期限 11/14`・`内堀さんの返事待ち`）。options は文言を固定する: A `追加する（<やる|待ち>）`（括弧は ball が mine ならやる、theirs なら待ち）/ B `タスクではない（追加しない）`。おすすめは evidence から選び、迷えば B（表示した追加先と反映先を一致させるため、文言を変えない）。`answered_refs` に同じ ref の is_task があれば出さない。ref の表記が違っても同じ作業への回答が `answered_refs` にあれば出さない
 8. **conflict**: 完了にある行と同じ key の候補が `mine`/`theirs`（元がまだ開いている）→ `confirm kind=conflict`。question=`完了にした<行の呼び名>がまだ開いている。どうする？`、選択は「完了のまま（おすすめ）」と「自分でやるに戻す」。**AI は完了から動かせない**ので、戻す op は回答に基づく op（`by_answer`）でだけ作る
 9. **order**（やる）: 並べ替え後の順を `{"op": "order", "section": "やる", "refs": [...]}` で出す。順位は ① 対応する候補に `waiting_person` がある ② `deadline` が早い（null は後）③ `blocks` が多い ④ 元の順。候補の無い行は元の順のまま後ろ（人の行が下に回るのは今の挙動どおりでよい）。**refs は前の op を適用した後の ref**（attach した行は付けた key、add した行はその key、edit_title した key の無い行は `title:<新しい題>`）。順が変わらなければ出さない。apply は書き出し時に `todo-groups.json` の案件ごとにまとめるので、order は案件の中の順として効く
@@ -261,10 +270,10 @@ exit 2 で `確認待ちの問い・事実・選択が apply の書いた内容�
 2. op の種類ごとの件数: exit 0 で HEAD が `head-before-<RUN>.txt` から変わり、かつ `git -C <台帳のディレクトリ> log -1 --format=%s` の件名が `todo(ai): ` で始まるときだけ、その件名を出す（apply の集計、飛ばした op を除く）。それ以外（HEAD が同じ、人の未コミット分だけが `todo: ` でコミットされた等）は「AI の変更なし」と書き、changes-<RUN>.json の件数を「案」として添える
 3. 新しい確認待ち: exit 0 なら適用後の todo.md の `## 確認待ち` 欄（番号・問い・おすすめ）。それ以外は「変更なし」
 4. 違反・警告: `apply-<RUN>.err`、`confirm_errors`、同期の失敗、GitBucket 未確認、my-tasks で取れなかったデータ源
-5. 足さなかった候補・止めた op: ふるい分けで落とした候補（意図で消された ref・他人の担当）と、意図のために作らなかった op を1行ずつ（key か title と理由）
+5. 足さなかった候補・止めた op: ふるい分けで落とした候補（意図で消された ref・他人の担当）と、意図のために作らなかった op を1行ずつ（key か title と理由）。自分のメモだけ（F5）の候補は1行にまとめる（`自分のメモだけ N件: <題>・<題>…`）
 6. 古くなった回答: `answered_now` の `superseded: true` ごとに1行（ref・問い・ユーザーの回答・新しい意図）と「確認待ちで問い直した」。無ければ出さない
 
-ログは `~/.local/log/todo-ai/<今日>/`。1回の実行のファイルは同じ `<RUN>`（開始時刻 HHMMSS）を持つ（sync-<RUN>.out/err, context-<RUN>.json/err, my-tasks-<RUN>.json, changes-<RUN>.json, head-before-<RUN>.txt, apply-<RUN>.out/err）。
+ログは `~/.local/log/todo-ai/<今日>/`。1回の実行のファイルは同じ `<RUN>`（開始時刻 HHMMSS）を持つ（sync-<RUN>.out/err, context-<RUN>.json/err, my-tasks-<RUN>.json, screen-<RUN>.json/err, changes-<RUN>.json, head-before-<RUN>.txt, apply-<RUN>.out/err）。
 
 ## review モード（`/todo review`）
 

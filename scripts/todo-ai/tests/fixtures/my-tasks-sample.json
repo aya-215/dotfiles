@@ -12,7 +12,8 @@
       "evidence": "reviewer: CHANGES_REQUESTED 2026-11-08 / 未対応コメント2件",
       "deadline": "2026-11-14",
       "waiting_person": null,
-      "blocks": []
+      "blocks": [],
+      "sources": ["github"]
     },
     {
       "key": "rc:Xk3p9aQ2#1",
@@ -23,7 +24,8 @@
       "evidence": "kawai.t: 「スライド3の数値だけ直してもらえますか」 {id:Xk3p9aQ2}",
       "deadline": null,
       "waiting_person": null,
-      "blocks": ["epc#1163"]
+      "blocks": ["epc#1163"],
+      "sources": ["rocketchat"]
     },
     {
       "key": "gb:tamaki-ai-training#42",
@@ -34,7 +36,8 @@
       "evidence": "mori.a が Request Changes を送信済み。以降の push なし",
       "deadline": null,
       "waiting_person": "玉木さん",
-      "blocks": []
+      "blocks": [],
+      "sources": ["gitbucket"]
     },
     {
       "key": null,
@@ -45,7 +48,8 @@
       "evidence": "Sent フォルダに「Re: コンテナ設置のお願い」あり（last:ME）",
       "deadline": null,
       "waiting_person": "合田さん",
-      "blocks": []
+      "blocks": [],
+      "sources": ["mail"]
     },
     {
       "key": null,
@@ -56,7 +60,20 @@
       "evidence": "Sent に「検証環境の利用申請」2026-11-06（last:ME、返信なし）",
       "deadline": null,
       "waiting_person": "情シス",
-      "blocks": []
+      "blocks": [],
+      "sources": ["mail"]
+    },
+    {
+      "key": null,
+      "url": null,
+      "title": "検証スクリプトのコミット先決め",
+      "ball": "mine",
+      "next": "コミット先を決める",
+      "evidence": "日報 11/10: 「コミット先は未確定」",
+      "deadline": null,
+      "waiting_person": null,
+      "blocks": [],
+      "sources": ["daily", "sessions"]
     }
   ]
 }

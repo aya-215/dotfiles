@@ -74,6 +74,14 @@ class ValidateCandidatesTest(unittest.TestCase):
     def test_null_waiting_person_ok_but_wrong_type_not(self):
         self.assertTrue(self.bad(lambda c: c.update(waiting_person=3)))
 
+    def test_sources_required(self):
+        self.assertTrue(self.bad(lambda c: c.pop("sources")))
+
+    def test_sources_must_be_nonempty_list_of_known_names(self):
+        for bad in ([], "github", ["gh"], [1], None):
+            self.assertTrue(self.bad(lambda c: c.update(sources=bad)), bad)
+        self.assertEqual(self.bad(lambda c: c.update(sources=["daily", "rocketchat"])), [])
+
 
 class CliTest(unittest.TestCase):
     def run_cli(self, path):
