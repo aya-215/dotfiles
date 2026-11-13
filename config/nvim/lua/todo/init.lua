@@ -201,7 +201,12 @@ function M.decorate(buf)
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   decorate_confirm(buf, lines, cursor)
   for _, h in ipairs(core.group_headings(lines, M.load_groups())) do
-    vim.api.nvim_buf_set_extmark(buf, M.ns, h.row - 1, 0, { virt_lines = { { { h.text, "Title" } } }, virt_lines_above = true })
+    local virt = { { { h.text, "Title" } } }
+    -- 案件の間を1行空ける。欄の見出し（## やる 等）の直下は詰めたまま
+    if not (lines[h.row - 1] or ""):match("^##%s") then
+      table.insert(virt, 1, {})
+    end
+    vim.api.nvim_buf_set_extmark(buf, M.ns, h.row - 1, 0, { virt_lines = virt, virt_lines_above = true })
   end
   for lnum, line in ipairs(lines) do
     for _, r in ipairs(core.conceal_ranges(line)) do

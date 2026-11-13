@@ -498,8 +498,8 @@ do
   todo.decorate(buf)
   eq(headings(), {
     [6] = { { { "── パイロット (1) ──", "Title" } } },
-    [7] = { { { "── シフトオン (2) ──", "Title" } } },
-  }, "group heading above first row of each run")
+    [7] = { {}, { { "── シフトオン (2) ──", "Title" } } },
+  }, "group heading above first row of each run, blank line between groups")
   vim.fn.writefile({ vim.json.encode({ groups = { { name = "A", keys = { 1176 }, words = {} } } }) }, groups)
   eq(todo.load_groups(), {}, "wrong-typed keys element is rejected")
   vim.fn.writefile({ vim.json.encode({ groups = { { name = "A", keys = {}, words = { 5 } } } }) }, groups)
