@@ -17,6 +17,13 @@ return {
       render_modes = { "n", "c", "t" },
       preset = "lazy",
 
+      -- 描画のたびに concealcursor を '' に戻されるので、todo.md だけカーソル行も隠す
+      on = {
+        render = function(ctx)
+          require("todo").on_render(ctx)
+        end,
+      },
+
       -- LSP補完でcheckbox/calloutを補完可能に
       completions = { lsp = { enabled = true } },
 

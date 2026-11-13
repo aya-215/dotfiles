@@ -248,11 +248,11 @@ local function shown(line)
 end
 
 eq(shown("- [ ] 再レビュー [epc#1210](https://github.com/x/pull/1210) — next: 修正を確認"),
-  "- [ ] 再レビュー epc#1210 → 修正を確認", "conceal link and next on a task line")
+  "- [ ] 再レビュー", "hide key link and next on a task line")
 eq(shown("- [ ] [officeのteams資料修正](https://somu.example/Disp.do?volumeName=00467&itemID=t1)"),
-  "- [ ] officeのteams資料修正", "conceal human link")
+  "- [ ] officeのteams資料修正", "human title link is not a key")
 eq(shown("- [x] 済 [gb:ebase-web#96](http://192.168.0.1:8080/gitbucket/x/pull/96) (done: 2026-11-11)"),
-  "- [x] 済 gb:ebase-web#96 (done: 2026-11-11)", "conceal link on a done line")
+  "- [x] 済 (done: 2026-11-11)", "hide key on a done line, keep the date")
 eq(shown("1. 「パイロット」に足す？（3件） [is_task title:パイロット(P.1、2)]"),
   "1. 「パイロット」に足す？（3件）", "conceal confirm tag")
 eq(shown("12. q [still_needed rc:abc#2]"), "12. q", "conceal confirm tag with 2-digit number")
@@ -262,10 +262,33 @@ eq(shown("1. q [foo epc#1]"), "1. q [foo epc#1]", "unknown kind is not a tag")
 eq(shown("1. q [policy epc#1] あと"), "1. q [policy epc#1] あと", "tag must end the line")
 eq(shown("- [ ] q [policy epc#1]"), "- [ ] q [policy epc#1]", "tag only on numbered lines")
 eq(shown("1. a — next: b"), "1. a — next: b", "next arrow only on task lines")
-eq(shown("- [ ] a — next: b — next: c"), "- [ ] a — next: b → c", "next arrow on the last separator")
+eq(shown("- [ ] a — next: b — next: c"), "- [ ] a — next: b", "next starts at the last separator")
 eq(shown("- [ ] [x](has space)"), "- [ ] [x](has space)", "link url with space is not concealed")
+eq(shown("- [ ] [資料](https://x/y) 確認 [epc#1](https://g/1)"), "- [ ] 資料 確認", "title link kept, key hidden")
+eq(shown("- [ ] a [x](has space) — next: b"), "- [ ] a [x](has space)", "url with space is not a link")
+eq(shown("- [ ] a [foo#1](https://g/1)"), "- [ ] a foo#1", "non-key tail link is a title link")
 eq(shown("   A 足す★ / B 足さない"), "   A 足す★ / B 足さない", "options line untouched")
 eq(core.conceal_ranges("- [ ] plain"), {}, "plain task has no ranges")
+
+-- detail: 隠す範囲と、カーソル行の下に出す文字列
+do
+  local l = "- [ ] 再レビュー [epc#1210](https://g/1210) — next: 修正を確認"
+  eq(core.detail(l), { #"- [ ] 再レビュー", #l, "epc#1210 → 修正を確認" }, "detail key and next")
+end
+eq(core.detail("- [ ] a [rc:abc#2](https://t/x)")[3], "rc:abc#2", "detail key only")
+eq(core.detail("- [ ] a — next: b")[3], "→ b", "detail next only")
+eq(core.detail("- [x] 済 [gb:ebase-web#96](http://h/96) (done: 2026-11-11)")[3], "gb:ebase-web#96", "detail on done line")
+eq(core.detail("- [ ] [資料](https://x/y)"), nil, "no detail for human title link")
+eq(core.detail("- [ ] plain"), nil, "no detail for plain task")
+eq(core.detail("1. q — next: b"), nil, "no detail outside task lines")
+eq(core.detail("## やる"), nil, "no detail on heading")
+
+-- visible_end: 行末まで隠れる範囲の開始（0-based）。カーソルをここより手前に留めるために使う
+eq(core.visible_end("- [ ] 再レビュー [epc#1](https://g/1) — next: b"), #"- [ ] 再レビュー", "visible_end before key and next")
+eq(core.visible_end("- [ ] [資料](https://x/y)"), #"- [ ] [資料", "visible_end before human link url")
+eq(core.visible_end("1. q [is_task title:x]"), #"1. q", "visible_end before confirm tag")
+eq(core.visible_end("- [x] 済 [gb:w#9](http://h/9) (done: 2026-11-11)"), nil, "done date stays visible")
+eq(core.visible_end("- [ ] plain"), nil, "no hidden tail")
 
 -- 表示の conceal はファイルを変えず、カーソル行は生の文字を見せる
 do
@@ -283,7 +306,8 @@ do
   vim.cmd.edit(todo.path)
   local buf = vim.api.nvim_get_current_buf()
   eq(vim.wo.conceallevel, 2, "todo window conceallevel")
-  eq(vim.wo.concealcursor, "", "todo window concealcursor")
+  eq(vim.wo.concealcursor, "n", "todo window conceals cursor line in normal mode")
+  eq(vim.wo.wrap, false, "todo window nowrap")
   local function marked_rows()
     local rows = {}
     for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, {})) do
@@ -291,28 +315,57 @@ do
     end
     return rows
   end
-  vim.api.nvim_win_set_cursor(0, { 1, 0 })
-  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
-  eq({ marked_rows()[4], marked_rows()[9] }, { true, true }, "conceal marks on tag and task rows")
-  vim.api.nvim_win_set_cursor(0, { 9, 0 })
-  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
-  eq({ marked_rows()[4], marked_rows()[9] }, { true, nil }, "cursor row shows raw text")
-  local function arrows()
-    local n = 0
+  local function virt_rows()
+    local rows = {}
     for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
-      if m[4].virt_text then
-        n = n + 1
+      if m[4].virt_lines then
+        table.insert(rows, m[2] + 1)
       end
     end
-    return n
+    return rows
   end
-  vim.api.nvim_win_set_cursor(0, { 1, 0 })
-  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
-  eq(arrows(), 1, "arrow shown while conceallevel > 0")
+  local function virt_lines_at(row)
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
+      if m[2] + 1 == row and m[4].virt_lines then
+        return m[4].virt_lines
+      end
+    end
+  end
+  local function move(row)
+    vim.api.nvim_win_set_cursor(0, { row, 0 })
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  end
+  move(1)
+  eq({ marked_rows()[4], marked_rows()[9] }, { true, true }, "conceal marks on tag and task rows")
+  eq(virt_rows(), {}, "no virt line on preamble row")
+  move(9)
+  eq(marked_rows()[9], true, "cursor task row is also concealed")
+  eq(virt_rows(), { 9 }, "virt line under cursor task row")
+  eq(virt_lines_at(9), { { { "epc#1 → b", "Comment" } } }, "virt line text")
+  move(8)
+  eq(virt_rows(), {}, "no virt line on heading")
+  move(4)
+  eq(virt_rows(), {}, "no virt line on confirm row")
+  move(9)
   vim.wo.conceallevel = 0
-  eq(arrows(), 0, "no arrow when conceallevel is 0 (render-markdown in insert mode)")
-  vim.wo.conceallevel = 3
-  eq(arrows(), 1, "arrow back when conceallevel returns")
+  eq(virt_rows(), {}, "no virt line when conceallevel is 0 (render-markdown in insert mode)")
+  vim.wo.conceallevel = 2
+  eq(virt_rows(), { 9 }, "virt line back when conceallevel returns")
+  -- $ や A→Esc で隠した URL の奥に入ると横にずれて題が見えなくなるので、題の末尾に戻す
+  vim.api.nvim_win_set_cursor(0, { 9, #"- [ ] a [epc#1](https://g/1) — next: b" - 1 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  eq(vim.api.nvim_win_get_cursor(0), { 9, #"- [ ] " }, "cursor clamped to title end")
+  eq(vim.fn.winsaveview().leftcol, 0, "view not scrolled sideways")
+  vim.wo.concealcursor = ""
+  todo.on_render({ buf = buf, win = vim.api.nvim_get_current_win() })
+  eq(vim.wo.concealcursor, "n", "on_render restores concealcursor for todo buffer")
+  vim.cmd.split()
+  vim.cmd.enew()
+  local other = vim.api.nvim_get_current_buf()
+  vim.wo.concealcursor = ""
+  todo.on_render({ buf = other, win = vim.api.nvim_get_current_win() })
+  eq(vim.wo.concealcursor, "", "on_render ignores other buffers")
+  vim.cmd.close()
   vim.cmd("silent write")
   eq(vim.fn.readfile(todo.path), content, "conceal does not change file contents")
   vim.cmd("bwipeout!")
