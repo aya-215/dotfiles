@@ -169,6 +169,27 @@ function M.on_render(ctx)
   vim.api.nvim_set_option_value("concealcursor", "n", { scope = "local", win = ctx.win })
 end
 
+-- nowrap なので、$ や A→Esc でカーソルが隠した URL の奥へ行くと横にずれて題が全部見えなくなる。題の末尾に戻す
+function M.clamp_cursor(buf)
+  if vim.api.nvim_get_mode().mode ~= "n" then
+    return
+  end
+  local win = vim.api.nvim_get_current_win()
+  if vim.api.nvim_win_get_buf(win) ~= buf then
+    return
+  end
+  local row, col = unpack(vim.api.nvim_win_get_cursor(win))
+  local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
+  local stop = require("todo.core").visible_end(line)
+  if not stop or stop == 0 or col < stop then
+    return
+  end
+  vim.api.nvim_win_set_cursor(win, { row, stop - 1 + vim.str_utf_start(line, stop) })
+  if vim.fn.winsaveview().leftcol > 0 then
+    vim.fn.winrestview({ leftcol = 0 })
+  end
+end
+
 local function attach_view(buf)
   local group = vim.api.nvim_create_augroup("todo_md_view", { clear = false })
   vim.api.nvim_clear_autocmds({ group = group, buffer = buf })
@@ -183,7 +204,10 @@ local function attach_view(buf)
   vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved", "CursorMovedI", "ModeChanged" }, {
     group = group,
     buffer = buf,
-    callback = function()
+    callback = function(ev)
+      if ev.event == "CursorMoved" or ev.event == "ModeChanged" then
+        M.clamp_cursor(buf)
+      end
       M.decorate(buf)
     end,
   })

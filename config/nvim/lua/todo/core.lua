@@ -208,6 +208,18 @@ function M.conceal_ranges(line)
   return out
 end
 
+-- 行末まで続く隠し範囲の開始（0-based byte）。無ければ nil
+---@param line string
+---@return integer|nil
+function M.visible_end(line)
+  for _, r in ipairs(M.conceal_ranges(line)) do
+    if r[2] == #line then
+      return r[1]
+    end
+  end
+  return nil
+end
+
 function M.skeleton()
   return { "# TODO", "", M.CONFIRM_HEADING, "", M.TODO_HEADING, "", M.WAIT_HEADING, "", M.DONE_HEADING }
 end

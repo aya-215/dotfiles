@@ -283,6 +283,13 @@ eq(core.detail("- [ ] plain"), nil, "no detail for plain task")
 eq(core.detail("1. q — next: b"), nil, "no detail outside task lines")
 eq(core.detail("## やる"), nil, "no detail on heading")
 
+-- visible_end: 行末まで隠れる範囲の開始（0-based）。カーソルをここより手前に留めるために使う
+eq(core.visible_end("- [ ] 再レビュー [epc#1](https://g/1) — next: b"), #"- [ ] 再レビュー", "visible_end before key and next")
+eq(core.visible_end("- [ ] [資料](https://x/y)"), #"- [ ] [資料", "visible_end before human link url")
+eq(core.visible_end("1. q [is_task title:x]"), #"1. q", "visible_end before confirm tag")
+eq(core.visible_end("- [x] 済 [gb:w#9](http://h/9) (done: 2026-11-11)"), nil, "done date stays visible")
+eq(core.visible_end("- [ ] plain"), nil, "no hidden tail")
+
 -- 表示の conceal はファイルを変えず、カーソル行は生の文字を見せる
 do
   local dir = vim.fn.tempname()
@@ -344,6 +351,11 @@ do
   eq(virt_rows(), {}, "no virt line when conceallevel is 0 (render-markdown in insert mode)")
   vim.wo.conceallevel = 2
   eq(virt_rows(), { 9 }, "virt line back when conceallevel returns")
+  -- $ や A→Esc で隠した URL の奥に入ると横にずれて題が見えなくなるので、題の末尾に戻す
+  vim.api.nvim_win_set_cursor(0, { 9, #"- [ ] a [epc#1](https://g/1) — next: b" - 1 })
+  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  eq(vim.api.nvim_win_get_cursor(0), { 9, #"- [ ] " }, "cursor clamped to title end")
+  eq(vim.fn.winsaveview().leftcol, 0, "view not scrolled sideways")
   vim.wo.concealcursor = ""
   todo.on_render({ buf = buf, win = vim.api.nvim_get_current_win() })
   eq(vim.wo.concealcursor, "n", "on_render restores concealcursor for todo buffer")
