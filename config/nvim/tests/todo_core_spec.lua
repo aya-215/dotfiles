@@ -393,6 +393,12 @@ do
     end
     return out
   end
+  -- 隠した選択肢の行（5）にはカーソルを留めず、動いた向きの隣へ進める
+  move(4)
+  move(5)
+  eq(vim.api.nvim_win_get_cursor(0)[1], 6, "moving down skips hidden options row")
+  move(5)
+  eq(vim.api.nvim_win_get_cursor(0)[1], 4, "moving up skips hidden options row")
   move(9)
   eq(todo.confirm_style, "answer", "default confirm style")
   eq(confirm_marks(), { hidden = { [5] = true }, hint = { [6] = "  A 足す★ / B 足さない" } }, "answer style")

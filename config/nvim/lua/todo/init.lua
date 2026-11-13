@@ -217,6 +217,19 @@ function M.clamp_cursor(buf)
     return
   end
   local row, col = unpack(vim.api.nvim_win_get_cursor(win))
+  local last = vim.b[buf].todo_last_row or row
+  vim.b[buf].todo_last_row = row
+  -- 隠した選択肢の行に留まると j/k が止まったように見え、編集もその行に入るので、動いた向きの隣へ進める
+  if M.confirm_style ~= "off" then
+    for _, b in ipairs(require("todo.core").confirm_blocks(vim.api.nvim_buf_get_lines(buf, 0, -1, false))) do
+      if b.opt == row then
+        row = row < last and b.q or (b.ans or b.q)
+        vim.b[buf].todo_last_row = row
+        vim.api.nvim_win_set_cursor(win, { row, 0 })
+        return
+      end
+    end
+  end
   local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
   local stop = require("todo.core").visible_end(line)
   if not stop or stop == 0 or col < stop then
