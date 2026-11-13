@@ -128,6 +128,42 @@ end
 
 M.ns = vim.api.nvim_create_namespace("todo_conceal")
 
+-- 確認待ちの選択肢の見せ方。answer: 回答の右、cursor: カーソルのある問いだけ回答の右、question: 問いの右、off: 3行のまま
+M.CONFIRM_STYLES = { "answer", "cursor", "question", "off" }
+M.confirm_style = "answer"
+
+function M.cycle_confirm_style()
+  local i = 1
+  for n, name in ipairs(M.CONFIRM_STYLES) do
+    if name == M.confirm_style then
+      i = n
+    end
+  end
+  M.confirm_style = M.CONFIRM_STYLES[i % #M.CONFIRM_STYLES + 1]
+  M.decorate(vim.api.nvim_get_current_buf())
+  vim.notify("確認待ちの表示: " .. M.confirm_style)
+end
+
+local function decorate_confirm(buf, lines, cursor)
+  if M.confirm_style == "off" then
+    return
+  end
+  for _, b in ipairs(require("todo.core").confirm_blocks(lines)) do
+    if b.opt then
+      vim.api.nvim_buf_set_extmark(buf, M.ns, b.opt - 1, 0, { conceal_lines = "" })
+      local last = math.max(b.q, b.opt, b.ans or 0)
+      local in_block = cursor >= b.q and cursor <= last
+      local row = M.confirm_style == "question" and b.q or b.ans
+      if row and (M.confirm_style ~= "cursor" or in_block) then
+        vim.api.nvim_buf_set_extmark(buf, M.ns, row - 1, 0, {
+          virt_text = { { "  " .. b.options, "Comment" } },
+          virt_text_pos = "eol",
+        })
+      end
+    end
+  end
+end
+
 -- 表示だけを変える（ファイルの中身は変えない）。タスク行は題だけを見せ、カーソル行の下に key と next を仮想行で出す。
 -- conceallevel 0（render-markdown の挿入モード）では生の行が見えるので仮想行は付けない
 function M.decorate(buf)
@@ -139,7 +175,9 @@ function M.decorate(buf)
   local cursor = win and vim.api.nvim_win_get_buf(win) == buf and vim.api.nvim_win_get_cursor(win)[1] or -1
   local show_detail = win ~= nil and vim.wo[win].conceallevel > 0 and vim.api.nvim_get_mode().mode:sub(1, 1) ~= "i"
   local core = require("todo.core")
-  for lnum, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  decorate_confirm(buf, lines, cursor)
+  for lnum, line in ipairs(lines) do
     for _, r in ipairs(core.conceal_ranges(line)) do
       vim.api.nvim_buf_set_extmark(buf, M.ns, lnum - 1, r[1], { end_col = r[2], conceal = "" })
     end
@@ -239,6 +277,7 @@ local function attach(buf)
   map("o", function() return new_task(false) end, "TODO: 下に新規タスク", true)
   map("O", function() return new_task(true) end, "TODO: 上に新規タスク", true)
   map("q", quit, "TODO: 保存して閉じる（git commit）")
+  map("<leader>v", M.cycle_confirm_style, "TODO: 確認待ちの表示を切り替え")
 end
 
 function M.setup()

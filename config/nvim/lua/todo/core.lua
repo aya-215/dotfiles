@@ -220,6 +220,34 @@ function M.visible_end(line)
   return nil
 end
 
+-- 確認待ちの問いごとの行番号（1-based）。opt は選択肢の行、ans は回答の行、options は選択肢の文（前後の空白を除く）
+---@param lines string[]
+---@return { q: integer, opt: integer|nil, ans: integer|nil, options: string|nil }[]
+function M.confirm_blocks(lines)
+  local out = {}
+  local start = M.find_confirm_heading(lines)
+  if not start then
+    return out
+  end
+  local cur
+  for i = start + 1, #lines do
+    local line = lines[i]
+    if line:match("^##%s") then
+      break
+    end
+    if line:match("^%d+%. ") then
+      cur = { q = i }
+      table.insert(out, cur)
+    elseif cur and not cur.opt and line:match("^%s+A%s") then
+      cur.opt = i
+      cur.options = vim.trim(line)
+    elseif cur and not cur.ans and line:match("^%s+回答:") then
+      cur.ans = i
+    end
+  end
+  return out
+end
+
 function M.skeleton()
   return { "# TODO", "", M.CONFIRM_HEADING, "", M.TODO_HEADING, "", M.WAIT_HEADING, "", M.DONE_HEADING }
 end
