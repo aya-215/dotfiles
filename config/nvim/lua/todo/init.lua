@@ -128,6 +128,22 @@ end
 
 M.ns = vim.api.nvim_create_namespace("todo_conceal")
 
+-- 確認待ちの選択肢の行は隠し、カーソルのある問いだけ 回答: の右に出す
+local function decorate_confirm(buf, lines, cursor)
+  for _, b in ipairs(require("todo.core").confirm_blocks(lines)) do
+    if b.opt then
+      vim.api.nvim_buf_set_extmark(buf, M.ns, b.opt - 1, 0, { conceal_lines = "" })
+      local last = math.max(b.q, b.opt, b.ans or 0)
+      if b.ans and cursor >= b.q and cursor <= last then
+        vim.api.nvim_buf_set_extmark(buf, M.ns, b.ans - 1, 0, {
+          virt_text = { { "  " .. b.options, "Comment" } },
+          virt_text_pos = "eol",
+        })
+      end
+    end
+  end
+end
+
 -- 表示だけを変える（ファイルの中身は変えない）。タスク行は題だけを見せ、カーソル行の下に key と next を仮想行で出す。
 -- conceallevel 0（render-markdown の挿入モード）では生の行が見えるので仮想行は付けない
 function M.decorate(buf)
@@ -139,7 +155,9 @@ function M.decorate(buf)
   local cursor = win and vim.api.nvim_win_get_buf(win) == buf and vim.api.nvim_win_get_cursor(win)[1] or -1
   local show_detail = win ~= nil and vim.wo[win].conceallevel > 0 and vim.api.nvim_get_mode().mode:sub(1, 1) ~= "i"
   local core = require("todo.core")
-  for lnum, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
+  local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+  decorate_confirm(buf, lines, cursor)
+  for lnum, line in ipairs(lines) do
     for _, r in ipairs(core.conceal_ranges(line)) do
       vim.api.nvim_buf_set_extmark(buf, M.ns, lnum - 1, r[1], { end_col = r[2], conceal = "" })
     end
@@ -179,6 +197,17 @@ function M.clamp_cursor(buf)
     return
   end
   local row, col = unpack(vim.api.nvim_win_get_cursor(win))
+  local last = vim.b[buf].todo_last_row or row
+  vim.b[buf].todo_last_row = row
+  -- 隠した選択肢の行に留まると j/k が止まったように見え、編集もその行に入るので、動いた向きの隣へ進める
+  for _, b in ipairs(require("todo.core").confirm_blocks(vim.api.nvim_buf_get_lines(buf, 0, -1, false))) do
+    if b.opt == row then
+      row = row < last and b.q or (b.ans or b.q)
+      vim.b[buf].todo_last_row = row
+      vim.api.nvim_win_set_cursor(win, { row, 0 })
+      return
+    end
+  end
   local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
   local stop = require("todo.core").visible_end(line)
   if not stop or stop == 0 or col < stop then

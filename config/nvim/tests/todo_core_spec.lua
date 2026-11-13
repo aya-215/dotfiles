@@ -283,6 +283,20 @@ eq(core.detail("- [ ] plain"), nil, "no detail for plain task")
 eq(core.detail("1. q — next: b"), nil, "no detail outside task lines")
 eq(core.detail("## やる"), nil, "no detail on heading")
 
+-- confirm_blocks: 確認待ちの問いごとの行番号（1-based）と選択肢の文
+eq(core.confirm_blocks({
+  "# TODO", "", "## 確認待ち",
+  "1. q1 [is_task x]", "   A 足す★ / B 足さない", "   回答:",
+  "2. q2 [policy y]", "   A x / B y★", "   回答: B", "",
+  "## やる", "   A not in confirm", "   回答:",
+}), {
+  { q = 4, opt = 5, ans = 6, options = "A 足す★ / B 足さない" },
+  { q = 7, opt = 8, ans = 9, options = "A x / B y★" },
+}, "confirm_blocks rows and options")
+eq(core.confirm_blocks({ "## 確認待ち", "1. q", "   回答:", "## やる" }),
+  { { q = 2, ans = 3 } }, "confirm block without options line")
+eq(core.confirm_blocks({ "## やる", "- [ ] a" }), {}, "no confirm area")
+
 -- visible_end: 行末まで隠れる範囲の開始（0-based）。カーソルをここより手前に留めるために使う
 eq(core.visible_end("- [ ] 再レビュー [epc#1](https://g/1) — next: b"), #"- [ ] 再レビュー", "visible_end before key and next")
 eq(core.visible_end("- [ ] [資料](https://x/y)"), #"- [ ] [資料", "visible_end before human link url")
@@ -366,6 +380,31 @@ do
   todo.on_render({ buf = other, win = vim.api.nvim_get_current_win() })
   eq(vim.wo.concealcursor, "", "on_render ignores other buffers")
   vim.cmd.close()
+  -- 確認待ちの選択肢の表示パターン（行4: 問い、5: 選択肢、6: 回答）
+  local function confirm_marks()
+    local out = { hidden = {}, hint = {} }
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
+      if m[4].conceal_lines then
+        out.hidden[m[2] + 1] = true
+      end
+      if m[4].virt_text and m[4].virt_text_pos == "eol" then
+        out.hint[m[2] + 1] = m[4].virt_text[1][1]
+      end
+    end
+    return out
+  end
+  -- 隠した選択肢の行（5）にはカーソルを留めず、動いた向きの隣へ進める
+  move(4)
+  move(5)
+  eq(vim.api.nvim_win_get_cursor(0)[1], 6, "moving down skips hidden options row")
+  move(5)
+  eq(vim.api.nvim_win_get_cursor(0)[1], 4, "moving up skips hidden options row")
+  move(9)
+  eq(confirm_marks(), { hidden = { [5] = true }, hint = {} }, "options hidden, no hint away from block")
+  move(6)
+  eq(confirm_marks(), { hidden = { [5] = true }, hint = { [6] = "  A 足す★ / B 足さない" } }, "hint after 回答 in cursor block")
+  move(4)
+  eq(confirm_marks().hint, { [6] = "  A 足す★ / B 足さない" }, "hint shown when cursor on question row")
   vim.cmd("silent write")
   eq(vim.fn.readfile(todo.path), content, "conceal does not change file contents")
   vim.cmd("bwipeout!")
