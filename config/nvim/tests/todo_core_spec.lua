@@ -248,11 +248,11 @@ local function shown(line)
 end
 
 eq(shown("- [ ] 再レビュー [epc#1210](https://github.com/x/pull/1210) — next: 修正を確認"),
-  "- [ ] 再レビュー epc#1210 → 修正を確認", "conceal link and next on a task line")
+  "- [ ] 再レビュー", "hide key link and next on a task line")
 eq(shown("- [ ] [officeのteams資料修正](https://somu.example/Disp.do?volumeName=00467&itemID=t1)"),
-  "- [ ] officeのteams資料修正", "conceal human link")
+  "- [ ] officeのteams資料修正", "human title link is not a key")
 eq(shown("- [x] 済 [gb:ebase-web#96](http://192.168.0.1:8080/gitbucket/x/pull/96) (done: 2026-11-11)"),
-  "- [x] 済 gb:ebase-web#96 (done: 2026-11-11)", "conceal link on a done line")
+  "- [x] 済 (done: 2026-11-11)", "hide key on a done line, keep the date")
 eq(shown("1. 「パイロット」に足す？（3件） [is_task title:パイロット(P.1、2)]"),
   "1. 「パイロット」に足す？（3件）", "conceal confirm tag")
 eq(shown("12. q [still_needed rc:abc#2]"), "12. q", "conceal confirm tag with 2-digit number")
@@ -262,10 +262,26 @@ eq(shown("1. q [foo epc#1]"), "1. q [foo epc#1]", "unknown kind is not a tag")
 eq(shown("1. q [policy epc#1] あと"), "1. q [policy epc#1] あと", "tag must end the line")
 eq(shown("- [ ] q [policy epc#1]"), "- [ ] q [policy epc#1]", "tag only on numbered lines")
 eq(shown("1. a — next: b"), "1. a — next: b", "next arrow only on task lines")
-eq(shown("- [ ] a — next: b — next: c"), "- [ ] a — next: b → c", "next arrow on the last separator")
+eq(shown("- [ ] a — next: b — next: c"), "- [ ] a — next: b", "next starts at the last separator")
 eq(shown("- [ ] [x](has space)"), "- [ ] [x](has space)", "link url with space is not concealed")
+eq(shown("- [ ] [資料](https://x/y) 確認 [epc#1](https://g/1)"), "- [ ] 資料 確認", "title link kept, key hidden")
+eq(shown("- [ ] a [x](has space) — next: b"), "- [ ] a [x](has space)", "url with space is not a link")
+eq(shown("- [ ] a [foo#1](https://g/1)"), "- [ ] a foo#1", "non-key tail link is a title link")
 eq(shown("   A 足す★ / B 足さない"), "   A 足す★ / B 足さない", "options line untouched")
 eq(core.conceal_ranges("- [ ] plain"), {}, "plain task has no ranges")
+
+-- detail: 隠す範囲と、カーソル行の下に出す文字列
+do
+  local l = "- [ ] 再レビュー [epc#1210](https://g/1210) — next: 修正を確認"
+  eq(core.detail(l), { #"- [ ] 再レビュー", #l, "epc#1210 → 修正を確認" }, "detail key and next")
+end
+eq(core.detail("- [ ] a [rc:abc#2](https://t/x)")[3], "rc:abc#2", "detail key only")
+eq(core.detail("- [ ] a — next: b")[3], "→ b", "detail next only")
+eq(core.detail("- [x] 済 [gb:ebase-web#96](http://h/96) (done: 2026-11-11)")[3], "gb:ebase-web#96", "detail on done line")
+eq(core.detail("- [ ] [資料](https://x/y)"), nil, "no detail for human title link")
+eq(core.detail("- [ ] plain"), nil, "no detail for plain task")
+eq(core.detail("1. q — next: b"), nil, "no detail outside task lines")
+eq(core.detail("## やる"), nil, "no detail on heading")
 
 -- 表示の conceal はファイルを変えず、カーソル行は生の文字を見せる
 do

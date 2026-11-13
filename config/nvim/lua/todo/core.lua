@@ -121,17 +121,78 @@ local function tag_start(line)
   end
 end
 
--- 表示で隠す範囲。{ 開始, 終了 } は 0-based の半開区間（byte）、3番目があればその文字を代わりに見せる。
+-- scripts/todo-ai/todo_md.py の KEY_RE と同じ種類。行末のリンクのうち中身が key のものだけを key とみなす
+local KEY_PATTERNS = {
+  "^epc#%d+$", "^emm#%d+$", "^eae#%d+$", "^eas#%d+$",
+  "^gb:[^%s%[%]()#]+#%d+$",
+  "^rc:[%w_%-]+$", "^rc:[%w_%-]+#%d+$",
+  "^mail:[^%s%[%]()]+$", "^wt:[^%s%[%]()]+$",
+  "^ebpm:No%d+$",
+}
+
+local function is_key(s)
+  for _, p in ipairs(KEY_PATTERNS) do
+    if s:match(p) then
+      return true
+    end
+  end
+  return false
+end
+
+-- タスク行の key のリンクと next をまとめて隠す範囲と、代わりにカーソル行の下へ出す文字列。
+-- { 開始, 終了 } は 0-based の半開区間（byte）。末尾の (done: 日付) は範囲に含めない。
+---@param line string
+---@return { [1]: integer, [2]: integer, [3]: string }|nil
+function M.detail(line)
+  if not M.parse(line) then
+    return nil
+  end
+  local body_start = #line:match("^%s*%- %[[ xX]%]%s?") + 1
+  local stop = #line
+  local d = line:find(" %(done: %d%d%d%d%-%d%d%-%d%d%)$")
+  if d then
+    stop = d - 1
+  end
+  local head = line:sub(1, stop)
+  local cut, nxt
+  local i = head:find(M.NEXT_SEP, body_start, true)
+  while i do
+    cut = i - 1
+    i = head:find(M.NEXT_SEP, i + 1, true)
+  end
+  if cut then
+    nxt = head:sub(cut + #M.NEXT_SEP + 1)
+    head = head:sub(1, cut)
+  end
+  local key
+  local s, k = head:match("()%[([^%[%]]*)%]%([^%s()]+%)$")
+  if s and is_key(k) and (s == body_start or head:sub(s - 1, s - 1) == " ") then
+    key = k
+    cut = s == body_start and s - 1 or s - 2
+  end
+  if not cut then
+    return nil
+  end
+  local text = key or ""
+  if nxt then
+    text = (key and key .. " " or "") .. M.NEXT_ARROW .. " " .. nxt
+  end
+  return { cut, stop, text }
+end
+
+-- 表示で隠す範囲。{ 開始, 終了 } は 0-based の半開区間（byte）。
 -- ファイルの中身は変えず、nvim の conceal に渡すためだけに使う。
 ---@param line string
----@return { [1]: integer, [2]: integer, [3]: string|nil }[]
+---@return { [1]: integer, [2]: integer }[]
 function M.conceal_ranges(line)
   local out = {}
   local tag = tag_start(line)
+  local detail = M.detail(line)
+  local limit = (tag and tag - 1) or (detail and detail[1]) or #line
   local init = 1
   while true do
     local s, e, paren = line:find("%[[^%[%]]*%]()%([^%s()]+%)", init)
-    if not s or (tag and s >= tag) then
+    if not s or s > limit then
       break
     end
     table.insert(out, { s - 1, s })
@@ -141,20 +202,9 @@ function M.conceal_ranges(line)
   if tag then
     table.insert(out, { tag - 1, #line })
   end
-  if M.parse(line) then
-    local last
-    local i = line:find(M.NEXT_SEP, 1, true)
-    while i do
-      last = i
-      i = line:find(M.NEXT_SEP, i + 1, true)
-    end
-    if last then
-      table.insert(out, { last, last + #M.NEXT_SEP - 2, M.NEXT_ARROW })
-    end
+  if detail then
+    table.insert(out, { detail[1], detail[2] })
   end
-  table.sort(out, function(a, b)
-    return a[1] < b[1]
-  end)
   return out
 end
 
