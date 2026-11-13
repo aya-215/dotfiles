@@ -8,7 +8,7 @@ description: ユーザーの指示で業務TODO（~/memo/todo.md）を直し、�
 ユーザーの指示どおりに `~/memo/todo.md` を直し、**なぜ直したか（意図）** を `todo-decisions.jsonl` に残す。
 意図は次の `/todo` が context の `intents` / `deleted_refs` / `other_intents` として読み、意図に反して行を完了・削除・上書きしない。間違ってクローズすることも、消した行が残り続けることも防ぐ。
 
-書き込みは `apply.py` だけが行う。Claude は変更案 JSON を作るだけで、todo.md・`todo-decisions.jsonl` を Edit/Write で直接書かない。
+書き込みは `apply.py` が行う（確認待ちの回答欄は `/todo` の「実行後の指摘」の `answer_set.py`）。Claude は変更案 JSON を作るだけで、todo.md・`todo-decisions.jsonl` を Edit/Write で直接書かない。
 
 このスキルは **対話専用で、質問してよい唯一の todo 系スキル**。曖昧なら聞く、実行前に必ず OK をもらう。
 
@@ -64,7 +64,7 @@ L=~/.local/log/todo-ai/$(date +%F); mkdir -p $L; python3 -I ~/.dotfiles/scripts/
 - どの文字列にも改行を入れない。`title`・`next` に ` — next: ` と `](` を入れない。`title` の前後に空白を入れない
 - `move` の `to` が今のセクションと同じなら op にしない
 - `edit_title` した行は、新しい ref に意図が付く。key の無い行（ref が `title:`）だけ、元の ref が `deleted_refs` に入る（key のある行は ref が変わらない）
-- `confirm`・`answered` キーは入れない（user は確認待ちを書き換えられない）。確認待ちへの回答は、人が todo.md の回答欄に書く
+- `confirm`・`answered` キーは入れない（user は確認待ちを書き換えられない）。確認待ちへの回答は、人が todo.md の回答欄に書くか、`/todo` の「実行後の指摘」の answer_set.py で書く
 
 #### 操作ごとにユーザーへ伝えること
 

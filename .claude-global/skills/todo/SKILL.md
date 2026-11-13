@@ -6,13 +6,13 @@ description: 業務TODO（~/memo/todo.md）を一次データから AI が更新
 # /todo
 
 `~/memo/todo.md` を、一次データ（`/my-tasks` の収集結果・GitHub・GitBucket）に合わせて更新する。
-書き込みは `apply.py` だけが行う。Claude は変更案 JSON を作るだけで、todo.md を直接編集しない。
+書き込みは `apply.py` が行う（対話で確認待ちに回答するときだけ `answer_set.py` が回答欄を書く）。Claude は変更案 JSON を作るだけで、todo.md を直接編集しない。
 
-**質問しない。** 無人実行（`claude -p "/todo"`）でも同じ手順で最後まで走れるようにする。迷ったら「何もしない」か「確認待ちに出す」側に倒す。AskUserQuestion は使わない。
+**質問しない。** 無人実行（`claude -p "/todo"`）でも同じ手順で最後まで走れるようにする。迷ったら「何もしない」か「確認待ちに出す」側に倒す。AskUserQuestion は使わない（報告の後の「実行後の指摘」で `/todo-edit` に回したときは、その手順の確認に従う）。
 
 ## やらないこと
 
-- todo.md・`todo-decisions.jsonl`・`todo-archive/` を Edit/Write で直接書く（書くのは apply.py だけ）
+- todo.md・`todo-decisions.jsonl`・`todo-archive/` を Edit/Write で直接書く（書くのは apply.py と、確認待ちの回答欄だけは answer_set.py）
 - 外部アクション（PR/Issue コメント、Rocket Chat 送信、Issue 作成、`mcp__gitbucket__` の書き込み系）
 - 過去の実行ログ（`~/.local/log/todo-ai/` のうち今回の `<RUN>` 以外のファイル）・過去の `/my-tasks` 出力を読む。AI の過去の推測が事実として戻ってくるため（例外は `review` モードの review.py だけ）
 - todo.md をタスクの根拠にする。台帳は重複検出と人の行の把握にだけ使い、それも context-<RUN>.json 経由で見る
@@ -274,6 +274,31 @@ exit 2 で `確認待ちの問い・事実・選択が apply の書いた内容�
 6. 古くなった回答: `answered_now` の `superseded: true` ごとに1行（ref・問い・ユーザーの回答・新しい意図）と「確認待ちで問い直した」。無ければ出さない
 
 ログは `~/.local/log/todo-ai/<今日>/`。1回の実行のファイルは同じ `<RUN>`（開始時刻 HHMMSS）を持つ（sync-<RUN>.out/err, context-<RUN>.json/err, my-tasks-<RUN>.json, screen-<RUN>.json/err, changes-<RUN>.json, head-before-<RUN>.txt, apply-<RUN>.out/err）。
+
+## 実行後の指摘（対話のときだけ）
+
+報告の後にユーザーが指摘したら、種類ごとに次の手順へ回す。ここでも todo.md を Edit/Write で直接書かない。無人実行には無い。
+
+| 指摘 | 回す先 |
+|---|---|
+| 確認待ちへの回答（「1 は A」「3 はもう済んでる」） | 下の answer_set.py |
+| 行の直し（完了にする・消す・題や next を変える・移す） | `/todo-edit` を起動し、その手順（意図を付けた変更案を見せて OK をもらう）で直す |
+| 規則・収集への指摘（「この種の候補は要らない」） | review モードの 2〜4 と同じく、層を分けて直す先と修正案を出し、OK をもらうまで止まる |
+
+### 確認待ちへの回答
+
+`ref`・`kind` は、ユーザーに見せた確認待ち欄のその番号の行の末尾のタグ（`[<kind> <ref>]`）から取る（見せた後に確認待ちが書き換わっていても、answer_set.py がタグで探すので別の問いに書かない）。会話に確認待ち欄が無ければ、`L=~/.local/log/todo-ai/$(date +%F); python3 -I ~/.dotfiles/scripts/todo-ai/context.py >$L/context-after-$(date +%H%M%S).json` で読み（実行ログの `context-<RUN>.json` は上書きしない）、その番号の `question` をユーザーに見せて合っているか確かめてから書く。`answer` はユーザーの答え（選択肢の文字ならその1文字、文ならその文）。
+
+```bash
+python3 -I ~/.dotfiles/scripts/todo-ai/answer_set.py --answers '[{"ref": "<ref>", "kind": "<kind>", "answer": "A"}]'; echo "exit=$?"
+```
+
+| 終了コード | 意味 | すること |
+|---|---|---|
+| 0 | 回答欄に書いて `todo: ` でコミットした | 標準出力の最後の行をそのまま伝える（`反映: <件名>` なら選択肢の変更案を反映した。`反映なし（次の /todo に回る）` なら文の回答・変更案の無い問いで、次の /todo が読む） |
+| 4 | 回答欄は書いたが answers.py が失敗した | 標準出力の `反映失敗:` の行と、そこにあるログの場所を伝える。回答は残っているので次の /todo が読む |
+| 2 | 指定の形・問いが無い・回答済みで違う回答が入っている・無人実行（`TODO_AI_DENY_USER`）。何も書いていない | stderr をそのまま伝える |
+| 3 | nvim で編集中。何も書いていない | 「ポップアップを閉じてからもう一度」と伝える |
 
 ## review モード（`/todo review`）
 
