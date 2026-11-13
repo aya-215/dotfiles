@@ -297,6 +297,52 @@ eq(core.confirm_blocks({ "## 確認待ち", "1. q", "   回答:", "## やる" })
   { { q = 2, ans = 3 } }, "confirm block without options line")
 eq(core.confirm_blocks({ "## やる", "- [ ] a" }), {}, "no confirm area")
 
+-- 案件の判定・並べ替え・見出し（scripts/todo-ai/todo_md.py の group_of・regroup と同じ規則）
+local G = {
+  { name = "パイロット", keys = { "gb:WEB#" }, words = { "パイロット" } },
+  { name = "共通", keys = { "epc#1176" }, words = {} },
+  { name = "シフトオン", keys = { "epc#" }, words = { "車両" } },
+}
+eq(core.group_of("- [ ] バナー [gb:WEB#3](u)", G), "パイロット", "group by key prefix")
+eq(core.group_of("- [ ] パイロット P.11 [rc:abc](u)", G), "パイロット", "group by words")
+eq(core.group_of("- [ ] 商品カード [epc#1176](u)", G), "共通", "exact key wins when listed first")
+eq(core.group_of("- [ ] x [epc#11760](u)", G), "シフトオン", "exact key is not a prefix")
+eq(core.group_of("- [ ] a [rc:abc](u) — next: 車両を見る", G), "その他", "next is not matched")
+eq(core.group_of("- [ ] 車両 [資料](https://x/y)", G), "シフトオン", "words in human link title")
+eq(core.group_of("- [x] 済パイロット (done: 2026-11-01)", G), "パイロット", "done line")
+eq(core.group_of("## やる", G), nil, "not a task line")
+do
+  local lines = {
+    "## 確認待ち", "1. q [is_task x]", "", "## やる",
+    "- [ ] その他1", "- [ ] シフト1 [epc#1](u)", "", "- [ ] パイロット1", "- [ ] シフト2 [epc#2](u)", "",
+    "## 待ち", "- [ ] 待ちその他", "- [ ] 待ち車両", "",
+    "## 完了", "- [x] 済その他 (done: 2026-11-01)", "- [x] 済パイロット (done: 2026-11-01)",
+  }
+  eq(core.regroup(lines, G), {
+    "## 確認待ち", "1. q [is_task x]", "", "## やる",
+    "- [ ] パイロット1", "- [ ] シフト1 [epc#1](u)", "- [ ] シフト2 [epc#2](u)", "- [ ] その他1", "", "",
+    "## 待ち", "- [ ] 待ち車両", "- [ ] 待ちその他", "",
+    "## 完了", "- [x] 済その他 (done: 2026-11-01)", "- [x] 済パイロット (done: 2026-11-01)",
+  }, "regroup todo and wait sections, keep blanks after tasks")
+  eq(core.regroup(lines, {}), lines, "regroup without groups keeps lines")
+  local sorted = {
+    "## やる", "- [ ] パイロット1", "- [ ] シフト1 [epc#1](u)", "- [ ] シフト2 [epc#2](u)", "- [ ] その他1", "",
+    "## 待ち", "- [ ] 待ち車両", "", "## 完了", "- [x] 済パイロット (done: 2026-11-01)",
+  }
+  eq(core.group_headings(sorted, G), {
+    { row = 2, text = "── パイロット (1) ──" },
+    { row = 3, text = "── シフトオン (2) ──" },
+    { row = 5, text = "── その他 (1) ──" },
+    { row = 8, text = "── シフトオン (1) ──" },
+  }, "headings above each run, per section, not in done")
+  eq(core.group_headings({ "## やる", "- [ ] 車両", "- [ ] パイロット", "- [ ] 車両2", "## 待ち", "## 完了" }, G), {
+    { row = 2, text = "── シフトオン (1) ──" },
+    { row = 3, text = "── パイロット (1) ──" },
+    { row = 4, text = "── シフトオン (1) ──" },
+  }, "unsorted lines repeat headings with run counts")
+  eq(core.group_headings(sorted, {}), {}, "no headings without groups")
+end
+
 -- visible_end: 行末まで隠れる範囲の開始（0-based）。カーソルをここより手前に留めるために使う
 eq(core.visible_end("- [ ] 再レビュー [epc#1](https://g/1) — next: b"), #"- [ ] 再レビュー", "visible_end before key and next")
 eq(core.visible_end("- [ ] [資料](https://x/y)"), #"- [ ] [資料", "visible_end before human link url")

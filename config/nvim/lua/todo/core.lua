@@ -139,45 +139,175 @@ local function is_key(s)
   return false
 end
 
+-- タスク行を題・key・next に分ける。apply.py の _parse_item と同じ順（done → 最後の next → 行末の key のリンク）
+local function split_task(line)
+  if not M.parse(line) then
+    return nil
+  end
+  local t = { body_start = #line:match("^%s*%- %[[ xX]%]%s?") + 1, stop = #line }
+  local d = line:find(" %(done: %d%d%d%d%-%d%d%-%d%d%)$")
+  if d then
+    t.stop = d - 1
+  end
+  local head = line:sub(1, t.stop)
+  local i = head:find(M.NEXT_SEP, t.body_start, true)
+  while i do
+    t.cut = i - 1
+    i = head:find(M.NEXT_SEP, i + 1, true)
+  end
+  if t.cut then
+    t.next = head:sub(t.cut + #M.NEXT_SEP + 1)
+    head = head:sub(1, t.cut)
+  end
+  local s, k = head:match("()%[([^%[%]]*)%]%([^%s()]+%)$")
+  if s and is_key(k) and (s == t.body_start or head:sub(s - 1, s - 1) == " ") then
+    t.key = k
+    t.cut = s == t.body_start and s - 1 or s - 2
+  end
+  t.title = line:sub(t.body_start, t.cut or t.stop)
+  return t
+end
+
 -- タスク行の key のリンクと next をまとめて隠す範囲と、代わりにカーソル行の下へ出す文字列。
 -- { 開始, 終了 } は 0-based の半開区間（byte）。末尾の (done: 日付) は範囲に含めない。
 ---@param line string
 ---@return { [1]: integer, [2]: integer, [3]: string }|nil
 function M.detail(line)
-  if not M.parse(line) then
+  local t = split_task(line)
+  if not t or not t.cut then
     return nil
   end
-  local body_start = #line:match("^%s*%- %[[ xX]%]%s?") + 1
-  local stop = #line
-  local d = line:find(" %(done: %d%d%d%d%-%d%d%-%d%d%)$")
-  if d then
-    stop = d - 1
+  local text = t.key or ""
+  if t.next then
+    text = (t.key and t.key .. " " or "") .. M.NEXT_ARROW .. " " .. t.next
   end
-  local head = line:sub(1, stop)
-  local cut, nxt
-  local i = head:find(M.NEXT_SEP, body_start, true)
-  while i do
-    cut = i - 1
-    i = head:find(M.NEXT_SEP, i + 1, true)
+  return { t.cut, t.stop, text }
+end
+
+M.OTHER_GROUP = "その他"
+
+local function key_hit(key, pat)
+  if not key then
+    return false
   end
-  if cut then
-    nxt = head:sub(cut + #M.NEXT_SEP + 1)
-    head = head:sub(1, cut)
+  if pat:match("[#:]$") then
+    return key:sub(1, #pat) == pat
   end
-  local key
-  local s, k = head:match("()%[([^%[%]]*)%]%([^%s()]+%)$")
-  if s and is_key(k) and (s == body_start or head:sub(s - 1, s - 1) == " ") then
-    key = k
-    cut = s == body_start and s - 1 or s - 2
-  end
-  if not cut then
+  return key == pat
+end
+
+-- 案件の表を上から見て最初に当たった案件。# か : で終わる key は前方一致、それ以外は完全一致。words は題に部分一致
+---@param line string
+---@param groups { name: string, keys: string[], words: string[] }[]
+---@return string|nil
+function M.group_of(line, groups)
+  local t = split_task(line)
+  if not t then
     return nil
   end
-  local text = key or ""
-  if nxt then
-    text = (key and key .. " " or "") .. M.NEXT_ARROW .. " " .. nxt
+  for _, g in ipairs(groups) do
+    for _, k in ipairs(g.keys) do
+      if key_hit(t.key, k) then
+        return g.name
+      end
+    end
+    for _, w in ipairs(g.words) do
+      if t.title:find(w, 1, true) then
+        return g.name
+      end
+    end
   end
-  return { cut, stop, text }
+  return M.OTHER_GROUP
+end
+
+-- やる・待ちの欄ごとに [見出し行, 次の見出しの手前] の範囲（1-based）を返す
+local function grouped_sections(lines)
+  local out = {}
+  for _, find in ipairs({ M.find_todo_heading, M.find_wait_heading }) do
+    local h = find(lines)
+    if h then
+      local last = #lines
+      for i = h + 1, #lines do
+        if lines[i]:match("^##%s") then
+          last = i - 1
+          break
+        end
+      end
+      table.insert(out, { h + 1, last })
+    end
+  end
+  return out
+end
+
+-- やる・待ちのタスク行を表の順（その他は最後）に安定ソートする。欄内のタスク以外の行はタスク行の後ろに元の順で置く
+---@param lines string[]
+---@param groups table[]
+---@return string[]
+function M.regroup(lines, groups)
+  local out = vim.deepcopy(lines)
+  if #groups == 0 then
+    return out
+  end
+  local rank = {}
+  for i, g in ipairs(groups) do
+    rank[g.name] = rank[g.name] or i
+  end
+  rank[M.OTHER_GROUP] = rank[M.OTHER_GROUP] or #groups + 1
+  for _, r in ipairs(grouped_sections(lines)) do
+    local tasks, rest = {}, {}
+    for i = r[1], r[2] do
+      if M.parse(lines[i]) then
+        table.insert(tasks, { line = lines[i], rank = rank[M.group_of(lines[i], groups)], n = #tasks })
+      else
+        table.insert(rest, lines[i])
+      end
+    end
+    table.sort(tasks, function(x, y)
+      if x.rank ~= y.rank then
+        return x.rank < y.rank
+      end
+      return x.n < y.n
+    end)
+    local row = r[1]
+    for _, t in ipairs(tasks) do
+      out[row] = t.line
+      row = row + 1
+    end
+    for _, l in ipairs(rest) do
+      out[row] = l
+      row = row + 1
+    end
+  end
+  return out
+end
+
+-- やる・待ちで案件が直前のタスク行と変わる行（欄の先頭を含む）と、その連続したかたまりの見出し
+---@param lines string[]
+---@param groups table[]
+---@return { row: integer, text: string }[]
+function M.group_headings(lines, groups)
+  local out = {}
+  if #groups == 0 then
+    return out
+  end
+  for _, r in ipairs(grouped_sections(lines)) do
+    local cur
+    for i = r[1], r[2] do
+      local g = M.group_of(lines[i], groups)
+      if g then
+        if cur and cur.name == g then
+          cur.n = cur.n + 1
+        else
+          cur = { row = i, name = g, n = 1 }
+          table.insert(out, cur)
+        end
+      end
+    end
+  end
+  for i, h in ipairs(out) do
+    out[i] = { row = h.row, text = ("── %s (%d) ──"):format(h.name, h.n) }
+  end
+  return out
 end
 
 -- 表示で隠す範囲。{ 開始, 終了 } は 0-based の半開区間（byte）。
