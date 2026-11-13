@@ -128,9 +128,8 @@ end
 
 M.ns = vim.api.nvim_create_namespace("todo_conceal")
 
--- 表示だけを変える（ファイルの中身は変えない）。カーソル行には付けず生の文字を見せる。
--- render-markdown が通常モードで conceallevel を 3 にし cchar が消えるため、→ は cchar ではなくインラインの仮想文字で出す。
--- 仮想文字は conceal と違い conceallevel 0（render-markdown の挿入モード）でも出るので、そのときは付けない
+-- 表示だけを変える（ファイルの中身は変えない）。タスク行は題だけを見せ、カーソル行の下に key と next を仮想行で出す。
+-- conceallevel 0（render-markdown の挿入モード）では生の行が見えるので仮想行は付けない
 function M.decorate(buf)
   vim.api.nvim_buf_clear_namespace(buf, M.ns, 0, -1)
   local win = vim.api.nvim_get_current_win()
@@ -138,17 +137,16 @@ function M.decorate(buf)
     win = vim.fn.win_findbuf(buf)[1]
   end
   local cursor = win and vim.api.nvim_win_get_buf(win) == buf and vim.api.nvim_win_get_cursor(win)[1] or -1
-  local arrow = win ~= nil and vim.wo[win].conceallevel > 0
+  local show_detail = win ~= nil and vim.wo[win].conceallevel > 0 and vim.api.nvim_get_mode().mode:sub(1, 1) ~= "i"
   local core = require("todo.core")
   for lnum, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if lnum ~= cursor then
-      for _, r in ipairs(core.conceal_ranges(line)) do
-        local opts = { end_col = r[2], conceal = "" }
-        if r[3] and arrow then
-          opts.virt_text = { { r[3], "Comment" } }
-          opts.virt_text_pos = "inline"
-        end
-        vim.api.nvim_buf_set_extmark(buf, M.ns, lnum - 1, r[1], opts)
+    for _, r in ipairs(core.conceal_ranges(line)) do
+      vim.api.nvim_buf_set_extmark(buf, M.ns, lnum - 1, r[1], { end_col = r[2], conceal = "" })
+    end
+    if lnum == cursor and show_detail then
+      local d = core.detail(line)
+      if d then
+        vim.api.nvim_buf_set_extmark(buf, M.ns, lnum - 1, 0, { virt_lines = { { { d[3], "Comment" } } } })
       end
     end
   end
@@ -156,7 +154,19 @@ end
 
 local function set_view_options(win)
   vim.api.nvim_set_option_value("conceallevel", 2, { scope = "local", win = win })
-  vim.api.nvim_set_option_value("concealcursor", "", { scope = "local", win = win })
+  vim.api.nvim_set_option_value("concealcursor", "n", { scope = "local", win = win })
+  vim.api.nvim_set_option_value("wrap", false, { scope = "local", win = win })
+end
+
+-- render-markdown は描画のたびに concealcursor を '' に戻すので、todo.md の窓だけ戻し直す
+function M.on_render(ctx)
+  if not (vim.api.nvim_buf_is_valid(ctx.buf) and vim.b[ctx.buf].todo_view) then
+    return
+  end
+  if not vim.api.nvim_win_is_valid(ctx.win) then
+    return
+  end
+  vim.api.nvim_set_option_value("concealcursor", "n", { scope = "local", win = ctx.win })
 end
 
 local function attach_view(buf)

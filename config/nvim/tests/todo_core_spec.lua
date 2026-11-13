@@ -299,7 +299,8 @@ do
   vim.cmd.edit(todo.path)
   local buf = vim.api.nvim_get_current_buf()
   eq(vim.wo.conceallevel, 2, "todo window conceallevel")
-  eq(vim.wo.concealcursor, "", "todo window concealcursor")
+  eq(vim.wo.concealcursor, "n", "todo window conceals cursor line in normal mode")
+  eq(vim.wo.wrap, false, "todo window nowrap")
   local function marked_rows()
     local rows = {}
     for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, {})) do
@@ -307,28 +308,52 @@ do
     end
     return rows
   end
-  vim.api.nvim_win_set_cursor(0, { 1, 0 })
-  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
-  eq({ marked_rows()[4], marked_rows()[9] }, { true, true }, "conceal marks on tag and task rows")
-  vim.api.nvim_win_set_cursor(0, { 9, 0 })
-  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
-  eq({ marked_rows()[4], marked_rows()[9] }, { true, nil }, "cursor row shows raw text")
-  local function arrows()
-    local n = 0
+  local function virt_rows()
+    local rows = {}
     for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
-      if m[4].virt_text then
-        n = n + 1
+      if m[4].virt_lines then
+        table.insert(rows, m[2] + 1)
       end
     end
-    return n
+    return rows
   end
-  vim.api.nvim_win_set_cursor(0, { 1, 0 })
-  vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
-  eq(arrows(), 1, "arrow shown while conceallevel > 0")
+  local function virt_lines_at(row)
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
+      if m[2] + 1 == row and m[4].virt_lines then
+        return m[4].virt_lines
+      end
+    end
+  end
+  local function move(row)
+    vim.api.nvim_win_set_cursor(0, { row, 0 })
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+  end
+  move(1)
+  eq({ marked_rows()[4], marked_rows()[9] }, { true, true }, "conceal marks on tag and task rows")
+  eq(virt_rows(), {}, "no virt line on preamble row")
+  move(9)
+  eq(marked_rows()[9], true, "cursor task row is also concealed")
+  eq(virt_rows(), { 9 }, "virt line under cursor task row")
+  eq(virt_lines_at(9), { { { "epc#1 → b", "Comment" } } }, "virt line text")
+  move(8)
+  eq(virt_rows(), {}, "no virt line on heading")
+  move(4)
+  eq(virt_rows(), {}, "no virt line on confirm row")
+  move(9)
   vim.wo.conceallevel = 0
-  eq(arrows(), 0, "no arrow when conceallevel is 0 (render-markdown in insert mode)")
-  vim.wo.conceallevel = 3
-  eq(arrows(), 1, "arrow back when conceallevel returns")
+  eq(virt_rows(), {}, "no virt line when conceallevel is 0 (render-markdown in insert mode)")
+  vim.wo.conceallevel = 2
+  eq(virt_rows(), { 9 }, "virt line back when conceallevel returns")
+  vim.wo.concealcursor = ""
+  todo.on_render({ buf = buf, win = vim.api.nvim_get_current_win() })
+  eq(vim.wo.concealcursor, "n", "on_render restores concealcursor for todo buffer")
+  vim.cmd.split()
+  vim.cmd.enew()
+  local other = vim.api.nvim_get_current_buf()
+  vim.wo.concealcursor = ""
+  todo.on_render({ buf = other, win = vim.api.nvim_get_current_win() })
+  eq(vim.wo.concealcursor, "", "on_render ignores other buffers")
+  vim.cmd.close()
   vim.cmd("silent write")
   eq(vim.fn.readfile(todo.path), content, "conceal does not change file contents")
   vim.cmd("bwipeout!")
