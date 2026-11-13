@@ -1,6 +1,11 @@
+import contextlib
+import io
+import json
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -117,6 +122,76 @@ class TestTodoMd(unittest.TestCase):
         d.sections["やる"][0].next = "新"
         self.assertIn("— next: 新\n", render(d))
 
+
+
+G = [{"name": "パイロット", "keys": ["gb:WEB#"], "words": ["パイロット"]},
+     {"name": "共通", "keys": ["epc#1176"], "words": []},
+     {"name": "シフトオン", "keys": ["epc#"], "words": ["車両"]}]
+
+
+class GroupTest(unittest.TestCase):
+    def test_group_of(self):
+        g = todo_md.group_of
+        self.assertEqual(g(Item("P.11 検索", key="rc:abc", url="u"), G), "その他")
+        self.assertEqual(g(Item("パイロット P.11", key="rc:abc", url="u"), G), "パイロット")
+        self.assertEqual(g(Item("バナー", key="gb:WEB#3", url="u"), G), "パイロット")
+        self.assertEqual(g(Item("商品カード", key="epc#1176", url="u"), G), "共通")
+        self.assertEqual(g(Item("x", key="epc#11760", url="u"), G), "シフトオン")
+        self.assertEqual(g(Item("車両 [資料](https://x/y)"), G), "シフトオン")
+        self.assertEqual(g(Item("a", next="車両を見る"), G), "その他")
+
+    def _doc(self):
+        return parse("""## 確認待ち
+
+## やる
+- [ ] その他1
+- [ ] シフト1 [epc#1](https://g/1)
+- [ ] パイロット1
+- [ ] シフト2 [epc#2](https://g/2)
+- [ ] その他2
+
+## 待ち
+- [ ] 待ちその他
+- [ ] 待ち車両
+
+## 完了
+- [x] 済その他 (done: 2026-11-01)
+- [x] 済パイロット (done: 2026-11-01)
+""")
+
+    def test_regroup(self):
+        doc = self._doc()
+        out = todo_md.regroup(doc, G)
+        self.assertEqual([i.title for i in out.sections["やる"]], ["パイロット1", "シフト1", "シフト2", "その他1", "その他2"])
+        self.assertEqual([i.title for i in out.sections["待ち"]], ["待ち車両", "待ちその他"])
+        self.assertEqual([i.title for i in out.sections["完了"]], ["済その他", "済パイロット"])
+        self.assertEqual([i.title for i in doc.sections["やる"]], ["その他1", "シフト1", "パイロット1", "シフト2", "その他2"])
+
+    def test_regroup_duplicate_name_uses_first_position(self):
+        groups = [{"name": "A", "keys": ["epc#"], "words": []},
+                  {"name": "B", "keys": [], "words": ["パイロット"]},
+                  {"name": "A", "keys": [], "words": ["阪急"]}]
+        doc = parse("## 確認待ち\n\n## やる\n- [ ] パイロット1\n- [ ] 阪急1\n- [ ] s [epc#1](https://g/1)\n\n## 待ち\n\n## 完了\n")
+        self.assertEqual([i.title for i in todo_md.regroup(doc, groups).sections["やる"]], ["阪急1", "s", "パイロット1"])
+
+    def test_regroup_without_groups_keeps_order(self):
+        doc = self._doc()
+        self.assertEqual(render(todo_md.regroup(doc, [])), render(doc))
+
+    def test_load_groups(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "todo-groups.json"
+            self.assertEqual(todo_md.load_groups(p), [])
+            p.write_text(json.dumps({"groups": G}, ensure_ascii=False), encoding="utf-8")
+            self.assertEqual(todo_md.load_groups(p), G)
+            for bad in ["{", json.dumps({"groups": [{"name": "a"}]}), json.dumps({"groups": "x"}),
+                        json.dumps({"groups": [{"name": "a", "keys": [1176], "words": []}]}),
+                        json.dumps({"groups": [{"name": "a", "keys": [], "words": [None]}]})]:
+                p.write_text(bad, encoding="utf-8")
+                err = io.StringIO()
+                with contextlib.redirect_stderr(err):
+                    self.assertEqual(todo_md.load_groups(p), [])
+                self.assertIn("todo-groups.json を読めない", err.getvalue())
 
 if __name__ == "__main__":
     unittest.main()

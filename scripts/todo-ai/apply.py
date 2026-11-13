@@ -1065,6 +1065,7 @@ def run(changes_path: Path, todo: Path, today: str, decisions_path: "Path | None
             new_records.append({"ts": ts, "ref": key, "kind": "alias", "prev_ref": prev, "by": "ai"})
         body += [f"record {r['kind']} {r['ref']}" for r in new_records]
         kept, archived = split_archive(after, today)
+        kept = todo_md.regroup(kept, todo_md.load_groups(repo / todo_md.GROUPS_NAME))
         new_text = todo_md.render(kept)
         todo_changed = new_text != todo_md.render(before) or bool(archived)
         ppath = repo / PENDING_NAME

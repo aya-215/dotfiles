@@ -7,8 +7,11 @@
   確認待ちの内側の空行は保持するが、前後の空行は落とす。
   非正規形の入力は parse できるが、render すると正規形に整う。
 """
+import json
 import re
-from dataclasses import dataclass, field
+import sys
+from dataclasses import dataclass, field, replace
+from pathlib import Path
 
 HEADINGS = ["確認待ち", "やる", "待ち", "完了"]
 TASK_SECTIONS = ["やる", "待ち", "完了"]
@@ -26,6 +29,8 @@ _LINK_TAIL = re.compile(r"(?:^|(?<= ))\[(" + KEY_RE.pattern + r")\]\(([^\s()]+)\
 _TASK = re.compile(r"- \[([ x])\] (.*)\Z")
 _DONE = re.compile(r" \(done: (\d{4}-\d{2}-\d{2})\)\Z")
 _NEXT = " — next: "
+GROUPS_NAME = "todo-groups.json"
+OTHER_GROUP = "その他"
 
 
 class ParseError(ValueError):
@@ -164,3 +169,51 @@ def render(doc: Doc) -> str:
         else:
             out.extend(_render_item(it) for it in doc.sections[h])
     return "\n".join(out) + "\n"
+
+
+def load_groups(path: Path) -> "list[dict]":
+    """案件の表を読む。無ければ []。読めないときも無人実行を止めないよう、stderr に1行出して []。"""
+    if not path.exists():
+        return []
+    try:
+        groups = json.loads(path.read_text(encoding="utf-8"))["groups"]
+        if not isinstance(groups, list):
+            raise ValueError("groups が配列ではない")
+        for g in groups:
+            if not (isinstance(g, dict) and isinstance(g.get("name"), str)
+                    and isinstance(g.get("keys"), list) and isinstance(g.get("words"), list)
+                    and all(isinstance(v, str) for v in g["keys"] + g["words"])):
+                raise ValueError(f"name/keys/words が無いか文字列でない: {g!r}")
+        return groups
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"todo_md: {GROUPS_NAME} を読めない: {e}", file=sys.stderr)
+        return []
+
+
+def _key_hit(key: "str | None", pat: str) -> bool:
+    if not key:
+        return False
+    return key.startswith(pat) if pat.endswith(("#", ":")) else key == pat
+
+
+def group_of(item: Item, groups: "list[dict]") -> str:
+    """表を上から見て最初に当たった案件。# か : で終わる key は前方一致、それ以外は完全一致。words は題に部分一致。"""
+    for g in groups:
+        if any(_key_hit(item.key, k) for k in g["keys"]) or any(w in item.title for w in g["words"]):
+            return g["name"]
+    return OTHER_GROUP
+
+
+def regroup(doc: Doc, groups: "list[dict]") -> Doc:
+    """やる・待ちを表の順（その他は最後）に安定ソートした新しい Doc。完了は触らない。"""
+    if not groups:
+        return doc
+    # 同じ名前が2回あれば最初の位置（nvim の core.regroup と同じ）。食い違うと閉じるたびと /todo のたびに順が入れ替わる
+    rank = {}
+    for i, g in enumerate(groups):
+        rank.setdefault(g["name"], i)
+    rank.setdefault(OTHER_GROUP, len(groups))
+    sections = dict(doc.sections)
+    for sec in ("やる", "待ち"):
+        sections[sec] = sorted(doc.sections[sec], key=lambda it: rank[group_of(it, groups)])
+    return replace(doc, sections=sections)
