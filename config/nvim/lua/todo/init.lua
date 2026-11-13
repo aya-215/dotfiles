@@ -36,9 +36,47 @@ local function apply(fn)
   end
 end
 
+-- 案件の表は todo.md の隣に置く（顧客名を dotfiles に入れないため）。無い・読めないときは {} でまとめない
+function M.groups_path()
+  return vim.fn.fnamemodify(M.path, ":h") .. "/todo-groups.json"
+end
+
+function M.load_groups()
+  local ok, data = pcall(function()
+    return vim.json.decode(table.concat(vim.fn.readfile(M.groups_path()), "\n"))
+  end)
+  if not ok or type(data) ~= "table" or type(data.groups) ~= "table" then
+    return {}
+  end
+  for _, g in ipairs(data.groups) do
+    if type(g) ~= "table" or type(g.name) ~= "string" or type(g.keys) ~= "table" or type(g.words) ~= "table" then
+      return {}
+    end
+  end
+  return data.groups
+end
+
+-- 開いている間は行を動かさず、閉じてコミットする直前に案件ごとにまとめる
+local function regroup_file()
+  if vim.fn.filereadable(M.path) == 0 then
+    return
+  end
+  local lines = vim.fn.readfile(M.path)
+  local new_lines = require("todo.core").regroup(lines, M.load_groups())
+  if vim.deep_equal(new_lines, lines) then
+    return
+  end
+  if count_nonblank(new_lines) < count_nonblank(lines) then
+    vim.notify("todo: 案件の並べ替えで行が失われるため中止しました", vim.log.levels.ERROR)
+    return
+  end
+  vim.fn.writefile(new_lines, M.path)
+end
+
 -- 閉じるときだけ git にコミットする（<CR> ごとに保存はするがコミットは荒らさない）
 -- 対象ファイルだけ add するので、同じディレクトリの他ファイルは巻き込まない
 function M.commit()
+  regroup_file()
   local dir = vim.fn.fnamemodify(M.path, ":h")
   if vim.fn.isdirectory(dir .. "/.git") == 0 then
     return
@@ -157,6 +195,9 @@ function M.decorate(buf)
   local core = require("todo.core")
   local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
   decorate_confirm(buf, lines, cursor)
+  for _, h in ipairs(core.group_headings(lines, M.load_groups())) do
+    vim.api.nvim_buf_set_extmark(buf, M.ns, h.row - 1, 0, { virt_lines = { { { h.text, "Title" } } }, virt_lines_above = true })
+  end
   for lnum, line in ipairs(lines) do
     for _, r in ipairs(core.conceal_ranges(line)) do
       vim.api.nvim_buf_set_extmark(buf, M.ns, lnum - 1, r[1], { end_col = r[2], conceal = "" })

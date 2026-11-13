@@ -457,6 +457,56 @@ do
   vim.fn.delete(dir, "rf")
 end
 
+-- 案件の見出し（表示だけ）と、閉じる時の並べ替え
+do
+  local dir = vim.fn.tempname()
+  vim.fn.mkdir(dir, "p")
+  vim.env.TODO_MD_PATH = dir .. "/todo.md"
+  package.loaded["todo"] = nil
+  local todo = require("todo")
+  local groups = dir .. "/todo-groups.json"
+  vim.fn.writefile({ vim.json.encode({ groups = {
+    { name = "パイロット", keys = { "gb:WEB#" }, words = {} },
+    { name = "シフトオン", keys = { "epc#" }, words = {} },
+  } }) }, groups)
+  local sorted = {
+    "# TODO", "", "## 確認待ち", "", "## やる",
+    "- [ ] p [gb:WEB#3](https://g/3)", "- [ ] s1 [epc#1](https://g/1)", "- [ ] s2 [epc#2](https://g/2)",
+    "", "## 待ち", "", "## 完了",
+  }
+  vim.fn.writefile(sorted, todo.path)
+  todo.setup()
+  vim.cmd.edit(todo.path)
+  local buf = vim.api.nvim_get_current_buf()
+  local function headings()
+    local out = {}
+    for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, todo.ns, 0, -1, { details = true })) do
+      if m[4].virt_lines_above then
+        out[m[2] + 1] = m[4].virt_lines
+      end
+    end
+    return out
+  end
+  todo.decorate(buf)
+  eq(headings(), {
+    [6] = { { { "── パイロット (1) ──", "Title" } } },
+    [7] = { { { "── シフトオン (2) ──", "Title" } } },
+  }, "group heading above first row of each run")
+  vim.fn.delete(groups)
+  todo.decorate(buf)
+  eq(headings(), {}, "no headings without groups file")
+  local unsorted = vim.deepcopy(sorted)
+  unsorted[6], unsorted[7] = sorted[7], sorted[6]
+  vim.fn.writefile(unsorted, todo.path)
+  todo.commit()
+  eq(vim.fn.readfile(todo.path), unsorted, "commit keeps file without groups file")
+  vim.fn.writefile({ vim.json.encode({ groups = { { name = "パイロット", keys = { "gb:WEB#" }, words = {} } } }) }, groups)
+  todo.commit()
+  eq(vim.fn.readfile(todo.path), sorted, "commit regroups file")
+  vim.cmd("bwipeout!")
+  vim.fn.delete(dir, "rf")
+end
+
 if failures > 0 then
   print(failures .. " failure(s)")
   os.exit(1)
