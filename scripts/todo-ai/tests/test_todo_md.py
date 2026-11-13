@@ -167,6 +167,13 @@ class GroupTest(unittest.TestCase):
         self.assertEqual([i.title for i in out.sections["完了"]], ["済その他", "済パイロット"])
         self.assertEqual([i.title for i in doc.sections["やる"]], ["その他1", "シフト1", "パイロット1", "シフト2", "その他2"])
 
+    def test_regroup_duplicate_name_uses_first_position(self):
+        groups = [{"name": "A", "keys": ["epc#"], "words": []},
+                  {"name": "B", "keys": [], "words": ["パイロット"]},
+                  {"name": "A", "keys": [], "words": ["阪急"]}]
+        doc = parse("## 確認待ち\n\n## やる\n- [ ] パイロット1\n- [ ] 阪急1\n- [ ] s [epc#1](https://g/1)\n\n## 待ち\n\n## 完了\n")
+        self.assertEqual([i.title for i in todo_md.regroup(doc, groups).sections["やる"]], ["阪急1", "s", "パイロット1"])
+
     def test_regroup_without_groups_keeps_order(self):
         doc = self._doc()
         self.assertEqual(render(todo_md.regroup(doc, [])), render(doc))
@@ -177,7 +184,9 @@ class GroupTest(unittest.TestCase):
             self.assertEqual(todo_md.load_groups(p), [])
             p.write_text(json.dumps({"groups": G}, ensure_ascii=False), encoding="utf-8")
             self.assertEqual(todo_md.load_groups(p), G)
-            for bad in ["{", json.dumps({"groups": [{"name": "a"}]}), json.dumps({"groups": "x"})]:
+            for bad in ["{", json.dumps({"groups": [{"name": "a"}]}), json.dumps({"groups": "x"}),
+                        json.dumps({"groups": [{"name": "a", "keys": [1176], "words": []}]}),
+                        json.dumps({"groups": [{"name": "a", "keys": [], "words": [None]}]})]:
                 p.write_text(bad, encoding="utf-8")
                 err = io.StringIO()
                 with contextlib.redirect_stderr(err):

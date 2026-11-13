@@ -650,6 +650,15 @@ class GroupWriteTest(RepoMixin, unittest.TestCase):
         todo = todo_md.parse(self.todo.read_text(encoding="utf-8"))
         self.assertEqual([i.title for i in todo.sections["やる"]], ["PR レビュー", "調査", "インターン資料修正"])
 
+    def test_broken_groups_file_does_not_stop_apply(self):
+        (self.repo / "todo-groups.json").write_text(
+            json.dumps({"groups": [{"name": "S", "keys": [1163], "words": []}]}), encoding="utf-8")
+        r = self.run_apply({"source": "ai", "ops": [
+            {"op": "set_next", "ref": "epc#1163", "next": "直す", "reason": "r"}]})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("todo-groups.json を読めない", r.stderr)
+        self.assertIn("— next: 直す", self.todo.read_text(encoding="utf-8"))
+
     def test_no_groups_file_keeps_order(self):
         r = self.run_apply({"source": "ai", "ops": []})
         self.assertEqual(r.returncode, 0, r.stderr)

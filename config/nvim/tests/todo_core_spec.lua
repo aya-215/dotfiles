@@ -341,6 +341,14 @@ do
     { row = 4, text = "── シフトオン (1) ──" },
   }, "unsorted lines repeat headings with run counts")
   eq(core.group_headings(sorted, {}), {}, "no headings without groups")
+  local dup = {
+    { name = "A", keys = { "epc#" }, words = {} },
+    { name = "B", keys = {}, words = { "パイロット" } },
+    { name = "A", keys = {}, words = { "阪急" } },
+  }
+  eq(core.regroup({ "## やる", "- [ ] パイロット1", "- [ ] 阪急1", "- [ ] s [epc#1](u)", "## 待ち" }, dup),
+    { "## やる", "- [ ] 阪急1", "- [ ] s [epc#1](u)", "- [ ] パイロット1", "## 待ち" },
+    "duplicate name uses first position (same as Python)")
 end
 
 -- visible_end: 行末まで隠れる範囲の開始（0-based）。カーソルをここより手前に留めるために使う
@@ -492,6 +500,10 @@ do
     [6] = { { { "── パイロット (1) ──", "Title" } } },
     [7] = { { { "── シフトオン (2) ──", "Title" } } },
   }, "group heading above first row of each run")
+  vim.fn.writefile({ vim.json.encode({ groups = { { name = "A", keys = { 1176 }, words = {} } } }) }, groups)
+  eq(todo.load_groups(), {}, "wrong-typed keys element is rejected")
+  vim.fn.writefile({ vim.json.encode({ groups = { { name = "A", keys = {}, words = { 5 } } } }) }, groups)
+  eq(todo.load_groups(), {}, "wrong-typed words element is rejected")
   vim.fn.delete(groups)
   todo.decorate(buf)
   eq(headings(), {}, "no headings without groups file")

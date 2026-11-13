@@ -52,6 +52,11 @@ function M.load_groups()
     if type(g) ~= "table" or type(g.name) ~= "string" or type(g.keys) ~= "table" or type(g.words) ~= "table" then
       return {}
     end
+    for _, v in ipairs(vim.list_extend(vim.list_slice(g.keys), g.words)) do
+      if type(v) ~= "string" then
+        return {}
+      end
+    end
   end
   return data.groups
 end

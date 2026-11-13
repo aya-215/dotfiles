@@ -181,8 +181,9 @@ def load_groups(path: Path) -> "list[dict]":
             raise ValueError("groups が配列ではない")
         for g in groups:
             if not (isinstance(g, dict) and isinstance(g.get("name"), str)
-                    and isinstance(g.get("keys"), list) and isinstance(g.get("words"), list)):
-                raise ValueError(f"name/keys/words が無い: {g!r}")
+                    and isinstance(g.get("keys"), list) and isinstance(g.get("words"), list)
+                    and all(isinstance(v, str) for v in g["keys"] + g["words"])):
+                raise ValueError(f"name/keys/words が無いか文字列でない: {g!r}")
         return groups
     except (OSError, ValueError, KeyError, TypeError) as e:
         print(f"todo_md: {GROUPS_NAME} を読めない: {e}", file=sys.stderr)
@@ -207,7 +208,10 @@ def regroup(doc: Doc, groups: "list[dict]") -> Doc:
     """やる・待ちを表の順（その他は最後）に安定ソートした新しい Doc。完了は触らない。"""
     if not groups:
         return doc
-    rank = {g["name"]: i for i, g in enumerate(groups)}
+    # 同じ名前が2回あれば最初の位置（nvim の core.regroup と同じ）。食い違うと閉じるたびと /todo のたびに順が入れ替わる
+    rank = {}
+    for i, g in enumerate(groups):
+        rank.setdefault(g["name"], i)
     rank.setdefault(OTHER_GROUP, len(groups))
     sections = dict(doc.sections)
     for sec in ("やる", "待ち"):
