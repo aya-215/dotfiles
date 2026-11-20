@@ -1,8 +1,8 @@
 ---
 name: review-pr
 description: Use when the user wants to review a pull request interactively with Claude, focusing on deep code understanding, on GitHub or GitBucket. Also use when a review was answered and the fixes need checking. Triggers on "/review-pr", "PRレビュー", "コードレビューしたい", "PRを理解したい", "PRを一緒に読みたい", "レビュー返ってきたので確認して", "再レビュー".
-allowed-tools: Bash, Read, Grep
-version: 1.8.0
+allowed-tools: Bash, Read, Grep, Agent
+version: 1.9.0
 ---
 
 # PR対話レビュー
@@ -82,6 +82,19 @@ git -C <repo> diff origin/<base> origin/<head> --stat                           
 
 衝突や、ベース側の最近の修正を消す差分があれば、Step 2 の「PRが自分で認めている未検証の点」の後に事実として書く（所見としての評価は Step 5 で行う）。
 
+### Step 1.5: 変更点ページを作るか聞く
+
+PR の意図を掴むための HTML（issue の概要・変更前と変更後・実画面のスクショ・確認結果）を作り、document-share に載せるかを、本文の質問文で聞いて止まる：
+
+```
+このPRの変更点ページ（実画面付きの HTML を document-share に載せます）を作りますか？ y で作ります。不要なら n で、そのまま概要の説明に進みます。
+```
+
+- y のとき: サブエージェント（general-purpose）を `run_in_background` で起動し、続けてすぐに Step 2 を出す。サブエージェントへの依頼文は「`~/.claude/skills/review-pr/changes-page.md` を読み、その手順で PR #<番号>（<owner>/<repo>）の変更点ページを作って URL を返して」に、Step 1 で分かったこと（head のブランチ・commit、PR 本文の動作確認の手順）を添える
+- できあがりの通知が来たら、その時点の返答の冒頭で URL と、実画面で確認できなかったこと（サブエージェントの報告から）を1〜3行で伝える。フェーズの進行は止めない
+- ページにはレビュー所見を載せない。設計論点はこれまでどおり対話で扱う
+- サブエージェントが「ログインのコマンドはユーザーの実行が要る」と返してきたら、そのコマンドをユーザーに渡して頼む
+
 ### Step 2: PR全体の解説（質問→納得までのループ）
 
 最初に、PRを読んでいない人が1画面で全体を掴める解説を出す。ファイル単位ではなく「何を・どう動くか・なぜそう作ったか」の単位で書く。
@@ -126,6 +139,12 @@ shifton で会話を1ターン保存したあと、そのターンに「誰が�
 
 ```
 質問があれば何でもどうぞ。納得できたら y で設計論点の一覧に進みます。
+```
+
+Step 1.5 で変更点ページを作っていて、まだできていないときは、締めの文を次にする（概要で分かれば進み、ページを見てからにしたければ待つ。どちらにするかはユーザーが決める）：
+
+```
+変更点ページは作成中で、できたら URL をお知らせします。ページを見てから進みたい場合はそのままお待ちください。納得できたら y で設計論点の一覧に進みます。
 ```
 
 - ユーザーの質問には検証ガードに従って裏取りしてから答える。答えた後も同じ一文で促して止まる

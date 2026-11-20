@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PR #{番号} 変更点まとめ</title>
+<style>
+:root {
+  --bg: #f6f7f9; --surface: #ffffff; --text: #1d2330; --muted: #5b6474; --line: #dde1e8;
+  --accent: #0f6b5f; --accent-bg: #e7f3f1; --warn: #b45309; --warn-bg: #fdf3e6;
+  --ok: #15803d; --ng: #b91c1c; --code-bg: #f1f3f6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #14171c; --surface: #1c2027; --text: #e6e9ef; --muted: #9aa3b2; --line: #2e343e;
+    --accent: #4fb3a4; --accent-bg: #1b2e2b; --warn: #f0a24a; --warn-bg: #2f2516;
+    --ok: #4ade80; --ng: #f87171; --code-bg: #252a33;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font-family: "Noto Sans JP", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif; line-height: 1.75; font-size: 15px; }
+main { max-width: 960px; margin: 0 auto; padding: 32px 16px 80px; }
+header.top { border-bottom: 3px solid var(--accent); padding-bottom: 16px; margin-bottom: 8px; }
+header.top h1 { font-size: 26px; margin: 0 0 4px; line-height: 1.4; }
+.meta { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 4px 16px; }
+nav.toc { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin: 20px 0 8px; font-size: 14px; }
+nav.toc ol { margin: 0; padding-left: 20px; columns: 2; column-gap: 32px; }
+@media (max-width: 640px) { nav.toc ol { columns: 1; } }
+nav.toc a { color: var(--accent); text-decoration: none; }
+section { margin-top: 40px; }
+h2 { font-size: 20px; border-left: 5px solid var(--accent); padding-left: 10px; margin: 0 0 14px; line-height: 1.4; }
+h3 { font-size: 16px; margin: 24px 0 8px; }
+p { margin: 8px 0; }
+.lead { color: var(--muted); margin-top: -6px; }
+.cards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+.card h3 { margin-top: 0; }
+.card ul { margin: 6px 0 0; padding-left: 20px; }
+.tag { display: inline-block; font-size: 12px; font-weight: 700; padding: 1px 8px; border-radius: 999px; background: var(--accent-bg); color: var(--accent); margin-right: 6px; vertical-align: 2px; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 14px; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--code-bg); font-weight: 700; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+.wrap-x { overflow-x: auto; }
+.new { color: var(--accent); font-weight: 700; }
+.res-ok { color: var(--ok); font-weight: 700; white-space: nowrap; }
+.res-no { color: var(--warn); font-weight: 700; white-space: nowrap; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 0.9em; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-all; }
+ol.flow { padding-left: 22px; }
+ol.flow li { margin: 4px 0; }
+figure.shot { margin: 18px 0 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+figure.shot figcaption { margin-bottom: 10px; }
+figure.shot figcaption b { font-size: 15px; }
+figure.shot .look { color: var(--muted); font-size: 14px; margin: 4px 0 0; padding-left: 18px; }
+figure.shot img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; margin: 0 auto; }
+figure.shot img.narrow { max-width: min(100%, 375px); }
+.note { background: var(--warn-bg); border-left: 4px solid var(--warn); padding: 10px 14px; border-radius: 6px; font-size: 14px; margin: 12px 0; }
+details { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; margin: 10px 0; }
+details summary { cursor: pointer; font-weight: 700; }
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<!-- 書き方は ../changes-page.md。{…} を差し替え、使わない節・行は消す。レビュー所見は載せない -->
+
+<header class="top">
+  <h1>PR #{番号} 何が変わったか — {変更の要約}</h1>
+  <div class="meta">
+    <span>ブランド: {brand。無ければ消す}</span>
+    <span>作者: {author}</span>
+    <span>対象: <code>{head ブランチ}</code>（{短い sha}）</span>
+    <span>実画面の確認: {日付} {どこで。例: ローカル dev（検証 eBASE に接続・zip_test でログイン）}</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <ol>
+    <li><a href="#issue">issue で頼まれたこと</a></li>
+    <li><a href="#diff">何が変わったか（変更前と変更後）</a></li>
+    <li><a href="#flow">どう動くか</a></li>
+    <li><a href="#screens">実画面</a></li>
+    <li><a href="#result">確認結果の一覧</a></li>
+    <li><a href="#cond">確認の条件と、確認していないこと</a></li>
+    <li><a href="#files">変更したファイル</a></li>
+  </ol>
+</nav>
+
+<section id="issue">
+  <h2>issue で頼まれたこと</h2>
+  <p class="lead">{依頼の出どころ（誰がいつ）と、このPRが受け持つ範囲。ほかのPR・issue に分けた部分があれば書く}</p>
+  <div class="cards">
+    <div class="card">
+      <h3><span class="tag">#{issue番号}</span>{issue の要約}</h3>
+      <ul>
+        <li>{頼まれたこと。issue 本文と、後から足された更新（反転した点）を反映して書く}</li>
+        <li>完了条件: {issue の完了条件}</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="diff">
+  <h2>何が変わったか（変更前と変更後）</h2>
+  <div class="wrap-x">
+  <table>
+    <thead><tr><th>場所</th><th>変更前</th><th>変更後</th></tr></thead>
+    <tbody>
+      <tr><td>{利用者から見える場所}</td><td>{変更前}</td><td><span class="new">{変わった部分}</span></td></tr>
+      <tr><td>{変わらない場所（ほかのブランド等）}</td><td>—</td><td>変わらない</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="flow">
+  <h2>どう動くか</h2>
+  <ol class="flow">
+    <li>{3〜6ステップ。分岐条件（〜のときだけ）も書く。関数名・ファイル名は code で}</li>
+  </ol>
+</section>
+
+<section id="screens">
+  <h2>実画面</h2>
+  <p class="lead">{画面の幅。ダミーデータを使ったならそのことと、どこが実データか}</p>
+  <figure class="shot">
+    <figcaption><b>① {場面}: {この画像で分かること}</b>
+      <ul class="look">
+        <li>{見るところ。位置・出る/出ない・回数など、画像で確かめられる事実だけ}</li>
+      </ul>
+    </figcaption>
+    <img src="shots/01-xxx.png" alt="{画像の説明}">
+  </figure>
+  <!-- スマホ幅の画像は <img class="narrow" …>。全体像など補助の画像は <details><summary>…</summary><figure class="shot">…</figure></details> に入れる。文字で見せるもの（コピーした文など）は <pre> -->
+</section>
+
+<section id="result">
+  <h2>確認結果の一覧</h2>
+  <div class="wrap-x">
+  <table>
+    <thead><tr><th>確かめたこと</th><th>結果</th><th>どう確かめたか</th></tr></thead>
+    <tbody>
+      <tr><td>{issue の完了条件・PR 本文の動作確認から}</td><td class="res-ok">○</td><td>{①など画像の番号、DOM で見た属性など}</td></tr>
+      <tr><td>{確かめなかったこと}</td><td class="res-no">未確認</td><td>{なぜ見ていないか}</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section id="cond">
+  <h2>確認の条件と、確認していないこと</h2>
+  <ul>
+    <li>{どの環境・ブランド・ユーザーで見たか}</li>
+    <li>{ダミーデータを入れたなら入れ方と、撮影後に戻したこと}</li>
+  </ul>
+  <div class="note">{未確認の項目をまとめて1〜2文で}</div>
+</section>
+
+<section id="files">
+  <h2>変更したファイル</h2>
+  <details>
+    <summary>{N}ファイル（+{追加} / −{削除}）</summary>
+    <div class="wrap-x">
+    <table>
+      <thead><tr><th>ファイル</th><th>中身</th></tr></thead>
+      <tbody>
+        <tr><td><code>{ファイル。似たものはまとめる}</code></td><td>{何を変えたか}</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </details>
+</section>
+
+</main>
+</body>
+</html>
