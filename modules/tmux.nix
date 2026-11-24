@@ -261,6 +261,8 @@
       # 添字固定なので設定を再読込しても重複しない
       set-hook -g after-new-window[90] 'run-shell "~/.dotfiles/scripts/tmux-agent-sidebar/autocreate.sh window #{window_id}"'
       set-hook -g session-created[90] 'run-shell "~/.dotfiles/scripts/tmux-agent-sidebar/autocreate.sh window #{window_id}"'
+      # プラグインの auto-close は pane-exited にしか掛かっておらず、kill-pane では発火しないため
+      set-hook -g after-kill-pane[90] 'run-shell "\"#{@agent_sidebar_bin}\" auto-close \"#{window_id}\""'
 
     '';
   };
