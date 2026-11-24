@@ -2,7 +2,7 @@ import io
 import json
 import os
 import subprocess
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 import sys
 import tempfile
 import unittest
@@ -10,7 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from worktree_hook import (  # noqa: E402
-    HookError, copy_env, create, is_personal, link_node_modules, main, new_branch_name, placement, remove, slug,
+    HookError, copy_env, create, gh_pr_head, is_personal, link_node_modules, main, new_branch_name, placement, remove,
+    slug,
 )
 
 
@@ -363,6 +364,46 @@ class ReviewFixesTest(unittest.TestCase):
         (self.repo / ".env.local").symlink_to(self.tmp / "missing-target")
         p = create("feat/brokenenv", self.repo, home=self.home, gh_head=no_gh)
         self.assertTrue(p.is_dir())
+
+
+def fake_gh(good_token):
+    """good_token の GH_TOKEN のときだけ PR の head を返す gh。"""
+    def run(cmd, **kw):
+        if cmd[:3] == ["gh", "auth", "token"]:
+            return subprocess.CompletedProcess(cmd, 0, f"tok-{cmd[-1]}\n", "")
+        if cmd[:3] == ["gh", "pr", "view"]:
+            ok = (kw.get("env") or {}).get("GH_TOKEN") == good_token
+            return subprocess.CompletedProcess(cmd, 0 if ok else 1, "feat/x\n" if ok else "", "" if ok else "GraphQL: Could not resolve")
+        raise AssertionError(cmd)
+    return run
+
+
+class GhAccountTest(unittest.TestCase):
+    def test_falls_back_to_other_account(self):
+        self.assertEqual(gh_pr_head(Path("."), 1, run=fake_gh("tok-eBASE-Mori"), accounts=["aya-215", "eBASE-Mori"]), "feat/x")
+
+    def test_active_account_tried_first(self):
+        calls = []
+
+        def run(cmd, **kw):
+            calls.append(cmd[:3])
+            return subprocess.CompletedProcess(cmd, 0, "feat/y\n", "")
+        self.assertEqual(gh_pr_head(Path("."), 1, run=run, accounts=["aya-215"]), "feat/y")
+        self.assertEqual(calls, [["gh", "pr", "view"]])
+
+    def test_all_accounts_fail(self):
+        self.assertIsNone(gh_pr_head(Path("."), 1, run=fake_gh("nope"), accounts=["aya-215", "eBASE-Mori"]))
+
+    def test_pr_fallback_warns_push_does_not_update_pr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo = make_repo(tmp / "r")
+            bare = tmp / "r" / "origin.git"
+            git(bare, "update-ref", "refs/pull/9/head", git(bare, "rev-parse", "main"))
+            err = io.StringIO()
+            with redirect_stderr(err):
+                create("pr-9", repo, home=tmp / "home", gh_head=no_gh)
+            self.assertIn("PR は更新されません", err.getvalue())
 
 
 if __name__ == "__main__":

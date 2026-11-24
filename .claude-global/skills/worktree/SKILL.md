@@ -89,7 +89,7 @@ python3 ~/.claude/skills/worktree/scripts/worktree_scan.py --json   # 削除手�
 
 ### 3. 置き場所とブランチ名
 
-置き場所とブランチ名は `~/.dotfiles/scripts/claude-worktree/worktree_hook.py` が決める（Claude Code の `claude -w` のフックと同じ決まり。詳細は `docs/superpowers/specs/2026-11-24-claude-worktree-hooks-design.md`）。Claude は決め直さない。
+置き場所とブランチ名は `~/.dotfiles/scripts/claude-worktree/worktree_hook.py` が決める（Claude Code の `claude -w` のフックと同じ決まり。詳細は `~/.dotfiles/docs/superpowers/specs/2026-11-24-claude-worktree-hooks-design.md`）。Claude は決め直さない。
 
 - 置き場所: `<本体>/.claude/worktrees/<スラッグ>`。本体が `/mnt/` の下なら `~/worktrees/<本体のフォルダ名>-<スラッグ>`（スラッグはブランチ名の `/` を `-` にしたもの）
 - ブランチ: 既にあれば開く／`feat/`・`fix/` 等で始まればそのまま／個人リポジトリならそのまま／それ以外は `feat/<名前>`
@@ -155,5 +155,5 @@ python3 ~/.claude/skills/worktree/scripts/worktree_scan.py --json   # 削除手�
 ## エラーハンドリング
 
 - gitリポジトリでない場合（add のみ）: エラーメッセージを表示して終了
-- worktree作成先が既に存在する場合: 警告して確認
+- 作成先が既にあるとき: worktree として登録済みならスクリプトがそのパスを返す（入り直し）。登録が無ければ失敗するので、中身を確かめてから消すようユーザーに伝える
 - 削除対象が存在しない場合: エラーメッセージを表示
