@@ -1,4 +1,5 @@
 {
+  "cleanupPeriodDays": 180,
   "env": {
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
@@ -9,7 +10,6 @@
     "commit": "",
     "pr": ""
   },
-  "cleanupPeriodDays": 180,
   "permissions": {
     "allow": [
       "mcp__figma__get_screenshot",
@@ -49,7 +49,8 @@
       "Read(~/.gnupg/*)",
       "Edit(package-lock.json)",
       "Edit(yarn.lock)",
-      "Edit(bun.lockb)"
+      "Edit(bun.lockb)",
+      "Skill(ebase-infra:gitbucket-api)"
     ],
     "ask": [
       "Bash(gh pr comment:*)",
@@ -261,19 +262,16 @@
     "command": "~/.claude/statusline-command.sh"
   },
   "enabledPlugins": {
-    "aiebase-essentials@ebase-marketplace": false,
-    "aiebase-github-workflow@ebase-marketplace": true,
-    "aiebase-plugin-creator@ebase-marketplace": false,
     "claude-mem@thedotmack": false,
     "rust-analyzer-lsp@claude-plugins-official": false,
     "superpowers@claude-plugins-official": true,
-    "ebaseweb-coding-check@ebase-marketplace": true,
     "superpowers-developing-for-claude-code@superpowers-marketplace": true,
     "ebase-infra@ebase-claude-marketplace": true,
     "aiebase-infra@ebase-claude-marketplace": true,
     "yomiyasu@yomiyasu": true,
     "aiebase-devkit@ebase-claude-marketplace": true,
-    "prompt-rail@oikon48": true
+    "prompt-rail@oikon48": true,
+    "ebase-document@ebase-claude-marketplace": true
   },
   "extraKnownMarketplaces": {
     "superpowers-marketplace": {
@@ -286,7 +284,8 @@
       "source": {
         "source": "git",
         "url": "http://192.168.208.80:8080/gitbucket/git/eBASE/ebase-claude-marketplace.git"
-      }
+      },
+      "autoUpdate": true
     },
     "yomiyasu": {
       "source": {
@@ -389,7 +388,7 @@
       "effortLevel": "high"
     }
   },
-  "advisorModel": "opus",
+  "advisorModel": "fable",
   "pluginConfigs": {
     "prompt-rail@oikon48": {
       "options": {
