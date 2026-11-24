@@ -19,6 +19,10 @@ class GitBucketError(ToolError):
     """ツールの失敗としてクライアントに理由を返すエラー。"""
 
 
+class NotFoundError(GitBucketError):
+    """API が 404 を返した。"""
+
+
 def _origin(url: str) -> str:
     parts = urllib.parse.urlsplit(url)
     return f"{parts.scheme}://{parts.netloc}"
@@ -63,7 +67,7 @@ def call_api(method: str, endpoint: str, data: dict | None = None) -> dict | lis
                 "トークンが無効です。GitBucketのAccount Settings → Applicationsでトークンを確認してください"
             )
         if e.code == 404:
-            raise GitBucketError(
+            raise NotFoundError(
                 f"リポジトリまたはリソースが見つかりません: {endpoint}"
                 "（オーナー名・リポジトリ名・番号を確認。PR の head に user:branch と書くと 404 になる）"
             )

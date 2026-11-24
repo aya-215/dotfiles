@@ -5,7 +5,8 @@ import json
 
 from mcp.server.mcpserver import MCPServer
 
-from gitbucket_client import GITBUCKET_URL, GitBucketError, call_api
+from gitbucket_client import GITBUCKET_URL, GitBucketError, NotFoundError, call_api, get_page
+from inline_comments import parse_inline_comments
 
 mcp = MCPServer("GitBucket", version="0.2.0")
 
@@ -230,20 +231,41 @@ def gitbucket_create_issue(
 
 @mcp.tool(structured_output=False)
 def gitbucket_list_comments(owner: str, repo: str, number: int) -> str:
-    """GitBucketのIssueまたはPRのコメント一覧を取得する
+    """GitBucketのIssueまたはPRのコメント一覧を取得する。PRならインラインのコードコメントも含める
 
-    IssueとPRはコメントエンドポイントが共通なので、PRの番号を渡してもよい。
+    戻り値は {"comments": 通常コメント, "inline_comments": インラインコメント, "inline_error": 理由} の JSON。
+    指摘の件数は comments と inline_comments を足して数える。
+    inline_comments が null のときはインラインを読めていない（0件ではない）。inline_error に理由がある。
+    インラインコメントへ返信する API は無い。返信は gitbucket_add_comment で、本文に path:line を書いて示す。
 
     Args:
         owner: リポジトリのオーナー名
         repo: リポジトリ名
         number: IssueまたはPRの番号
     """
-    result = call_api("GET", f"/repos/{owner}/{repo}/issues/{number}/comments")
-    if not result:
-        return f"{owner}/{repo} #{number} にコメントはありません"
-    comments = [fmt_comment(c) for c in result]
-    return json.dumps(comments, ensure_ascii=False, indent=2)
+    comments = [fmt_comment(c) for c in call_api("GET", f"/repos/{owner}/{repo}/issues/{number}/comments") or []]
+    inline, inline_error = fetch_inline_comments(owner, repo, number)
+    return json.dumps(
+        {"comments": comments, "inline_comments": inline, "inline_error": inline_error},
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def fetch_inline_comments(owner: str, repo: str, number: int) -> tuple[list[dict] | None, str | None]:
+    """PR 画面からインラインコメントを読む。Issue なら ([], None)、読めなければ (None, 理由)。"""
+    try:
+        call_api("GET", f"/repos/{owner}/{repo}/pulls/{number}")
+    except NotFoundError:
+        return [], None
+    status, html = get_page(f"{GITBUCKET_URL}/{owner}/{repo}/pull/{number}")
+    if status == 200:
+        return parse_inline_comments(html), None
+    # 非公開リポジトリの画面はトークンでは開けない（token・Basic・Bearer すべて 401）
+    return None, (
+        f"PR 画面を開けなかったため、インラインコメントを読めていません（0件ではない。HTTP {status}）。"
+        "ログイン済みのブラウザで PR 画面を開いて確認してください"
+    )
 
 
 @mcp.tool(structured_output=False)

@@ -1,5 +1,6 @@
 """server.py のテスト。実行: uv --directory scripts/gitbucket-mcp run python -m unittest test_server"""
 
+import json
 import unittest
 from unittest import mock
 
@@ -51,6 +52,55 @@ class UpdatePrTest(unittest.TestCase):
     def test_state_applied(self):
         with mock.patch.object(server, "call_api", return_value=_pr(state="closed")):
             self.assertIn("PRを更新しました", server.gitbucket_update_pr("o", "r", 2, state="closed"))
+
+
+INLINE_PAGE = """
+<div class="commit-comment-box " id="discussion_r10" filename="src/x.py" newline="3">
+  <div class="commit-comment-10"><div class="markdown-body">
+    <div><a class="username strong" href="#">alice</a><span data-toggle="tooltip" title="t1">x</span></div>
+    <div class="commit-commentContent-10"><p>inline</p></div>
+  </div></div>
+</div>
+"""
+
+
+def _api(pr_exists: bool):
+    def fake(method, endpoint, data=None):
+        if endpoint.endswith("/comments"):
+            return [{"id": 1, "user": {"login": "bob"}, "body": "normal", "created_at": "c"}]
+        if "/pulls/" in endpoint:
+            if not pr_exists:
+                raise server.NotFoundError("リポジトリまたはリソースが見つかりません")
+            return _pr()
+        raise AssertionError(endpoint)
+    return fake
+
+
+class ListCommentsTest(unittest.TestCase):
+    def _run(self, pr_exists=True, page=(200, INLINE_PAGE)):
+        with mock.patch.object(server, "call_api", side_effect=_api(pr_exists)), \
+                mock.patch.object(server, "get_page", return_value=page) as gp:
+            return json.loads(server.gitbucket_list_comments("o", "r", 2)), gp
+
+    def test_PRなら通常とインラインの両方を返す(self):
+        got, gp = self._run()
+        self.assertEqual([c["body"] for c in got["comments"]], ["normal"])
+        self.assertEqual([(c["path"], c["line"], c["body"]) for c in got["inline_comments"]], [("src/x.py", 3, "inline")])
+        self.assertIsNone(got["inline_error"])
+        self.assertTrue(gp.call_args.args[0].endswith("/o/r/pull/2"))
+
+    def test_Issueの番号ならインラインは空(self):
+        got, gp = self._run(pr_exists=False)
+        self.assertEqual(got["inline_comments"], [])
+        self.assertIsNone(got["inline_error"])
+        gp.assert_not_called()
+
+    def test_画面が開けないときはnullと理由(self):
+        for page in [(401, ""), (302, "Redirected to /signin")]:
+            got, _ = self._run(page=page)
+            self.assertIsNone(got["inline_comments"])
+            self.assertIn("0件ではない", got["inline_error"])
+            self.assertIn("ブラウザ", got["inline_error"])
 
 
 class ErrorTypeTest(unittest.TestCase):
