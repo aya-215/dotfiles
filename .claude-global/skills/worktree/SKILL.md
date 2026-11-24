@@ -117,7 +117,7 @@ python3 ~/.claude/skills/worktree/scripts/worktree_scan.py --json   # 削除手�
 
 #### rm (削除) の場合:
 
-対象には `claude -w` が作った `<本体>/.claude/worktrees/*` と `~/worktrees/*`（`/mnt/` の本体の分）、前の置き場所 `../<略称>-<ブランチ>` が全部入る（`git worktree list` で拾う）。
+対象には `claude -w` が作った `<本体>/.claude/worktrees/*` と `~/worktrees/*`（`/mnt/` の本体の分）、前の置き場所 `../<略称>-<ブランチ>` が入る（ghq のリポジトリと `~/.dotfiles` を `git worktree list` で拾う。ほかに ghq の外の本体があれば `--repo <パス>` で足す）。
 
 対象ごとの `repo`（本体リポジトリのパス）・`path`・`branch` はスクリプトの `--json` 出力から取る。git 操作はすべて `git -C <repo>` で行い、カレントディレクトリに依存しない。本体が `/mnt/` 配下（Tomcat が直接読む eb-api-extended・hankyu 等）でも、worktree の削除とブランチ削除は本体の作業ツリーに触れない。本体側で checkout・pull はしない。
 

@@ -306,5 +306,64 @@ class RemoveTest(unittest.TestCase):
         self.assertFalse(p.exists())
 
 
+class ReviewFixesTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.repo = make_repo(self.tmp / "r")
+        self.bare = self.tmp / "r" / "origin.git"
+        self.home = self.tmp / "home"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_recreating_pr_branch_keeps_local_commits(self):
+        git(self.bare, "update-ref", "refs/pull/7/head", git(self.bare, "rev-parse", "main"))
+        p = create("pr-7", self.repo, home=self.home, gh_head=no_gh)
+        commit_in(p, "fix.txt")
+        mine = rev(p, "HEAD")
+        remove(p)
+        p2 = create("pr-7", self.repo, home=self.home, gh_head=no_gh)
+        self.assertEqual(branch_of(p2), "pr-7")
+        self.assertEqual(rev(p2, "HEAD"), mine)
+
+    def test_pr_head_missing_on_origin_falls_back_to_pull_ref(self):
+        git(self.bare, "update-ref", "refs/pull/8/head", git(self.bare, "rev-parse", "main"))
+        p = create("pr-8", self.repo, home=self.home, gh_head=lambda r, n: "contributor-branch")
+        self.assertEqual(branch_of(p), "pr-8")
+        self.assertFalse(branch_exists(self.repo, "contributor-branch"))
+
+    def test_hanging_fetch_times_out_and_continues(self):
+        import time
+        import worktree_hook
+        git(self.repo, "config", "protocol.ext.allow", "always")
+        git(self.repo, "config", "--unset-all", f"url.{self.bare}.insteadOf")
+        git(self.repo, "remote", "set-url", "origin", "ext::sh -c 'sleep 30'")
+        orig = worktree_hook.FETCH_TIMEOUT
+        worktree_hook.FETCH_TIMEOUT = 2
+        try:
+            t0 = time.monotonic()
+            p = create("feat/hang", self.repo, home=self.home, gh_head=no_gh)
+            self.assertLess(time.monotonic() - t0, 15)
+        finally:
+            worktree_hook.FETCH_TIMEOUT = orig
+        self.assertTrue(p.is_dir())
+
+    def test_cross_device_skips_hardlink(self):
+        root, wt = self.tmp / "root", self.tmp / "wt"
+        (root / "node_modules/a").mkdir(parents=True)
+        (root / "package-lock.json").write_text("{}")
+        wt.mkdir()
+        calls = []
+        got = link_node_modules(root, wt, cp=lambda s, d: calls.append(s) or True, same_device=lambda a, b: False)
+        self.assertEqual(got, [])
+        self.assertEqual(calls, [])
+
+    def test_broken_env_symlink_does_not_fail_create(self):
+        (self.repo / ".env.local").symlink_to(self.tmp / "missing-target")
+        p = create("feat/brokenenv", self.repo, home=self.home, gh_head=no_gh)
+        self.assertTrue(p.is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()
