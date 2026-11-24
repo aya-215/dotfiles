@@ -12,7 +12,7 @@ PANE_FORMAT = "#{pane_id}\t#{pane_current_command}\t#{pane_current_path}"
 _DONE = re.compile(r"done (\d{1,2}):(\d{2})")
 _AHEAD = re.compile(r"\[ahead (\d+)")
 # Claude Code の入力欄・ステータス行（tmux-agent-sidebar 等の装飾を含む）は状態の要約に要らない
-_NOISE = re.compile(r"^(─|❯)|auto mode|cache|󰉋|^5h |^[│┃\s]+$")
+_NOISE = re.compile(r"^─|^❯\s*$|auto mode|cache|󰉋|^5h |^[│┃\s]+$")
 
 
 def pick_claude_pane(panes: str) -> "dict | None":
@@ -24,10 +24,12 @@ def pick_claude_pane(panes: str) -> "dict | None":
 
 
 def pane_state(capture: str, now: datetime) -> dict:
-    lines = capture.splitlines()
+    lines = capture.rstrip("\n").splitlines()
+    while lines and not lines[-1].strip():
+        lines.pop()
     working = any("esc to interrupt" in line for line in lines[-8:])
     tail = [s for s in (line.strip() for line in lines) if s and not _NOISE.search(s)][-6:]
-    done = _DONE.findall(capture)
+    done = [(h, m) for h, m in _DONE.findall(capture) if int(h) < 24 and int(m) < 60]
     since = minutes = None
     if done and not working:
         h, m = (int(x) for x in done[-1])
@@ -44,8 +46,9 @@ def git_state(porcelain: "str | None") -> "dict | None":
     lines = porcelain.splitlines()
     head = lines[0][3:] if lines and lines[0].startswith("## ") else ""
     ahead = _AHEAD.search(head)
+    # upstream が無いブランチは未 push かどうか分からないので 0 と区別する
     return {"branch": head.split("...")[0].split(" ")[0], "dirty": len([x for x in lines[1:] if x.strip()]),
-            "ahead": int(ahead.group(1)) if ahead else 0}
+            "ahead": None if "..." not in head else int(ahead.group(1)) if ahead else 0}
 
 
 def list_sessions(run, self_pane: "str | None", now: datetime) -> "list[dict] | None":
@@ -60,10 +63,10 @@ def list_sessions(run, self_pane: "str | None", now: datetime) -> "list[dict] | 
         if pane:
             row.update(pane)
             if pane["pane"] == self_pane:
-                row.update({"self": True, "state": "idle"})
+                row.update({"self": True, "state": "self"})
             else:
                 row.update(pane_state(run(["tmux", "capture-pane", "-p", "-t", pane["pane"], "-S", "-40"]) or "", now))
-                row["git"] = git_state(run(["git", "-C", pane["cwd"], "status", "--porcelain=v1", "--branch"]))
+                row["git"] = git_state(run(["git", "--no-optional-locks", "-C", pane["cwd"], "status", "--porcelain=v1", "--branch"]))
         out.append(row)
     return out
 

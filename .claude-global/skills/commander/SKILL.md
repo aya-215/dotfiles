@@ -27,7 +27,7 @@ python3 -I $S/sessions.py                      # tmux の各セッションの�
 - `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`（分からなければ `null`）・`refs`（本文の参照ぜんぶ）・`wait_refs`（`## 待っているもの` に出てくる参照だけ）・`location`（実在する作業場所だけ）・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
 - `carry.py` の出力: `section`（そのまま貼る `## 引き継ぐ欄`）・`removed_tmux`・`removed_done`・`done_still_in_todo`・`unparsed_done`
 - `check_waits.py` には各引き継ぎメモの `wait_refs` を、そのメモの `since` と組にして渡す（`refs` を渡すと本文で触れただけの PR まで判定してしまう）。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
-- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`）・`self`（この司令塔））・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に相手の発言があるルームだけ残したもの。自分の発言は除く）・`warnings`
+- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`／`self`＝この司令塔。表示しない）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`。`ahead: null` は upstream が無い＝未 push の可能性）・`self`）・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に相手の発言があるルームだけ残したもの。自分の発言は除く）・`warnings`
 - `sessions.py` は Claude のペインを探して読む。tmux-agent-sidebar のペインがあるので、`tmux capture-pane -t <セッション名>` で直接読まない
 - `warn:` は stderr。出たらユーザーに一言伝える
 
@@ -64,7 +64,7 @@ python3 -I $S/sessions.py                      # tmux の各セッションの�
 - 済んだことの行は `- <YYYY-MM-DD> <内容> [ref:<todo の ref>]`。ref は collect の `todo[].ref`（キーが無い行は `title:<タイトル>`）。todo に無いものは ref を付けない
 - tmux の行は `- <セッション名>: <内容>`。セッション名は `tmux ls` に出る名前で書く
 - PR・issue は `epc#1308`・`gb:ebase-web#102` のように接頭辞付きで書く（`#1308` だけだと `status.py` が拾えない）
-- `最終確認:` は状況確認のたびに書き換える（`status.py` の `now`）
+- `最終確認:` は状況確認のたびに書き換える（`status.py` の `now`）。今日のファイルを作るときは、前の日のファイルの `最終確認:` をそのまま写す（写さないと、前の日の最後の確認から今朝までの変化が落ちる）
 - 引き継ぐ欄の中では `## ` の見出しを使わない（そこで欄が終わり、以降が次の日へ写らない）。貼られたチェックリストの小見出しは `### ` のままでよい（メモにそのまま残る）
 
 ## 手順

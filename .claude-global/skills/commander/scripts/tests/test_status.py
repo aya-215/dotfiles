@@ -43,15 +43,26 @@ class ChangedHandoffsTest(unittest.TestCase):
             t_new = datetime.fromisoformat("2026-11-24T15:10:00+09:00").timestamp()
             os.utime(old, (t_old, t_old))
             os.utime(new, (t_new, t_new))
-            got = changed_handoffs(Path(d), datetime.fromisoformat("2026-11-24T12:00:00+09:00"))
+            got = changed_handoffs(Path(d), datetime.fromisoformat("2026-11-24T12:00:00+09:00"), [])
         self.assertEqual([(h["status"], h["summary"]) for h in got], [("resolved", "本番配置")])
         self.assertEqual(got[0]["last_heading"], "2026-11-24 本番 eBASE 側の作業（完了）")
+
+    def test_unreadable_memo_is_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "handoff-20261124-1000-gone.md").symlink_to(Path(d) / "nothing.md")
+            (Path(d) / "handoff-20261124-1001-sjis.md").write_bytes("status: 待ち\n".encode("cp932"))
+            ok = Path(d) / "handoff-20261124-1002-ok.md"
+            ok.write_text("---\nstatus: blocked\n---\n", encoding="utf-8")
+            w = []
+            got = changed_handoffs(Path(d), MIDNIGHT, w)
+        self.assertEqual([Path(h["path"]).name for h in got], ["handoff-20261124-1002-ok.md"])
+        self.assertEqual(len(w), 2)
 
     def test_last_heading_skips_boilerplate(self):
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "handoff-20261124-1042-x.md"
             p.write_text("---\nstatus: blocked\n---\n## 待っているもの\n## 今の状態\n## 次にやること\n## 関連\n## 元のセッション\n- id\n", encoding="utf-8")
-            got = changed_handoffs(Path(d), MIDNIGHT)
+            got = changed_handoffs(Path(d), MIDNIGHT, [])
         self.assertEqual(got[0]["last_heading"], "")
 
 
@@ -112,6 +123,14 @@ class GithubFactsTest(unittest.TestCase):
         got = github_facts("epc#1312", lambda r, n: pr, lambda r, n: NO_EXTRA, ME, LAST,
                            datetime.fromisoformat("2026-11-20T13:42:00+09:00"))
         self.assertTrue(got["returned"])
+
+    def test_comment_does_not_hide_approve(self):
+        pr = {"state": "open", "author": "x", "reviewers": [], "events": [
+            {"user": "a", "ts": "2026-11-24T05:00:00Z", "kind": "review", "state": "APPROVED"},
+            {"user": "a", "ts": "2026-11-24T05:10:00Z", "kind": "review", "state": "COMMENTED"},
+            {"user": "b", "ts": "2026-11-24T05:20:00Z", "kind": "review", "state": "COMMENTED"}]}
+        got = github_facts("epc#1", lambda r, n: pr, lambda r, n: NO_EXTRA, ME, LAST, None)
+        self.assertEqual(got["reviews"], {"a": "APPROVED", "b": "COMMENTED"})
 
     def test_bots_are_not_activity(self):
         pr = {"state": "merged", "author": "x", "reviewers": [], "events": [

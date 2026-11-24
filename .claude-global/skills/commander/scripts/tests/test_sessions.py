@@ -31,6 +31,18 @@ class PaneStateTest(unittest.TestCase):
         self.assertEqual(st["tail"][-1], "✻ Cogitated for 8s · done 11:56")
         self.assertNotIn("❯", "".join(st["tail"]))
 
+    def test_working_with_blank_lines_below(self):
+        self.assertEqual(pane_state("esc to interrupt\n" + "\n" * 10, NOW)["state"], "working")
+
+    def test_ignores_impossible_done_time(self):
+        st = pane_state("build done 61:05\n", NOW)
+        self.assertIsNone(st["idle_minutes"])
+
+    def test_keeps_selected_choice_in_tail(self):
+        st = pane_state("Do you trust the files in this folder?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n❯ \n", NOW)
+        self.assertIn("❯ 1. Yes, I trust this folder", st["tail"])
+        self.assertNotIn("❯", st["tail"])
+
     def test_idle_across_midnight(self):
         st = pane_state("✻ done 23:50\n", datetime.fromisoformat("2026-11-25T00:10:00+09:00"))
         self.assertEqual(st["idle_minutes"], 20)
@@ -40,6 +52,9 @@ class GitStateTest(unittest.TestCase):
     def test_dirty_and_ahead(self):
         self.assertEqual(git_state("## feat/x...origin/feat/x [ahead 2]\n M a.py\n?? b.py\n"),
                          {"branch": "feat/x", "dirty": 2, "ahead": 2})
+
+    def test_no_upstream(self):
+        self.assertEqual(git_state("## tmp/1321-with-1308\n"), {"branch": "tmp/1321-with-1308", "dirty": 0, "ahead": None})
 
     def test_not_git(self):
         self.assertIsNone(git_state(None))
@@ -52,7 +67,7 @@ class ListSessionsTest(unittest.TestCase):
                ("list-panes", "work"): "%1\ttmux-agent-sidebar\t/\n%2\tclaude\t/w\n",
                ("list-panes", "shell"): "%3\tzsh\t/\n",
                ("capture-pane", "%2"): "✻ done 15:30\n",
-               ("git", "/w"): "## main\n"}
+               ("--no-optional-locks", "/w"): "## main...origin/main\n"}
 
         def run(argv):
             for k, v in out.items():
@@ -66,6 +81,7 @@ class ListSessionsTest(unittest.TestCase):
         self.assertEqual(got["work"]["idle_minutes"], 30)
         self.assertEqual(got["work"]["git"], {"branch": "main", "dirty": 0, "ahead": 0})
         self.assertEqual(got["shell"]["state"], "no_claude")
+        self.assertEqual(got["me"]["state"], "self")
 
     def test_tmux_unavailable(self):
         self.assertIsNone(list_sessions(lambda argv: None, None, NOW))

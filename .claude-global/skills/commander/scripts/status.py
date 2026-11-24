@@ -51,12 +51,16 @@ def read_last_check(text: "str | None", today: date, warnings: "list[str]") -> d
     return dt if dt.tzinfo else dt.replace(tzinfo=JST)
 
 
-def changed_handoffs(memo_dir: Path, since: datetime) -> "list[dict]":
+def changed_handoffs(memo_dir: Path, since: datetime, warnings: "list[str]") -> "list[dict]":
     out = []
     for p in sorted(memo_dir.glob("handoff-*.md")):
-        if p.stat().st_mtime <= since.timestamp():
+        try:
+            if p.stat().st_mtime <= since.timestamp():
+                continue
+            text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as e:
+            warnings.append(f"引き継ぎメモを読めない: {p.name}: {e}")
             continue
-        text = p.read_text(encoding="utf-8")
         headings = [h for h in _HEADING.findall(text) if h not in _BOILERPLATE]
         out.append({"path": str(p), "status": _front(text, "status"), "summary": _front(text, "summary"),
                     "last_heading": headings[-1] if headings else ""})
@@ -153,7 +157,9 @@ def github_facts(ref: str, fetch_pr, fetch_extra, me: "set[str]", last_check: da
         return out
     events = sorted((e for e in pr.get("events", []) if not e["user"].endswith("[bot]")), key=lambda e: e["ts"])
     for e in events:
-        if e.get("kind") == "review" and e.get("state") and e["user"] not in me:
+        # Approve 後のインライン返信も COMMENTED のレビューになるので、それで Approve を消さない
+        if e.get("kind") == "review" and e.get("state") and e["user"] not in me and (
+                e["state"] != "COMMENTED" or e["user"] not in out["reviews"]):
             out["reviews"][e["user"]] = e["state"]
     out.update({"state": pr["state"], "last_commit": extra["last_commit"], "checks": extra["checks"],
                 "activity": [e for e in events if e["user"] not in me and _ts(e["ts"]) > last_check]})
@@ -190,7 +196,7 @@ def build(collected: dict, commander_text: "str | None", sessions: "list[dict] |
     live = None if sessions is None else [s["name"] for s in sessions]
     return {"now": now.isoformat(), "last_check": last_check.isoformat(), "sessions": sessions,
             "closed_sessions": closed_sessions(commander_text, live),
-            "handoffs_changed": changed_handoffs(memo_dir, last_check), "github": github,
+            "handoffs_changed": changed_handoffs(memo_dir, last_check, warnings), "github": github,
             "gitbucket_refs": [r for r in order if r.startswith("gb:")], "reachability": reach,
             "rocketchat_rooms": rooms, "warnings": warnings}
 
@@ -233,7 +239,7 @@ def _connect(ip: str, port: int, timeout: float) -> bool:
 def _read(path: "str | None") -> "str | None":
     try:
         return Path(path).read_text(encoding="utf-8") if path else None
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
 
 
