@@ -21,7 +21,7 @@
 - 書き込みツールは `settings.json` の `permissions.ask` に必ず載せる。
 - コードコメントは非自明な WHY だけを1行で（`.claude-global/rules/code-comments.md`）。
 - コミットは `feat:` / `fix:` / `chore:` / `docs:`。最後に push する。
-- 本物の GitBucket に対する書き込み（PR 作成・コメント・マージ・ブランチ削除）は、検証でも実行しない。書き込みはモックしたテストだけで確かめる。
+- 本物の GitBucket への書き込み（リポジトリ作成・PR 作成・コメント・マージ・ブランチ削除）は、テスト用リポジトリ `mori.a/gitbucket-mcp-test` の中だけで行う（2026-11-24 ユーザー許可）。他のリポジトリには書き込まない。
 
 ## Review Focus
 

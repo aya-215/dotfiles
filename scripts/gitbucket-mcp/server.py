@@ -2,63 +2,12 @@
 """GitBucket MCP Server - GitBucket APIをClaudeから操作するMCPサーバー"""
 
 import json
-import os
-import urllib.error
-import urllib.request
-from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
+from gitbucket_client import GITBUCKET_URL, GitBucketError, call_api
 
-def load_env() -> None:
-    """スクリプトと同じディレクトリの .env.local を読み込む"""
-    env_file = Path(__file__).parent / ".env.local"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ.setdefault(k.strip(), v.strip())
-
-
-load_env()
-
-GITBUCKET_URL = os.environ.get("GITBUCKET_URL", "http://192.168.208.80:8080/gitbucket")
-GITBUCKET_TOKEN = os.environ.get("GITBUCKET_TOKEN", "")
-
-mcp = FastMCP("GitBucket")
-
-
-# ---------------------------------------------------------------------------
-# API共通関数
-# ---------------------------------------------------------------------------
-
-def call_api(method: str, endpoint: str, data: dict | None = None) -> dict | list:
-    """GitBucket APIを呼び出す共通関数"""
-    url = f"{GITBUCKET_URL}/api/v3{endpoint}"
-    body = json.dumps(data).encode() if data else None
-    req = urllib.request.Request(url, data=body, method=method)
-    req.add_header("Authorization", f"token {GITBUCKET_TOKEN}")
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req) as resp:
-            parsed = json.loads(resp.read())
-            # GitBucketのPR作成(POST /pulls)は、JSON文字列を二重にエンコードして
-            # 返すことがある（結果がdict/listでなくstrになる）。その場合はもう一度
-            # パースして本来のオブジェクトに戻す。
-            if isinstance(parsed, str):
-                parsed = json.loads(parsed)
-            return parsed
-    except urllib.error.HTTPError as e:
-        if e.code == 401:
-            raise RuntimeError(
-                "トークンが無効です。GitBucketのAccount Settings → Applicationsでトークンを確認してください"
-            )
-        if e.code == 404:
-            raise RuntimeError(f"リポジトリまたはリソースが見つかりません: {endpoint}")
-        raise RuntimeError(f"APIエラー ({e.code}): {e.reason}")
-    except urllib.error.URLError as e:
-        raise RuntimeError(f"接続エラー: {e.reason}。GitBucketサーバー ({GITBUCKET_URL}) に接続できません")
+mcp = MCPServer("GitBucket", version="0.2.0")
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +74,7 @@ def fmt_repo(repo: dict) -> dict:
 # ツール定義
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_list_prs(owner: str, repo: str, state: str = "open") -> str:
     """GitBucketのPull Request一覧を取得する
 
@@ -141,7 +90,7 @@ def gitbucket_list_prs(owner: str, repo: str, state: str = "open") -> str:
     return json.dumps(prs, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_get_pr(owner: str, repo: str, number: int) -> str:
     """GitBucketの特定のPull Requestの詳細を取得する
 
@@ -154,7 +103,7 @@ def gitbucket_get_pr(owner: str, repo: str, number: int) -> str:
     return json.dumps(fmt_pr(pr), ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_update_pr(
     owner: str,
     repo: str,
@@ -194,14 +143,14 @@ def gitbucket_update_pr(
 
     ignored = [k for k, v in data.items() if norm(k, pr.get(k)) != norm(k, v)] if isinstance(pr, dict) else list(data)
     if ignored:
-        raise RuntimeError(
+        raise GitBucketError(
             f"GitBucket が {', '.join(ignored)} の変更を反映しませんでした。"
             "PR 本文は Web 画面（本文枠右上の鉛筆アイコン）で編集してください"
         )
     return "PRを更新しました\n" + json.dumps(fmt_pr(pr), ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_create_pr(
     owner: str,
     repo: str,
@@ -226,7 +175,7 @@ def gitbucket_create_pr(
     return f"PRを作成しました\n" + json.dumps(result, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_list_issues(owner: str, repo: str, state: str = "open") -> str:
     """GitBucketのIssue一覧を取得する
 
@@ -245,7 +194,7 @@ def gitbucket_list_issues(owner: str, repo: str, state: str = "open") -> str:
     return json.dumps(issues, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_get_issue(owner: str, repo: str, number: int) -> str:
     """GitBucketの特定のIssueの詳細を取得する
 
@@ -258,7 +207,7 @@ def gitbucket_get_issue(owner: str, repo: str, number: int) -> str:
     return json.dumps(fmt_issue(issue), ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_create_issue(
     owner: str,
     repo: str,
@@ -279,7 +228,7 @@ def gitbucket_create_issue(
     return f"Issueを作成しました\n" + json.dumps(result, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_list_comments(owner: str, repo: str, number: int) -> str:
     """GitBucketのIssueまたはPRのコメント一覧を取得する
 
@@ -297,7 +246,7 @@ def gitbucket_list_comments(owner: str, repo: str, number: int) -> str:
     return json.dumps(comments, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_add_comment(
     owner: str,
     repo: str,
@@ -320,7 +269,7 @@ def gitbucket_add_comment(
     return f"コメントを追加しました\n" + json.dumps(result, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_list_branches(owner: str, repo: str) -> str:
     """GitBucketのブランチ一覧を取得する
 
@@ -335,7 +284,7 @@ def gitbucket_list_branches(owner: str, repo: str) -> str:
     return json.dumps(branches, ensure_ascii=False, indent=2)
 
 
-@mcp.tool()
+@mcp.tool(structured_output=False)
 def gitbucket_get_repo(owner: str, repo: str) -> str:
     """GitBucketのリポジトリ情報を取得する
 

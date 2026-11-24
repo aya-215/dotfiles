@@ -2,7 +2,7 @@
 name = "gitbucket-mcp"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["mcp[cli]<2"]
+dependencies = ["mcp[cli]>=2,<3"]
 
 [build-system]
 requires = ["hatchling"]

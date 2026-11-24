@@ -17,7 +17,7 @@ def _pr(**over):
 class UpdatePrTest(unittest.TestCase):
     def test_body_not_applied_raises(self):
         with mock.patch.object(server, "call_api", return_value=_pr(body="old")):
-            with self.assertRaisesRegex(RuntimeError, "body"):
+            with self.assertRaisesRegex(server.GitBucketError, "body"):
                 server.gitbucket_update_pr("o", "r", 2, body="new")
 
     def test_body_applied_returns_updated(self):
@@ -51,6 +51,13 @@ class UpdatePrTest(unittest.TestCase):
     def test_state_applied(self):
         with mock.patch.object(server, "call_api", return_value=_pr(state="closed")):
             self.assertIn("PRを更新しました", server.gitbucket_update_pr("o", "r", 2, state="closed"))
+
+
+class ErrorTypeTest(unittest.TestCase):
+    def test_更新が反映されないとGitBucketErrorを投げる(self):
+        with mock.patch.object(server, "call_api", return_value=_pr(body="old")):
+            with self.assertRaises(server.GitBucketError):
+                server.gitbucket_update_pr("o", "r", 2, body="new")
 
 
 if __name__ == "__main__":
