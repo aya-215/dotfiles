@@ -1,5 +1,8 @@
+import io
+import json
 import os
 import subprocess
+from contextlib import redirect_stdout
 import sys
 import tempfile
 import unittest
@@ -7,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from worktree_hook import (  # noqa: E402
-    HookError, copy_env, create, is_personal, link_node_modules, new_branch_name, placement, slug,
+    HookError, copy_env, create, is_personal, link_node_modules, main, new_branch_name, placement, remove, slug,
 )
 
 
@@ -229,6 +232,78 @@ class CopyTest(unittest.TestCase):
         (repo / ".env.local").write_text("SECRET=1")
         p = create("feat/env", repo, home=self.tmp / "home", gh_head=no_gh)
         self.assertEqual((p / ".env.local").read_text(), "SECRET=1")
+
+
+def branch_exists(repo: Path, branch: str) -> bool:
+    return subprocess.run(["git", "-C", str(repo), "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}"],
+                          capture_output=True).returncode == 0
+
+
+def commit_in(p: Path, name: str) -> None:
+    (p / name).write_text("x")
+    git(p, "add", name)
+    git(p, "commit", "-q", "-m", name)
+
+
+class RemoveTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.repo = make_repo(self.tmp / "r")
+        self.home = self.tmp / "home"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_remove_deletes_dir_and_merged_branch(self):
+        p = create("feat/done", self.repo, home=self.home, gh_head=no_gh)
+        self.assertEqual(remove(p), 0)
+        self.assertFalse(p.exists())
+        self.assertFalse(branch_exists(self.repo, "feat/done"))
+
+    def test_remove_keeps_branch_with_local_only_commit(self):
+        p = create("feat/wip", self.repo, home=self.home, gh_head=no_gh)
+        commit_in(p, "a.txt")
+        self.assertEqual(remove(p), 0)
+        self.assertFalse(p.exists())
+        self.assertTrue(branch_exists(self.repo, "feat/wip"))
+
+    def test_remove_with_uncommitted_changes(self):
+        p = create("feat/dirty", self.repo, home=self.home, gh_head=no_gh)
+        (p / "u.txt").write_text("x")
+        self.assertEqual(remove(p), 0)
+        self.assertFalse(p.exists())
+
+    def test_remove_missing_path_is_ok(self):
+        self.assertEqual(remove(self.tmp / "gone"), 0)
+
+    def test_main_create_prints_only_path(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = main(["create"], stdin=io.StringIO(json.dumps({"name": "feat/cli", "cwd": str(self.repo)})))
+        self.assertEqual(rc, 0)
+        self.assertEqual(out.getvalue().strip().splitlines(), [str(self.repo / ".claude/worktrees/feat-cli")])
+
+    def test_main_create_with_args(self):
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = main(["create", "--name", "feat/args", "--cwd", str(self.repo)], stdin=io.StringIO(""))
+        self.assertEqual(rc, 0)
+        self.assertTrue(Path(out.getvalue().strip()).is_dir())
+
+    def test_main_create_error_exit_1(self):
+        git(self.repo, "checkout", "-q", "-b", "feat/busy")
+        out = io.StringIO()
+        with redirect_stdout(out):
+            rc = main(["create"], stdin=io.StringIO(json.dumps({"name": "feat/busy", "cwd": str(self.repo)})))
+        self.assertEqual(rc, 1)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_main_remove_from_json(self):
+        p = create("feat/rm", self.repo, home=self.home, gh_head=no_gh)
+        rc = main(["remove"], stdin=io.StringIO(json.dumps({"worktree_path": str(p)})))
+        self.assertEqual(rc, 0)
+        self.assertFalse(p.exists())
 
 
 if __name__ == "__main__":

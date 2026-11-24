@@ -3,13 +3,15 @@
 
 設計: docs/superpowers/specs/2026-11-24-claude-worktree-hooks-design.md
 """
+import argparse
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable
+from typing import Callable, TextIO
 
 KNOWN_TYPES = ("feat", "fix", "docs", "chore", "refactor", "test", "hotfix", "ci", "perf", "build", "style")
 PERSONAL_MARKERS = ("github-aya215:", "github.com/aya-215/")
@@ -203,3 +205,49 @@ def link_node_modules(root: Path, wt: Path, cp: "Callable[[Path, Path], bool]" =
             shutil.rmtree(dst, ignore_errors=True)
             print(f"warn: {rel / 'node_modules'} をハードリンクできなかったので飛ばします", file=sys.stderr)
     return linked
+
+
+def remove(worktree_path: Path) -> int:
+    if not worktree_path.exists():
+        return 0
+    branch = _out(worktree_path, "branch", "--show-current")
+    common = _out(worktree_path, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if common:
+        root = Path(common).parent
+        # Claude Code は変更があれば消してよいか聞いてから呼ぶので、ここでは --force でよい
+        _run(root, "worktree", "remove", "--force", str(worktree_path))
+        if branch and not worktree_path.exists() and _run(root, "branch", "-d", branch).returncode != 0:
+            print(f"ブランチ {branch} は手元にしか無いコミットがあるので残しました", file=sys.stderr)
+    if worktree_path.exists():
+        print(f"{worktree_path} を消せませんでした", file=sys.stderr)
+        return 1
+    return 0
+
+
+def main(argv: "list[str] | None" = None, stdin: TextIO = sys.stdin) -> int:
+    p = argparse.ArgumentParser(description=__doc__)
+    sub = p.add_subparsers(dest="cmd", required=True)
+    c = sub.add_parser("create", help="worktree を作る（引数が無ければ stdin のフック JSON を読む）")
+    c.add_argument("--name")
+    c.add_argument("--cwd", type=Path)
+    sub.add_parser("remove", help="worktree を消す（stdin のフック JSON を読む）")
+    a = p.parse_args(argv)
+    try:
+        if a.cmd == "create":
+            if a.name:
+                name, cwd = a.name, a.cwd or Path.cwd()
+            else:
+                data = json.load(stdin)
+                name, cwd = data["name"], Path(data["cwd"])
+            print(create(name, cwd))
+            return 0
+        return remove(Path(json.load(stdin)["worktree_path"]))
+    except HookError as e:
+        print(f"worktree の処理に失敗しました: {e}", file=sys.stderr)
+    except (ValueError, KeyError) as e:
+        print(f"フックの入力を読めません: {e}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
