@@ -340,10 +340,19 @@ def gitbucket_merge_pr(owner: str, repo: str, number: int, commit_message: str |
         owner: リポジトリのオーナー名
         repo: リポジトリ名
         number: PRの番号
-        commit_message: マージコミットのメッセージ（省略すると GitBucket の既定）
+        commit_message: マージコミットのメッセージ（省略すると Merge pull request #N from <head>）
     """
-    data = {"commit_message": commit_message} if commit_message else None
-    result = call_api("PUT", f"/repos/{owner}/{repo}/pulls/{number}/merge", data)
+    # GitBucket は commit_message の無いマージに 500 を返す
+    if not commit_message:
+        head = call_api("GET", f"/repos/{owner}/{repo}/pulls/{number}").get("head", {}).get("label")
+        commit_message = f"Merge pull request #{number} from {head}"
+    result = call_api("PUT", f"/repos/{owner}/{repo}/pulls/{number}/merge", {"commit_message": commit_message})
+    # GitBucket はマージ結果を {"status": 200, "body": "<JSON文字列>"} に包んで返す
+    if isinstance(result, dict) and isinstance(result.get("body"), str):
+        try:
+            result = json.loads(result["body"])
+        except ValueError:
+            pass
     return "PRをマージしました\n" + json.dumps(result, ensure_ascii=False, indent=2)
 
 
@@ -359,7 +368,8 @@ def gitbucket_delete_branch(owner: str, repo: str, branch: str) -> str:
     default = call_api("GET", f"/repos/{owner}/{repo}").get("default_branch")
     if branch == default:
         raise GitBucketError(f"{branch} は {owner}/{repo} の既定ブランチなので削除しません")
-    call_api("DELETE", f"/repos/{owner}/{repo}/git/refs/heads/{urllib.parse.quote(branch, safe='')}")
+    # / まで %2F にすると GitBucket が 400 を返す
+    call_api("DELETE", f"/repos/{owner}/{repo}/git/refs/heads/{urllib.parse.quote(branch, safe='/')}")
     return f"{owner}/{repo} のブランチ {branch} を削除しました"
 
 

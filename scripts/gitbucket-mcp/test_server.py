@@ -116,11 +116,12 @@ class NewToolsTest(unittest.TestCase):
     def _with(self, rec):
         return mock.patch.object(server, "call_api", side_effect=rec)
 
-    def test_マージはPUTで既定のメッセージに任せる(self):
-        rec = _Recorder()
+    def test_メッセージ省略時はPRから既定のメッセージを作って送る(self):
+        # GitBucket は commit_message の無いマージに 500 を返す（2026-11-24 実測）
+        rec = _Recorder({("GET", "/repos/o/r/pulls/2"): _pr(head={"label": "feat/x"})})
         with self._with(rec):
             server.gitbucket_merge_pr("o", "r", 2)
-        self.assertEqual(rec.calls, [("PUT", "/repos/o/r/pulls/2/merge", None)])
+        self.assertEqual(rec.calls[-1], ("PUT", "/repos/o/r/pulls/2/merge", {"commit_message": "Merge pull request #2 from feat/x"}))
 
     def test_マージにメッセージを渡せる(self):
         rec = _Recorder()
@@ -141,6 +142,20 @@ class NewToolsTest(unittest.TestCase):
         method, endpoint, _ = rec.calls[-1]
         self.assertEqual(method, "DELETE")
         self.assertEqual(endpoint, "/repos/o/r/git/refs/heads/%E3%80%90No00000005%E3%80%91x")
+
+    def test_スラッシュ入りのブランチ名はスラッシュを残す(self):
+        # GitBucket は refs/heads/feat/x の / を %2F にすると 400 を返す（2026-11-24 実測）
+        rec = _Recorder({("GET", "/repos/o/r"): {"default_branch": "main"}})
+        with self._with(rec):
+            server.gitbucket_delete_branch("o", "r", "feat/x")
+        self.assertEqual(rec.calls[-1][1], "/repos/o/r/git/refs/heads/feat/x")
+
+    def test_マージの応答に包まれた本文をほどいて返す(self):
+        wrapped = {"status": 200, "body": '{"sha": "abc", "merged": true, "message": "ok"}'}
+        rec = _Recorder({("PUT", "/repos/o/r/pulls/2/merge"): wrapped})
+        with self._with(rec):
+            out = server.gitbucket_merge_pr("o", "r", 2)
+        self.assertEqual(json.loads(out.split("\n", 1)[1]), {"sha": "abc", "merged": True, "message": "ok"})
 
     def test_汎用GETはhttpやドット2つのパスを断る(self):
         for bad in ["http://x/repos", "/repos/../admin", "repos/o/r"]:
