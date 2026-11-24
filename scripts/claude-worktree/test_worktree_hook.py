@@ -1,3 +1,4 @@
+import os
 import subprocess
 import sys
 import tempfile
@@ -5,7 +6,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from worktree_hook import HookError, create, is_personal, new_branch_name, placement, slug  # noqa: E402
+from worktree_hook import (  # noqa: E402
+    HookError, copy_env, create, is_personal, link_node_modules, new_branch_name, placement, slug,
+)
 
 
 def git(cwd, *args) -> str:
@@ -171,6 +174,61 @@ class CreateTest(unittest.TestCase):
             worktree_hook.placement = orig
         self.assertEqual(p, self.home / "worktrees" / "clone-feat-m")
         self.assertTrue(p.is_dir())
+
+
+class CopyTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.root = self.tmp / "root"
+        self.wt = self.tmp / "wt"
+        (self.root / "apps/ui").mkdir(parents=True)
+        (self.wt / "apps/ui").mkdir(parents=True)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def put(self, rel, text="x"):
+        f = self.root / rel
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(text)
+
+    def test_copy_env_same_relative_paths(self):
+        for rel in ["apps/ui/.env.local", ".env.keys", "node_modules/x/.env.local", ".claude/worktrees/y/.env.local"]:
+            self.put(rel)
+        self.assertEqual(sorted(copy_env(self.root, self.wt)), [".env.keys", "apps/ui/.env.local"])
+        self.assertTrue((self.wt / "apps/ui/.env.local").exists())
+        self.assertFalse((self.wt / "node_modules").exists())
+
+    def test_link_node_modules_only_with_package_lock(self):
+        self.put("node_modules/a/index.js")
+        self.assertEqual(link_node_modules(self.root, self.wt), [])
+
+    def test_link_node_modules_hardlinks(self):
+        self.put("package-lock.json", "{}")
+        self.put("node_modules/a/index.js")
+        self.put("apps/ui/node_modules/b.js")
+        self.put("apps/gone/node_modules/c.js")
+        self.assertEqual(sorted(link_node_modules(self.root, self.wt)), ["apps/ui/node_modules", "node_modules"])
+        self.assertEqual(os.stat(self.root / "node_modules/a/index.js").st_ino,
+                         os.stat(self.wt / "node_modules/a/index.js").st_ino)
+
+    def test_link_failure_cleans_and_continues(self):
+        self.put("package-lock.json", "{}")
+        self.put("node_modules/a/index.js")
+
+        def cp_fail(src, dst):
+            dst.mkdir(parents=True)
+            (dst / "partial").write_text("x")
+            return False
+        self.assertEqual(link_node_modules(self.root, self.wt, cp=cp_fail), [])
+        self.assertFalse((self.wt / "node_modules").exists())
+
+    def test_create_copies_env(self):
+        repo = make_repo(self.tmp / "r")
+        (repo / ".env.local").write_text("SECRET=1")
+        p = create("feat/env", repo, home=self.tmp / "home", gh_head=no_gh)
+        self.assertEqual((p / ".env.local").read_text(), "SECRET=1")
 
 
 if __name__ == "__main__":

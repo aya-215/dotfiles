@@ -3,7 +3,9 @@
 
 設計: docs/superpowers/specs/2026-11-24-claude-worktree-hooks-design.md
 """
+import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +13,8 @@ from typing import Callable
 
 KNOWN_TYPES = ("feat", "fix", "docs", "chore", "refactor", "test", "hotfix", "ci", "perf", "build", "style")
 PERSONAL_MARKERS = ("github-aya215:", "github.com/aya-215/")
+ENV_FILES = (".env.local", ".env.keys")
+NODE_MODULES_DEPTH = 3
 
 
 def slug(name: str) -> str:
@@ -151,4 +155,51 @@ def create(name: str, cwd: Path, home: Path = Path.home(),
         _must(root, "worktree", "add", "--track", "-b", branch, str(path), f"origin/{branch}")
     else:
         _must(root, "worktree", "add", "--no-track", "-b", branch, str(path), _base(root))
+    for rel in copy_env(root, path):
+        print(f"コピー: {rel}", file=sys.stderr)
+    for rel in link_node_modules(root, path):
+        print(f"ハードリンク: {rel}", file=sys.stderr)
     return path
+
+
+def _walk(root: Path):
+    """root 以下を歩く。node_modules・.git・.claude/worktrees の中には入らない。(相対ディレクトリ, 子ディレクトリ名, ファイル名) を返す。"""
+    for dirpath, dirs, files in os.walk(root):
+        rel = Path(dirpath).relative_to(root)
+        yield rel, list(dirs), files
+        dirs[:] = [d for d in dirs if d not in ("node_modules", ".git") and (rel / d) != Path(".claude/worktrees")]
+
+
+def copy_env(root: Path, wt: Path) -> "list[str]":
+    copied = []
+    for rel, _, files in _walk(root):
+        for f in files:
+            if f in ENV_FILES:
+                dst = wt / rel / f
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(root / rel / f, dst)
+                copied.append(str(rel / f))
+    return copied
+
+
+def _cp_al(src: Path, dst: Path) -> bool:
+    return subprocess.run(["cp", "-al", str(src), str(dst)], capture_output=True).returncode == 0
+
+
+def link_node_modules(root: Path, wt: Path, cp: "Callable[[Path, Path], bool]" = _cp_al) -> "list[str]":
+    if not (root / "package-lock.json").exists():
+        return []
+    linked = []
+    for rel, dirs, _ in _walk(root):
+        if "node_modules" not in dirs or len((rel / "node_modules").parts) > NODE_MODULES_DEPTH:
+            continue
+        dst = wt / rel / "node_modules"
+        if not (wt / rel).is_dir() or dst.exists():
+            continue
+        if cp(root / rel / "node_modules", dst):
+            linked.append(str(rel / "node_modules"))
+        else:
+            # 別のファイルシステム等で失敗したら、半端な複製を消して npm install に任せる
+            shutil.rmtree(dst, ignore_errors=True)
+            print(f"warn: {rel / 'node_modules'} をハードリンクできなかったので飛ばします", file=sys.stderr)
+    return linked
