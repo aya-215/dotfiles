@@ -2,6 +2,7 @@
 """GitBucket MCP Server - GitBucket APIをClaudeから操作するMCPサーバー"""
 
 import json
+import urllib.parse
 
 from mcp.server.mcpserver import MCPServer
 
@@ -162,6 +163,10 @@ def gitbucket_create_pr(
 ) -> str:
     """GitBucketにPull Requestを作成する
 
+    本文に closes #12 と書くと、既定ブランチへマージしたときに Issue #12 が閉じる（Issue を閉じる API は無い）。
+    同じリポジトリのブランチなら head はブランチ名だけ（user:branch と書くと 404）。
+    応答を読めなかったときは再実行せず、gitbucket_list_prs で作成済みか確かめる（PR の二重作成を防ぐ）。
+
     Args:
         owner: リポジトリのオーナー名
         repo: リポジトリ名
@@ -216,6 +221,11 @@ def gitbucket_create_issue(
     body: str = "",
 ) -> str:
     """GitBucketにIssueを作成する
+
+    作成後に本文・タイトルを API で直せない（Issue の編集 API は無い。直すのは Web 画面だけ）。
+    相互参照する Issue は本文に番号を書かず、全部作って番号が確定してからコメントでつなぐ。
+    作れないときは権限と決めつけず、gitbucket_get_user と gitbucket_list_user_orgs で
+    トークンの持ち主とグループ所属を確かめ、リポジトリ設定の Issues の公開範囲も疑う。
 
     Args:
         owner: リポジトリのオーナー名
@@ -316,6 +326,80 @@ def gitbucket_get_repo(owner: str, repo: str) -> str:
     """
     repo_data = call_api("GET", f"/repos/{owner}/{repo}")
     return json.dumps(fmt_repo(repo_data), ensure_ascii=False, indent=2)
+
+
+@mcp.tool(structured_output=False)
+def gitbucket_merge_pr(owner: str, repo: str, number: int, commit_message: str | None = None) -> str:
+    """GitBucketのPull Requestをマージする
+
+    既定ブランチへマージすると、PR のタイトル・本文・コミットメッセージにある
+    closes #12 などのキーワードで Issue が閉じる。
+    応答を読めなかったときは再実行せず、gitbucket_get_pr でマージ済みか確かめる。
+
+    Args:
+        owner: リポジトリのオーナー名
+        repo: リポジトリ名
+        number: PRの番号
+        commit_message: マージコミットのメッセージ（省略すると GitBucket の既定）
+    """
+    data = {"commit_message": commit_message} if commit_message else None
+    result = call_api("PUT", f"/repos/{owner}/{repo}/pulls/{number}/merge", data)
+    return "PRをマージしました\n" + json.dumps(result, ensure_ascii=False, indent=2)
+
+
+@mcp.tool(structured_output=False)
+def gitbucket_delete_branch(owner: str, repo: str, branch: str) -> str:
+    """GitBucketのブランチを削除する（既定ブランチは削除しない）
+
+    Args:
+        owner: リポジトリのオーナー名
+        repo: リポジトリ名
+        branch: 削除するブランチ名（refs/heads/ は付けない）
+    """
+    default = call_api("GET", f"/repos/{owner}/{repo}").get("default_branch")
+    if branch == default:
+        raise GitBucketError(f"{branch} は {owner}/{repo} の既定ブランチなので削除しません")
+    call_api("DELETE", f"/repos/{owner}/{repo}/git/refs/heads/{urllib.parse.quote(branch, safe='')}")
+    return f"{owner}/{repo} のブランチ {branch} を削除しました"
+
+
+@mcp.tool(structured_output=False)
+def gitbucket_get_user() -> str:
+    """トークンの持ち主（GitBucketのログインユーザー）を取得する
+
+    Issue や PR を作れないときは、まずここで誰のトークンかを確かめる。
+    site_admin が true だと権限の判定を素通りするので、自分で作れても他の人が作れる証拠にならない。
+    """
+    user = call_api("GET", "/user")
+    return json.dumps({k: user.get(k) for k in ("login", "name", "site_admin")}, ensure_ascii=False, indent=2)
+
+
+@mcp.tool(structured_output=False)
+def gitbucket_list_user_orgs(user: str | None = None) -> str:
+    """GitBucketのユーザーが所属するグループ（組織）の一覧を取得する
+
+    グループのメンバーは、そのグループがオーナーのリポジトリで担当者（コラボレーター）に
+    入っていなくても Issue・PR を作れる。所属の判定相手はリポジトリのオーナーそのもの。
+
+    Args:
+        user: ユーザー名（省略するとトークンの持ち主）
+    """
+    orgs = call_api("GET", f"/users/{user}/orgs" if user else "/user/orgs")
+    return json.dumps([o.get("login") for o in orgs], ensure_ascii=False, indent=2)
+
+
+@mcp.tool(structured_output=False)
+def gitbucket_api_get(path: str) -> str:
+    """GitBucket REST API を GET する（読み取り専用）。専用ツールが無い読み取りに使う
+
+    書き込み（POST/PUT/PATCH/DELETE）はこのツールではできない。必要なら専用ツールを足す。
+
+    Args:
+        path: /api/v3 より後ろのパス（例: /repos/owner/repo/collaborators）
+    """
+    if not path.startswith("/") or "://" in path or ".." in path.split("?")[0].split("/"):
+        raise GitBucketError(f"path は /api/v3 より後ろの / で始まるパスで指定してください: {path}")
+    return json.dumps(call_api("GET", path), ensure_ascii=False, indent=2)
 
 
 # ---------------------------------------------------------------------------

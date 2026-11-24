@@ -103,6 +103,67 @@ class ListCommentsTest(unittest.TestCase):
             self.assertIn("ブラウザ", got["inline_error"])
 
 
+class _Recorder:
+    def __init__(self, responses=None):
+        self.calls, self.responses = [], responses or {}
+
+    def __call__(self, method, endpoint, data=None):
+        self.calls.append((method, endpoint, data))
+        return self.responses.get((method, endpoint), {"ok": True})
+
+
+class NewToolsTest(unittest.TestCase):
+    def _with(self, rec):
+        return mock.patch.object(server, "call_api", side_effect=rec)
+
+    def test_マージはPUTで既定のメッセージに任せる(self):
+        rec = _Recorder()
+        with self._with(rec):
+            server.gitbucket_merge_pr("o", "r", 2)
+        self.assertEqual(rec.calls, [("PUT", "/repos/o/r/pulls/2/merge", None)])
+
+    def test_マージにメッセージを渡せる(self):
+        rec = _Recorder()
+        with self._with(rec):
+            server.gitbucket_merge_pr("o", "r", 2, commit_message="m")
+        self.assertEqual(rec.calls, [("PUT", "/repos/o/r/pulls/2/merge", {"commit_message": "m"})])
+
+    def test_既定ブランチは消さない(self):
+        rec = _Recorder({("GET", "/repos/o/r"): {"default_branch": "main"}})
+        with self._with(rec), self.assertRaises(server.GitBucketError):
+            server.gitbucket_delete_branch("o", "r", "main")
+        self.assertNotIn("DELETE", [c[0] for c in rec.calls])
+
+    def test_日本語のブランチ名をURLエンコードして消す(self):
+        rec = _Recorder({("GET", "/repos/o/r"): {"default_branch": "main"}})
+        with self._with(rec):
+            server.gitbucket_delete_branch("o", "r", "【No00000005】x")
+        method, endpoint, _ = rec.calls[-1]
+        self.assertEqual(method, "DELETE")
+        self.assertEqual(endpoint, "/repos/o/r/git/refs/heads/%E3%80%90No00000005%E3%80%91x")
+
+    def test_汎用GETはhttpやドット2つのパスを断る(self):
+        for bad in ["http://x/repos", "/repos/../admin", "repos/o/r"]:
+            with self._with(_Recorder()), self.assertRaises(server.GitBucketError):
+                server.gitbucket_api_get(bad)
+
+    def test_汎用GETはそのままGETする(self):
+        rec = _Recorder({("GET", "/repos/o/r/collaborators"): [{"login": "a"}]})
+        with self._with(rec):
+            self.assertEqual(json.loads(server.gitbucket_api_get("/repos/o/r/collaborators")), [{"login": "a"}])
+
+    def test_ユーザー指定の有無で組織一覧のエンドポイントが変わる(self):
+        rec = _Recorder({("GET", "/user/orgs"): [{"login": "eBASE"}], ("GET", "/users/x/orgs"): [{"login": "AI_dev"}]})
+        with self._with(rec):
+            self.assertEqual(json.loads(server.gitbucket_list_user_orgs()), ["eBASE"])
+            self.assertEqual(json.loads(server.gitbucket_list_user_orgs("x")), ["AI_dev"])
+
+    def test_ユーザー情報は主要な項目だけ返す(self):
+        rec = _Recorder({("GET", "/user"): {"login": "mori.a", "name": "M", "site_admin": False, "extra": 1}})
+        with self._with(rec):
+            self.assertEqual(json.loads(server.gitbucket_get_user()), {"login": "mori.a", "name": "M", "site_admin": False})
+
+
 class ErrorTypeTest(unittest.TestCase):
     def test_更新が反映されないとGitBucketErrorを投げる(self):
         with mock.patch.object(server, "call_api", return_value=_pr(body="old")):
