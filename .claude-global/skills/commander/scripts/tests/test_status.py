@@ -6,7 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from status import build, changed_handoffs, closed_sessions, github_facts, probe, read_last_check, wait_ips  # noqa: E402
+from status import build, changed_handoffs, rc_rooms, closed_sessions, github_facts, probe, read_last_check, wait_ips  # noqa: E402
 
 TODAY = date(2026, 11, 24)
 MIDNIGHT = datetime.fromisoformat("2026-11-24T00:00:00+09:00")
@@ -113,6 +113,13 @@ class GithubFactsTest(unittest.TestCase):
                            datetime.fromisoformat("2026-11-20T13:42:00+09:00"))
         self.assertTrue(got["returned"])
 
+    def test_bots_are_not_activity(self):
+        pr = {"state": "merged", "author": "x", "reviewers": [], "events": [
+            {"user": "github-actions[bot]", "ts": "2026-11-24T05:00:00Z", "kind": "comment", "state": None},
+            {"user": "claude", "ts": "2026-11-24T05:01:00Z", "kind": "comment", "state": None}]}
+        got = github_facts("epc#1300", lambda r, n: pr, lambda r, n: NO_EXTRA, ME, LAST, None)
+        self.assertEqual([e["user"] for e in got["activity"]], ["claude"])
+
     def test_issue_skips_extra(self):
         issue = {"state": "open", "events": [], "is_issue": True, "closed_at": None}
 
@@ -135,7 +142,7 @@ class BuildTest(unittest.TestCase):
     def test_dedups_refs_and_splits_gitbucket(self):
         collected = {
             "today": "2026-11-24",
-            "todo": [{"ref": "epc#1316"}, {"ref": "gb:ebase-web#102"}, {"ref": "title:何か"}, {"ref": "rc:abc"}],
+            "todo": [{"ref": "epc#1316"}, {"ref": "gb:ebase-web#102"}, {"ref": "title:何か"}, {"ref": "rc:abc", "url": "https://team.ebase-jp.com/direct/zz?msg=a"}],
             "handoffs": [{"path": "/m/h1.md", "refs": ["epc#1316", "gb:ebase-web#102"], "wait_refs": ["epc#1316"],
                           "since": "2026-11-20T17:42:00+09:00", "summary": "s"}],
             "warnings": [],
@@ -154,6 +161,7 @@ class BuildTest(unittest.TestCase):
         self.assertEqual(out["gitbucket_refs"], ["gb:ebase-web#102"])
         self.assertEqual(out["reachability"], [{"ip": "192.168.160.92", "open": [80], "memo": "/m/h1.md"}])
         self.assertEqual(out["last_check"], "2026-11-24T00:00:00+09:00")
+        self.assertEqual(out["rocketchat_rooms"], [{"kind": "direct", "room": "zz"}])
 
     def test_includes_refs_in_commander_file(self):
         collected = {"today": "2026-11-24", "todo": [{"ref": "epc#1302"}], "handoffs": [], "warnings": []}
@@ -163,6 +171,17 @@ class BuildTest(unittest.TestCase):
                         facts=lambda ref, since, lc: {"ref": ref}, memo_text=lambda p: "",
                         connect=lambda ip, port, t: False, now=LAST)
         self.assertEqual([g["ref"] for g in out["github"]], ["epc#1302", "epc#1308"])
+
+
+
+class RcRoomsTest(unittest.TestCase):
+    def test_rooms_from_links(self):
+        texts = ["https://team.ebase-jp.com/direct/i9o3NbG?msg=pN9", "x https://team.ebase-jp.com/direct/i9o3NbG?msg=krY",
+                 "https://team.ebase-jp.com/group/%E3%83%91%E3%82%A4%E3%83%AD%E3%83%83%E3%83%88?msg=vzn",
+                 "https://team.ebase-jp.com/channel/general", None]
+        self.assertEqual(rc_rooms(texts), [{"kind": "direct", "room": "i9o3NbG"},
+                                           {"kind": "group", "room": "パイロット"},
+                                           {"kind": "channel", "room": "general"}])
 
 
 if __name__ == "__main__":

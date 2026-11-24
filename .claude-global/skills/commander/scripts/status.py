@@ -9,6 +9,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import carry  # noqa: E402
@@ -28,6 +29,7 @@ _HEADING = re.compile(r"^## (.+?)\s*$", re.M)
 # /handoff の雛形の節。これより後ろに書き足された見出しだけが進み具合を表す
 _BOILERPLATE = {"待っているもの", "今の状態", "決めたことと理由", "次にやること", "関連", "元のセッション"}
 GH_WORKERS = 6
+_RC_ROOM = re.compile(r"team\.ebase-jp\.com/(direct|group|channel)/([^?#\s)\]]+)")
 
 
 def _front(text: str, key: str) -> str:
@@ -76,6 +78,14 @@ def closed_sessions(commander_text: "str | None", live: "list[str] | None") -> "
     return info["removed_tmux"]
 
 
+def rc_rooms(texts: "list[str | None]") -> "list[dict]":
+    seen: "dict[tuple[str, str], dict]" = {}
+    for text in texts:
+        for kind, room in _RC_ROOM.findall(text or ""):
+            seen.setdefault((kind, unquote(room)), {"kind": kind, "room": unquote(room)})
+    return list(seen.values())
+
+
 def _ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
@@ -100,7 +110,7 @@ def github_facts(ref: str, fetch_pr, fetch_extra, me: "set[str]", last_check: da
     except Exception as e:  # 1件の失敗で残りを止めない
         out["error"] = str(e)
         return out
-    events = sorted(pr.get("events", []), key=lambda e: e["ts"])
+    events = sorted((e for e in pr.get("events", []) if not e["user"].endswith("[bot]")), key=lambda e: e["ts"])
     for e in events:
         if e.get("kind") == "review" and e.get("state") and e["user"] not in me:
             out["reviews"][e["user"]] = e["state"]
@@ -131,14 +141,17 @@ def build(collected: dict, commander_text: "str | None", sessions: "list[dict] |
         if g.get("error"):
             warnings.append(f"{g['ref']}: 取得失敗: {g['error']}")
     reach = []
+    memo_texts = {h["path"]: memo_text(h["path"]) for h in collected["handoffs"]}
+    rooms = rc_rooms([r.get("url") for r in collected["todo"]] + list(memo_texts.values()) + [commander_text])
     for h in collected["handoffs"]:
-        for ip in wait_ips(memo_text(h["path"])):
+        for ip in wait_ips(memo_texts[h["path"]]):
             reach.append({"ip": ip, "open": probe(ip, connect), "memo": h["path"]})
     live = None if sessions is None else [s["name"] for s in sessions]
     return {"now": now.isoformat(), "last_check": last_check.isoformat(), "sessions": sessions,
             "closed_sessions": closed_sessions(commander_text, live),
             "handoffs_changed": changed_handoffs(memo_dir, last_check), "github": github,
-            "gitbucket_refs": [r for r in order if r.startswith("gb:")], "reachability": reach, "warnings": warnings}
+            "gitbucket_refs": [r for r in order if r.startswith("gb:")], "reachability": reach,
+            "rocketchat_rooms": rooms, "warnings": warnings}
 
 
 _PASS = {"success", "skipped", "neutral"}

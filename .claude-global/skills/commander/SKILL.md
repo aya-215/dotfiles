@@ -1,6 +1,6 @@
 ---
 name: commander
-description: 司令塔。todo（~/memo/todo.md）と待ち中の引き継ぎメモ（/handoff）を丸ごと読み、残りの作業を優先度別に理由付きで出し、起動する場所と打つプロンプトを付け、頼まれたら作業ごとに tmux セッションを立てて Claude を起動する。「/commander」「司令塔」「残りを全部出して、やる順番を提案して」「返ってきたもの有る？」「〇〇のセッションを起動して」「〇〇終わった」「〇〇止まった」「来週分も出して」等で使う。
+description: 司令塔。todo（~/memo/todo.md）と待ち中の引き継ぎメモ（/handoff）を丸ごと読み、残りの作業を優先度別に理由付きで出し、起動する場所と打つプロンプトを付け、頼まれたら作業ごとに tmux セッションを立てて Claude を起動する。「/commander」「司令塔」「残りを全部出して、やる順番を提案して」「現在の状況をまとめて」「状況確認」「〇〇のセッションを起動して」「〇〇終わった」「〇〇止まった」「来週分も出して」等で使う。
 ---
 
 # commander（司令塔）
@@ -20,17 +20,22 @@ S=~/.claude/skills/commander/scripts
 python3 -I $S/collect.py                       # 材料（todo・引き継ぎメモ・祝日・ファイルの場所・tmux）
 python3 -I $S/carry.py --prev <前の日のファイル>  # 引き継ぐ欄を写して掃除
 echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/check_waits.py   # GitHub の返ってきた判定
+python3 -I $S/status.py                        # 状況確認の材料を1回で（30秒ほど）
+python3 -I $S/sessions.py                      # tmux の各セッションの状態だけ
 ```
 
 - `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`（分からなければ `null`）・`refs`（本文の参照ぜんぶ）・`wait_refs`（`## 待っているもの` に出てくる参照だけ）・`location`（実在する作業場所だけ）・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
 - `carry.py` の出力: `section`（そのまま貼る `## 引き継ぐ欄`）・`removed_tmux`・`removed_done`・`done_still_in_todo`・`unparsed_done`
 - `check_waits.py` には各引き継ぎメモの `wait_refs` を、そのメモの `since` と組にして渡す（`refs` を渡すと本文で触れただけの PR まで判定してしまう）。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
+- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`）・`self`（この司令塔））・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`warnings`
+- `sessions.py` は Claude のペインを探して読む。tmux-agent-sidebar のペインがあるので、`tmux capture-pane -t <セッション名>` で直接読まない
 - `warn:` は stderr。出たらユーザーに一言伝える
 
 ## 司令塔ファイルの書式
 
 ```markdown
 # 司令塔 2026-11-24（火）
+最終確認: 2026-11-24T16:05:00+09:00
 
 ## 祝日と期限
 <holidays と引き継ぐ欄の期限を日付順の表に>
@@ -58,6 +63,8 @@ echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/
 - `## 引き継ぐ欄` は `carry.py` が次の日へ写す。ここにしか無い情報（その日の判断・作業中の tmux セッション・貼られたチェックリスト・決めることの経緯）は必ずこの欄に書く。ほかの章は毎日作り直す
 - 済んだことの行は `- <YYYY-MM-DD> <内容> [ref:<todo の ref>]`。ref は collect の `todo[].ref`（キーが無い行は `title:<タイトル>`）。todo に無いものは ref を付けない
 - tmux の行は `- <セッション名>: <内容>`。セッション名は `tmux ls` に出る名前で書く
+- PR・issue は `epc#1308`・`gb:ebase-web#102` のように接頭辞付きで書く（`#1308` だけだと `status.py` が拾えない）
+- `最終確認:` は状況確認のたびに書き換える（`status.py` の `now`）
 - 引き継ぐ欄の中では `## ` の見出しを使わない（そこで欄が終わり、以降が次の日へ写らない）。貼られたチェックリストの小見出しは `### ` のままでよい（メモにそのまま残る）
 
 ## 手順
@@ -69,9 +76,7 @@ echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/
    - `files.previous` があれば `carry.py --prev <previous>`。無ければ「最初の1回」（下）
    - 書式どおりに今日のファイルを作る。期限は todo の `next`（「（11/25）」等）・引き継ぎメモ本文・貼られたチェックリストから拾って、引き継ぐ欄の「期限」に足す
 3. `files.today_exists` が true: 今日のファイルを読み、collect の結果で古いところを直す（増えた todo・増えた引き継ぎメモ・消えたもの）
-4. 一覧を出す前に照合する:
-   - `check_waits.py` で GitHub の待ちを確かめる
-   - `kind: gitbucket` は `mcp__gitbucket__gitbucket_get_pr` と `mcp__gitbucket__gitbucket_list_comments` で確かめる（`since` より後の相手のコメント・マージ）
+4. 一覧を出す前に照合する: 「3. 現在の状況をまとめて」の 1〜3 をやる
 5. carry の結果を1行ずつ伝える: `removed_tmux`（閉じたセッションを外した）・`removed_done`（todo から消えたので外した）・`done_still_in_todo`（「todo 側も `/todo-edit` で閉じる？」）・`unparsed_done`（ref が無い）
 6. 引き継ぐ欄の「メモ」で古そうな行は「消してええ？」とまとめて聞き、OK のものだけ消す
 7. 照合で待ちが済んでいる（マージ・クローズ済み）のに `status: blocked` の引き継ぎメモは、`status: resolved` にしてよいか聞く
@@ -88,15 +93,50 @@ echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/
 - 同じ場所を使う項目を同時に開くと困るときは、表の下に注意（ブランチを切り替えない・worktree を切る等）
 - 説明は論点を先に並べ、前置きを重ねない
 
-### 3. 「返ってきたもの有る？」
+### 3. 「現在の状況をまとめて」
 
-1. 「開いたとき」の照合（GitHub・GitBucket）をやり直す
-2. Rocket Chat: 引き継ぎメモ・todo の部屋リンク（DM は `/direct/<rid>`）から部屋を特定し、`mcp__rocketchat__get_channel_history` を `oldest=<since>` で取る。部屋が分からなければ相手のユーザー名で `mcp__rocketchat__list_channels`（表示名では見つからないことがある）
-3. メール: `mcp__thunderbird__search_messages` を差出人（相手）と `after=<since の日付>` で絞る。GitHub の通知メール（`notifications@github.com`）は外す
-4. 取るのは `since` 以降の相手の発言だけ。要約して出す。履歴を丸ごと出したりファイルに書いたりしない（DM に API キー等が貼られていることがある）。相手の発言に秘密（API キー・パスワード・トークン）があれば、要約にも引き継ぐ欄にも値を書かず「API キーが届いた（値は書かない）」とする。引き継ぐ欄は毎日写されるので、一度入ると消えない
-5. 課題DB で返事が来る待ちは「どこを見ればよいか」だけ出す
-6. MCP がつながらなければ「Rocket Chat は見られなかった（`/mcp` でつなぎ直せる）」と出して続ける
-7. 返ってきたものを、再開のプロンプト付きで出す
+全部調べ → 司令塔ファイルを更新 → 表示、の順。調べ終わるまで表示しない。
+
+1. `status.py` を流す（今日のファイルが無ければ先に「開いたとき」の 1〜2 で作る）
+2. MCP でしか見られないものを見る。どれも `last_check` 以降だけ:
+   - GitBucket: `gitbucket_refs` を `mcp__gitbucket__gitbucket_get_pr`・`mcp__gitbucket__gitbucket_list_comments` で（状態・相手のコメント）
+   - Rocket Chat: `rocketchat_rooms` を `mcp__rocketchat__get_channel_history`（`oldest=<last_check>`）で。`direct` は `room` が room_id、`group`・`channel` は `mcp__rocketchat__list_channels`（`filter=<room>`）で room_id を引く。部屋を横断した自分宛てメンションは MCP で取れないので、知っている部屋だけ見る
+   - メール: `mcp__thunderbird__search_messages` を `after=<last_check の日付>` で。GitHub の通知（`notifications@github.com`）は外す
+   - 要約だけ出す。履歴を丸ごと出したりファイルに書いたりしない。秘密（API キー・パスワード・トークン）は値を書かず「API キーが届いた（値は書かない）」とする。引き継ぐ欄は毎日写されるので、一度入ると消えない
+   - MCP がつながらなければ「Rocket Chat は見られなかった（`/mcp` でつなぎ直せる）」と出して続ける
+   - 課題DB で返事が来る待ちは「どこを見ればよいか」だけ出す
+3. 引き継ぎメモ: `handoffs_changed` で `resolved` になったものは済んだことへ。待ちが済んだ（`returned: true` でマージ・クローズ）のに `blocked` のままのものは `resolved` にしてよいか聞く
+4. 司令塔ファイルを更新する: 済んだこと・作業中の tmux セッション（`closed_sessions` は外す、`sessions` の新しいものは足す）・メモ・一覧・`最終確認:`（`now`）
+5. 下の形で表示する
+
+#### 表示の形
+
+コードブロックに入れて桁をそろえる。1件1行。
+
+```
+変わった  epc#1316・epc#1313 マージ ・ RDP 作業完了 ・ epc-1316 は閉じた
+
+あなた    epc-1308   #1308 をマージする？（佐藤さんの確認を待つか）   25分  11/25  ← #1321・リリースが止まる
+          hankyu-102 #102 のコメント投稿とマージは誰がやる？           4時間
+
+          —          決める：AI参考情報の文言 ／ 👎 #1264             11/25  ← リリースの中身
+          —          玉木さん PR #131 のレビュー                       4日放置
+          低         ほか5件
+
+Claude    epc-1321   #1321 レビュー中
+
+相手      畑上さん   P.11 のパック商品の扱い・送信用アカウント          11/20〜
+          松本さん   ai-team-docs PR #103 のレビュー                    11/19〜  発表 11/30
+
+新着      河合さん（DM）  BigQuery の件で追加の質問
+```
+
+- 段: 変わった（`last_check` 以降の変化）／あなた／Claude／相手／新着（Rocket Chat・メールの自分宛て）。空の段は省く
+- あなた: 上にセッションが返事を待っているもの（`state: idle`。セッション名と `idle_minutes`）、1行空けて自分から始めるもの（`—`）、最後に期限なしを「低 ほかN件」とまとめる（聞かれたら開く）
+- Claude: `state: working` のセッション
+- 相手: 相手の名前ごとに1行。待ち始めた日と、関わる期限
+- 右の列: 待ち時間／期限／`←` で何を止めているか／放置日数。分からない列は空ける
+- 表示のあと、次の一手を1行だけ添える（いちばん多くを止めているもの）
 
 ### 4. 「〇〇終わった」「〇〇止まった」
 
@@ -120,7 +160,7 @@ tmux send-keys -t "$s" -l "claude '$p'"; tmux send-keys -t "$s" Enter
   - 既にある worktree の続き（引き継ぎメモの作業場所）: その場所で `claude '<プロンプト>'`
   - worktree が要らない作業（dotfiles の小さな直し・調べもの・本番作業の案内）: 本体で `claude '<プロンプト>'`
 - zsh では `"${s}:tmp"` と書く（`"$s:tmp"` は `:t` 修飾子で壊れる）
-- 起動後に `tmux capture-pane -p -t "$s"` で確かめる。「このフォルダを信頼しますか」で止まっていたら、Yes を選ぶようユーザーに伝える（既定の選択は「No, exit」。こっちから押さない）
+- 起動後に `python3 -I $S/sessions.py` で確かめる（`tail` に画面の最後が出る）。「このフォルダを信頼しますか」で止まっていたら、Yes を選ぶようユーザーに伝える（既定の選択は「No, exit」。こっちから押さない）
 - 動いているセッション（ユーザーが触ったもの）を kill しない。置き場所を変えるときは move-window
 - 起動したら引き継ぐ欄の「作業中の tmux セッション」に足す
 
