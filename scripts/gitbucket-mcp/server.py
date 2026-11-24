@@ -268,6 +268,8 @@ def fetch_inline_comments(owner: str, repo: str, number: int) -> tuple[list[dict
         call_api("GET", f"/repos/{owner}/{repo}/pulls/{number}")
     except NotFoundError:
         return [], None
+    except GitBucketError as e:
+        return None, f"PR かどうかを確かめられず、インラインコメントを読めていません（0件ではない）: {e}"
     status, html = get_page(f"{GITBUCKET_URL}/{owner}/{repo}/pull/{number}")
     if status == 200:
         return parse_inline_comments(html), None
@@ -347,12 +349,16 @@ def gitbucket_merge_pr(owner: str, repo: str, number: int, commit_message: str |
         head = call_api("GET", f"/repos/{owner}/{repo}/pulls/{number}").get("head", {}).get("label")
         commit_message = f"Merge pull request #{number} from {head}"
     result = call_api("PUT", f"/repos/{owner}/{repo}/pulls/{number}/merge", {"commit_message": commit_message})
-    # GitBucket はマージ結果を {"status": 200, "body": "<JSON文字列>"} に包んで返す
+    # GitBucket はマージ結果を HTTP 200 の {"status": 405, "body": "<JSON文字列>"} のように包み、失敗も 200 で返す
+    status = result.get("status") if isinstance(result, dict) else None
     if isinstance(result, dict) and isinstance(result.get("body"), str):
         try:
             result = json.loads(result["body"])
         except ValueError:
             pass
+    if status not in (None, 200) or not (isinstance(result, dict) and result.get("merged") is True):
+        message = result.get("message") if isinstance(result, dict) else result
+        raise GitBucketError(f"マージできませんでした（status {status}）: {message}")
     return "PRをマージしました\n" + json.dumps(result, ensure_ascii=False, indent=2)
 
 

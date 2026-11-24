@@ -95,6 +95,17 @@ class ListCommentsTest(unittest.TestCase):
         self.assertIsNone(got["inline_error"])
         gp.assert_not_called()
 
+    def test_PRの確認が一時的に失敗してもコメントは返す(self):
+        def fake(method, endpoint, data=None):
+            if endpoint.endswith("/comments"):
+                return [{"id": 1, "user": {"login": "bob"}, "body": "normal", "created_at": "c"}]
+            raise server.GitBucketError("APIエラー (500)")
+        with mock.patch.object(server, "call_api", side_effect=fake):
+            got = json.loads(server.gitbucket_list_comments("o", "r", 2))
+        self.assertEqual(len(got["comments"]), 1)
+        self.assertIsNone(got["inline_comments"])
+        self.assertIn("500", got["inline_error"])
+
     def test_画面が開けないときはnullと理由(self):
         for page in [(401, ""), (302, "Redirected to /signin")]:
             got, _ = self._run(page=page)
@@ -112,19 +123,28 @@ class _Recorder:
         return self.responses.get((method, endpoint), {"ok": True})
 
 
+MERGED = {"status": 200, "body": '{"sha": "abc", "merged": true, "message": "Pull Request successfully merged"}'}
+
+
 class NewToolsTest(unittest.TestCase):
     def _with(self, rec):
         return mock.patch.object(server, "call_api", side_effect=rec)
 
     def test_メッセージ省略時はPRから既定のメッセージを作って送る(self):
         # GitBucket は commit_message の無いマージに 500 を返す（2026-11-24 実測）
-        rec = _Recorder({("GET", "/repos/o/r/pulls/2"): _pr(head={"label": "feat/x"})})
+        rec = _Recorder({("GET", "/repos/o/r/pulls/2"): _pr(head={"label": "feat/x"}), ("PUT", "/repos/o/r/pulls/2/merge"): MERGED})
         with self._with(rec):
             server.gitbucket_merge_pr("o", "r", 2)
         self.assertEqual(rec.calls[-1], ("PUT", "/repos/o/r/pulls/2/merge", {"commit_message": "Merge pull request #2 from feat/x"}))
 
+    def test_マージできなかったら包まれたstatusを見てエラー(self):
+        wrapped = {"status": 405, "body": '{"message": "Pull Request is not mergeable, Closed"}'}
+        rec = _Recorder({("PUT", "/repos/o/r/pulls/2/merge"): wrapped})
+        with self._with(rec), self.assertRaisesRegex(server.GitBucketError, "not mergeable"):
+            server.gitbucket_merge_pr("o", "r", 2, commit_message="m")
+
     def test_マージにメッセージを渡せる(self):
-        rec = _Recorder()
+        rec = _Recorder({("PUT", "/repos/o/r/pulls/2/merge"): MERGED})
         with self._with(rec):
             server.gitbucket_merge_pr("o", "r", 2, commit_message="m")
         self.assertEqual(rec.calls, [("PUT", "/repos/o/r/pulls/2/merge", {"commit_message": "m"})])

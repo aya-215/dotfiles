@@ -22,7 +22,7 @@ echo "    完了"
 
 # 3. トークンを ~/.claude/gitbucket/credentials.json に保存（ebase-infra の gitbucket-api スキルと共用）
 CRED_PATH="$HOME/.claude/gitbucket/credentials.json"
-ORIGIN="http://192.168.208.80:8080"
+ORIGIN=$(python3 -c 'import sys, urllib.parse as u; p = u.urlsplit(sys.argv[1]); print(f"{p.scheme}://{p.netloc}")' "${GITBUCKET_URL:-http://192.168.208.80:8080/gitbucket}")
 if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get(sys.argv[2]) else 1)' "$CRED_PATH" "$ORIGIN" 2>/dev/null; then
     echo ">>> $CRED_PATH に $ORIGIN のトークンがあります（スキップ）"
 else
@@ -41,10 +41,18 @@ else
     printf '%s' "$token" | python3 -c '
 import json, os, pathlib, sys
 path, origin = pathlib.Path(sys.argv[1]), sys.argv[2]
-creds = json.loads(path.read_text()) if path.exists() else {}
+try:
+    creds = json.loads(path.read_text()) if path.exists() else {}
+except ValueError:
+    sys.exit(f"エラー: {path} が JSON として読めません。直してからやり直してください")
+if not isinstance(creds, dict):
+    sys.exit(f"エラー: {path} の中身がオブジェクトではありません")
 creds[origin] = sys.stdin.read()
-path.write_text(json.dumps(creds, ensure_ascii=False, indent=2) + "\n")
-os.chmod(path, 0o600)
+# 書き込む前から 600 にする（一瞬でも他人が読める状態にしない）
+fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+os.fchmod(fd, 0o600)
+with os.fdopen(fd, "w") as f:
+    f.write(json.dumps(creds, ensure_ascii=False, indent=2) + "\n")
 ' "$CRED_PATH" "$ORIGIN"
     echo "    $CRED_PATH に保存しました（権限 600）"
 fi
@@ -83,7 +91,7 @@ fi
 # 6. 動作確認
 echo ""
 echo ">>> サーバーの起動テストをしています..."
-tools=$(bash "$SCRIPT_DIR/smoke.sh" | wc -l)
+tools=$( (bash "$SCRIPT_DIR/smoke.sh" || true) | wc -l)
 if (( tools > 0 )); then
     echo "    起動テスト: OK（ツール ${tools} 個）"
 else
