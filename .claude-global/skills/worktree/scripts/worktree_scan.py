@@ -55,8 +55,8 @@ def drop_index_lock(worktree):
             pass
 
 
-def candidate_dirs(roots):
-    dirs = []
+def candidate_dirs(roots, repos=()):
+    dirs = [r for r in repos if os.path.isdir(r)]
     rc, out = run(["ghq", "list", "-p"])
     if rc == 0:
         dirs += out.split()
@@ -234,9 +234,11 @@ def main():
     ap.add_argument("--no-size", action="store_true")
     ap.add_argument("--root", action="append", default=[f"{HOME}/worktrees"],
                     help="worktree を置いているディレクトリ（ghq 以外）")
+    ap.add_argument("--repo", action="append", default=[f"{HOME}/.dotfiles"],
+                    help="ghq の外にある本体リポジトリ（その中の .claude/worktrees も拾う）")
     a = ap.parse_args()
 
-    commons = common_dirs(candidate_dirs(a.root))
+    commons = common_dirs(candidate_dirs(a.root, a.repo))
     with ThreadPoolExecutor(4) as ex:
         repos = [r for r in ex.map(lambda c: scan_repo(c, not a.no_fetch, not a.no_size), commons) if r]
 

@@ -115,6 +115,10 @@ tmux new-session -d -s "$s" -c "$d"
 tmux send-keys -t "$s" -l "claude '$p'"; tmux send-keys -t "$s" Enter
 ```
 
+- プロンプトの起動の仕方:
+  - 新しい作業: 本体で `claude -w <ブランチ名> '<プロンプト>'`。ブランチ名はリポジトリの決まりで（例 `feat/1296-mensapo-links`）。PR の続きは `-w "#<番号>"`。置き場所とブランチは WorktreeCreate フックが決める（`rules/worktree.md`）
+  - 既にある worktree の続き（引き継ぎメモの作業場所）: その場所で `claude '<プロンプト>'`
+  - worktree が要らない作業（dotfiles の小さな直し・調べもの・本番作業の案内）: 本体で `claude '<プロンプト>'`
 - zsh では `"${s}:tmp"` と書く（`"$s:tmp"` は `:t` 修飾子で壊れる）
 - 起動後に `tmux capture-pane -p -t "$s"` で確かめる。「このフォルダを信頼しますか」で止まっていたら、Yes を選ぶようユーザーに伝える（既定の選択は「No, exit」。こっちから押さない）
 - 動いているセッション（ユーザーが触ったもの）を kill しない。置き場所を変えるときは move-window

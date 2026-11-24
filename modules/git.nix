@@ -8,6 +8,7 @@
     ignores = [
       # Claude Code
       ".claude/plans/"
+      ".claude/worktrees/"
 
       # Serena MCP
       ".serena/"

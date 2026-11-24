@@ -257,6 +257,26 @@
           }
         ]
       }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I ~/.dotfiles/scripts/claude-worktree/worktree_hook.py create"
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -I ~/.dotfiles/scripts/claude-worktree/worktree_hook.py remove"
+          }
+        ]
+      }
     ]
   },
   "statusLine": {
