@@ -20,24 +20,33 @@ cd "$SCRIPT_DIR"
 uv sync
 echo "    完了"
 
-# 3. .env.local の生成
-if [[ ! -f "$SCRIPT_DIR/.env.local" ]]; then
+# 3. トークンを ~/.claude/gitbucket/credentials.json に保存（ebase-infra の gitbucket-api スキルと共用）
+CRED_PATH="$HOME/.claude/gitbucket/credentials.json"
+ORIGIN="http://192.168.208.80:8080"
+if python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get(sys.argv[2]) else 1)' "$CRED_PATH" "$ORIGIN" 2>/dev/null; then
+    echo ">>> $CRED_PATH に $ORIGIN のトークンがあります（スキップ）"
+else
     echo ""
-    echo ">>> GitBucket Personal Access Token を入力してください"
+    echo ">>> GitBucket Personal Access Token を入力してください（画面には表示されません）"
     echo "    発行場所: GitBucket UI → Account Settings → Applications"
     echo -n "    Token: "
-    read -r token
+    read -rs token
+    echo ""
     if [[ -z "$token" ]]; then
         echo "エラー: トークンが入力されていません"
         exit 1
     fi
-    cat > "$SCRIPT_DIR/.env.local" <<EOF
-GITBUCKET_URL=http://192.168.208.80:8080/gitbucket
-GITBUCKET_TOKEN=${token}
-EOF
-    echo "    .env.local を作成しました"
-else
-    echo ">>> .env.local は既に存在します（スキップ）"
+    mkdir -p "$(dirname "$CRED_PATH")"
+    # トークンは引数に載せず stdin で渡す（プロセス一覧に出さないため）
+    printf '%s' "$token" | python3 -c '
+import json, os, pathlib, sys
+path, origin = pathlib.Path(sys.argv[1]), sys.argv[2]
+creds = json.loads(path.read_text()) if path.exists() else {}
+creds[origin] = sys.stdin.read()
+path.write_text(json.dumps(creds, ensure_ascii=False, indent=2) + "\n")
+os.chmod(path, 0o600)
+' "$CRED_PATH" "$ORIGIN"
+    echo "    $CRED_PATH に保存しました（権限 600）"
 fi
 
 # 4. 実行権限を付与
@@ -74,12 +83,12 @@ fi
 # 6. 動作確認
 echo ""
 echo ">>> サーバーの起動テストをしています..."
-cd "$SCRIPT_DIR"
-if echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}' | \
-   timeout 5 uv run server.py 2>/dev/null | grep -q "protocolVersion"; then
-    echo "    起動テスト: OK"
+tools=$(bash "$SCRIPT_DIR/smoke.sh" | wc -l)
+if (( tools > 0 )); then
+    echo "    起動テスト: OK（ツール ${tools} 個）"
 else
-    echo "    起動テスト: サーバーは起動しました（レスポンス確認はClaude再起動後に行ってください）"
+    echo "    起動テスト: ツール一覧が返りませんでした。bash $SCRIPT_DIR/smoke.sh を確認してください"
+    exit 1
 fi
 
 echo ""
@@ -90,4 +99,4 @@ echo "  1. Claude Code を再起動してMCPサーバーを認識させてくだ
 echo "  2. 「matsumoto-hisa/docs-hub のPR一覧を見せて」と話しかけてみてください"
 echo ""
 echo "トークンを変更したい場合:"
-echo "  $SCRIPT_DIR/.env.local を直接編集してください"
+echo "  $CRED_PATH の \"$ORIGIN\" を書き換えてください（環境変数 GITBUCKET_TOKEN があればそちらが優先）"
