@@ -3,7 +3,11 @@
 
 設計: docs/superpowers/specs/2026-11-24-claude-worktree-hooks-design.md
 """
+import re
+import subprocess
+import sys
 from pathlib import Path
+from typing import Callable
 
 KNOWN_TYPES = ("feat", "fix", "docs", "chore", "refactor", "test", "hotfix", "ci", "perf", "build", "style")
 PERSONAL_MARKERS = ("github-aya215:", "github.com/aya-215/")
@@ -28,3 +32,123 @@ def new_branch_name(name: str, personal: bool) -> str:
     if name.split("/", 1)[0] in KNOWN_TYPES and "/" in name:
         return name
     return name if personal else f"feat/{name}"
+
+
+class HookError(Exception):
+    """利用者に見せる理由付きの失敗。"""
+
+
+def _run(cwd: Path, *args: str) -> subprocess.CompletedProcess:
+    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    # フックの stdout はパスだけにする決まりなので、git の出力は stderr へ流す
+    sys.stderr.write(r.stdout + r.stderr)
+    return r
+
+
+def _ok(cwd: Path, *args: str) -> bool:
+    return subprocess.run(["git", "-C", str(cwd), *args], capture_output=True).returncode == 0
+
+
+def _out(cwd: Path, *args: str) -> "str | None":
+    r = subprocess.run(["git", "-C", str(cwd), *args], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def _must(cwd: Path, *args: str) -> None:
+    r = _run(cwd, *args)
+    if r.returncode != 0:
+        raise HookError(f"git {' '.join(args)} が失敗しました: {r.stderr.strip()}")
+
+
+def repo_root(cwd: Path) -> Path:
+    common = _out(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    if not common:
+        raise HookError(f"{cwd} は git リポジトリではありません")
+    return Path(common).parent
+
+
+def _worktrees(root: Path) -> "list[dict]":
+    out, cur = [], {}
+    for line in (_out(root, "worktree", "list", "--porcelain") or "").splitlines():
+        if not line:
+            if cur:
+                out.append(cur)
+            cur = {}
+        elif " " in line:
+            k, v = line.split(" ", 1)
+            cur[k] = v
+    if cur:
+        out.append(cur)
+    return out
+
+
+def checked_out_at(root: Path, branch: str) -> "str | None":
+    for w in _worktrees(root):
+        if w.get("branch") == f"refs/heads/{branch}":
+            return w["worktree"]
+    return None
+
+
+def _registered(root: Path, path: Path) -> bool:
+    return any(Path(w["worktree"]) == path for w in _worktrees(root))
+
+
+def gh_pr_head(root: Path, number: int) -> "str | None":
+    try:
+        r = subprocess.run(["gh", "pr", "view", str(number), "--json", "headRefName", "-q", ".headRefName"],
+                           cwd=root, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() or None if r.returncode == 0 else None
+
+
+def _base(root: Path) -> str:
+    for ref in ("origin/main", "origin/master"):
+        if _ok(root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"):
+            return ref
+    return "HEAD"
+
+
+def _has_local(root: Path, branch: str) -> bool:
+    return _ok(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")
+
+
+def _has_remote(root: Path, branch: str) -> bool:
+    return _ok(root, "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}")
+
+
+def create(name: str, cwd: Path, home: Path = Path.home(),
+           gh_head: "Callable[[Path, int], str | None]" = gh_pr_head) -> Path:
+    root = repo_root(cwd)
+    path = placement(root, name, home)
+    if path.exists():
+        if _registered(root, path):
+            return path
+        raise HookError(f"{path} が既にありますが worktree として登録されていません。中身を確かめて消してから作り直してください")
+    has_origin = _out(root, "config", "--get", "remote.origin.url") is not None
+    if has_origin and _run(root, "fetch", "-q", "origin").returncode != 0:
+        print("warn: git fetch origin に失敗したので、手元の参照で続けます", file=sys.stderr)
+
+    branch = name
+    m = re.fullmatch(r"pr-(\d+)", name)
+    if m:
+        head = gh_head(root, int(m.group(1)))
+        if head:
+            branch = head
+        else:
+            _must(root, "fetch", "-q", "origin", f"+refs/pull/{m.group(1)}/head:refs/heads/{name}")
+    elif not (_has_local(root, name) or _has_remote(root, name)):
+        branch = new_branch_name(name, is_personal(_out(root, "config", "--get", "remote.origin.url")))
+
+    if _has_local(root, branch) or _has_remote(root, branch):
+        where = checked_out_at(root, branch)
+        if where:
+            raise HookError(f"ブランチ {branch} は {where} で使用中です。そこで claude を起動してください")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if _has_local(root, branch):
+        _must(root, "worktree", "add", str(path), branch)
+    elif _has_remote(root, branch):
+        _must(root, "worktree", "add", "--track", "-b", branch, str(path), f"origin/{branch}")
+    else:
+        _must(root, "worktree", "add", "--no-track", "-b", branch, str(path), _base(root))
+    return path

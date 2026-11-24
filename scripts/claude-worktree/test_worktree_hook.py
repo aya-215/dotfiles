@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from worktree_hook import is_personal, new_branch_name, placement, slug  # noqa: E402
+from worktree_hook import HookError, create, is_personal, new_branch_name, placement, slug  # noqa: E402
 
 
 def git(cwd, *args) -> str:
@@ -27,6 +27,29 @@ def make_repo(tmp: Path, origin_url: "str | None" = "git@github.com:ebase-dev/x.
         git(clone, "config", f"url.{bare}.insteadOf", origin_url)
         git(clone, "remote", "set-url", "origin", origin_url)
     return clone
+
+
+def branch_of(p: Path) -> str:
+    return git(p, "branch", "--show-current")
+
+
+def rev(p: Path, ref: str) -> str:
+    return git(p, "rev-parse", ref)
+
+
+def upstream_of(p: Path) -> str:
+    return git(p, "rev-parse", "--abbrev-ref", "@{upstream}")
+
+
+def push_branch(repo: Path, branch: str, keep_local: bool = False) -> None:
+    git(repo, "branch", branch, "origin/main")
+    git(repo, "push", "-q", "origin", branch)
+    if not keep_local:
+        git(repo, "branch", "-D", branch)
+
+
+def no_gh(root, number):
+    return None
 
 
 class NamingTest(unittest.TestCase):
@@ -61,6 +84,93 @@ class MakeRepoTest(unittest.TestCase):
             self.assertEqual(git(repo, "config", "--get", "remote.origin.url"), "git@github-aya215:aya-215/dotfiles.git")
             git(repo, "fetch", "-q", "origin")
             self.assertTrue(git(repo, "rev-parse", "origin/main"))
+
+
+class CreateTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.repo = make_repo(self.tmp / "r")
+        self.home = self.tmp / "home"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_new_feat_branch_from_origin_main(self):
+        p = create("bold-oak-a3f2", self.repo, home=self.home, gh_head=no_gh)
+        self.assertEqual(p, self.repo / ".claude/worktrees/bold-oak-a3f2")
+        self.assertEqual(branch_of(p), "feat/bold-oak-a3f2")
+        self.assertEqual(rev(p, "HEAD"), rev(self.repo, "origin/main"))
+
+    def test_known_type_kept(self):
+        self.assertEqual(branch_of(create("fix/9-a", self.repo, home=self.home, gh_head=no_gh)), "fix/9-a")
+
+    def test_existing_remote_branch_tracked(self):
+        push_branch(self.repo, "feat/old")
+        p = create("feat/old", self.repo, home=self.home, gh_head=no_gh)
+        self.assertEqual(branch_of(p), "feat/old")
+        self.assertEqual(upstream_of(p), "origin/feat/old")
+
+    def test_existing_local_branch_opened(self):
+        git(self.repo, "branch", "feat/local-only", "origin/main")
+        p = create("feat/local-only", self.repo, home=self.home, gh_head=no_gh)
+        self.assertEqual(branch_of(p), "feat/local-only")
+
+    def test_github_pr_opens_head_branch(self):
+        push_branch(self.repo, "feat/pr-head")
+        p = create("pr-77", self.repo, home=self.home, gh_head=lambda r, n: "feat/pr-head" if n == 77 else None)
+        self.assertEqual(branch_of(p), "feat/pr-head")
+        self.assertEqual(p, self.repo / ".claude/worktrees/pr-77")
+
+    def test_pr_fallback_to_pull_ref(self):
+        bare = self.tmp / "r" / "origin.git"
+        git(bare, "update-ref", "refs/pull/5/head", git(bare, "rev-parse", "main"))
+        p = create("pr-5", self.repo, home=self.home, gh_head=no_gh)
+        self.assertEqual(branch_of(p), "pr-5")
+
+    def test_branch_checked_out_elsewhere_fails(self):
+        git(self.repo, "checkout", "-q", "-b", "feat/busy")
+        with self.assertRaises(HookError) as cm:
+            create("feat/busy", self.repo, home=self.home, gh_head=no_gh)
+        self.assertIn(str(self.repo), str(cm.exception))
+
+    def test_reenter_returns_same_path(self):
+        a = create("feat/again", self.repo, home=self.home, gh_head=no_gh)
+        self.assertEqual(create("feat/again", self.repo, home=self.home, gh_head=no_gh), a)
+
+    def test_leftover_dir_fails(self):
+        (self.repo / ".claude/worktrees/feat-left").mkdir(parents=True)
+        with self.assertRaises(HookError):
+            create("feat/left", self.repo, home=self.home, gh_head=no_gh)
+
+    def test_fetch_failure_continues(self):
+        git(self.repo, "config", "--unset-all", f"url.{self.tmp / 'r' / 'origin.git'}.insteadOf")
+        git(self.repo, "remote", "set-url", "origin", str(self.tmp / "nowhere.git"))
+        p = create("feat/offline", self.repo, home=self.home, gh_head=no_gh)
+        self.assertTrue(p.is_dir())
+        self.assertEqual(rev(p, "HEAD"), rev(self.repo, "origin/main"))
+
+    def test_personal_repo_keeps_name(self):
+        repo = make_repo(self.tmp / "p", origin_url="git@github-aya215:aya-215/dotfiles.git")
+        self.assertEqual(branch_of(create("bold-oak", repo, home=self.home, gh_head=no_gh)), "bold-oak")
+
+    def test_no_origin_uses_head(self):
+        plain = self.tmp / "plain"
+        subprocess.run(["git", "init", "-q", "-b", "main", str(plain)], check=True)
+        git(plain, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "init")
+        p = create("feat/local", plain, home=self.home, gh_head=no_gh)
+        self.assertEqual(rev(p, "HEAD"), rev(plain, "HEAD"))
+
+    def test_mnt_root_goes_to_home_worktrees(self):
+        import worktree_hook
+        orig = worktree_hook.placement
+        worktree_hook.placement = lambda root, name, home: home / "worktrees" / f"{root.name}-{slug(name)}"
+        try:
+            p = create("feat/m", self.repo, home=self.home, gh_head=no_gh)
+        finally:
+            worktree_hook.placement = orig
+        self.assertEqual(p, self.home / "worktrees" / "clone-feat-m")
+        self.assertTrue(p.is_dir())
 
 
 if __name__ == "__main__":
