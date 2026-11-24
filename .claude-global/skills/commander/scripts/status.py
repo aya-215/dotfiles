@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """「現在の状況をまとめて」の材料（tmux・GitHub・引き継ぎメモの変化・到達性・git）を1回で JSON に出す。"""
+import argparse
+import json
+import os
 import re
+import socket
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import carry  # noqa: E402
+import check_waits  # noqa: E402
+import collect  # noqa: E402
+import sessions as tmux_sessions  # noqa: E402
+from refs import refs_in_text  # noqa: E402
+from check_waits import pr_ball, sync_github  # noqa: E402
 
 JST = timezone(timedelta(hours=9))
 PORTS = (22, 80, 445, 3389)
@@ -15,6 +25,9 @@ _LAST = re.compile(r"^最終確認:\s*(.+?)\s*$", re.M)
 _WAIT = re.compile(r"^## 待っているもの\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 _HEADING = re.compile(r"^## (.+?)\s*$", re.M)
+# /handoff の雛形の節。これより後ろに書き足された見出しだけが進み具合を表す
+_BOILERPLATE = {"待っているもの", "今の状態", "決めたことと理由", "次にやること", "関連", "元のセッション"}
+GH_WORKERS = 6
 
 
 def _front(text: str, key: str) -> str:
@@ -41,7 +54,7 @@ def changed_handoffs(memo_dir: Path, since: datetime) -> "list[dict]":
         if p.stat().st_mtime <= since.timestamp():
             continue
         text = p.read_text(encoding="utf-8")
-        headings = _HEADING.findall(text)
+        headings = [h for h in _HEADING.findall(text) if h not in _BOILERPLATE]
         out.append({"path": str(p), "status": _front(text, "status"), "summary": _front(text, "summary"),
                     "last_heading": headings[-1] if headings else ""})
     return out
@@ -61,3 +74,145 @@ def closed_sessions(commander_text: "str | None", live: "list[str] | None") -> "
         return []
     _, info = carry.prune(carry.extract(commander_text), live, None)
     return info["removed_tmux"]
+
+
+def _ts(s: str) -> datetime:
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
+def _github_ref(ref: str) -> "tuple[str, int] | None":
+    abbr, sep, num = ref.partition("#")
+    if sep and abbr in sync_github.REPOS and num.isdigit():
+        return sync_github.REPOS[abbr], int(num)
+    return None
+
+
+def github_facts(ref: str, fetch_pr, fetch_extra, me: "set[str]", last_check: datetime,
+                 since: "datetime | None") -> dict:
+    out = {"ref": ref, "state": None, "reviews": {}, "last_commit": None, "checks": None,
+           "activity": [], "returned": None, "error": None}
+    repo, num = _github_ref(ref)
+    try:
+        pr = fetch_pr(repo, num)
+        extra = {"last_commit": None, "checks": None, "closed_at": pr.get("closed_at")}
+        if not pr.get("is_issue"):
+            extra = fetch_extra(repo, num)
+    except Exception as e:  # 1件の失敗で残りを止めない
+        out["error"] = str(e)
+        return out
+    events = sorted(pr.get("events", []), key=lambda e: e["ts"])
+    for e in events:
+        if e.get("kind") == "review" and e.get("state") and e["user"] not in me:
+            out["reviews"][e["user"]] = e["state"]
+    out.update({"state": pr["state"], "last_commit": extra["last_commit"], "checks": extra["checks"],
+                "activity": [e for e in events if e["user"] not in me and _ts(e["ts"]) > last_check]})
+    if since is not None:
+        out["returned"] = check_waits.returned(pr["state"], events, me, since, extra.get("closed_at"))["returned"]
+    return out
+
+
+def build(collected: dict, commander_text: "str | None", sessions: "list[dict] | None", memo_dir: Path,
+          facts, memo_text, connect, now: datetime) -> dict:
+    warnings = list(collected.get("warnings", []))
+    last_check = read_last_check(commander_text, date.fromisoformat(collected["today"]), warnings)
+    since_of: "dict[str, str | None]" = {}
+    order: "list[str]" = []
+    memo_refs = [x for h in collected["handoffs"] for x in h["refs"]]
+    for ref in [r["ref"] for r in collected["todo"]] + memo_refs + sorted(refs_in_text(commander_text or "")):
+        if ref not in order:
+            order.append(ref)
+    for h in collected["handoffs"]:
+        for ref in h["wait_refs"]:
+            since_of.setdefault(ref, h.get("since"))
+    gh_refs = [ref for ref in order if _github_ref(ref)]
+    with ThreadPoolExecutor(GH_WORKERS) as ex:
+        github = list(ex.map(lambda ref: facts(ref, since_of.get(ref), last_check), gh_refs))
+    for g in github:
+        if g.get("error"):
+            warnings.append(f"{g['ref']}: 取得失敗: {g['error']}")
+    reach = []
+    for h in collected["handoffs"]:
+        for ip in wait_ips(memo_text(h["path"])):
+            reach.append({"ip": ip, "open": probe(ip, connect), "memo": h["path"]})
+    live = None if sessions is None else [s["name"] for s in sessions]
+    return {"now": now.isoformat(), "last_check": last_check.isoformat(), "sessions": sessions,
+            "closed_sessions": closed_sessions(commander_text, live),
+            "handoffs_changed": changed_handoffs(memo_dir, last_check), "github": github,
+            "gitbucket_refs": [r for r in order if r.startswith("gb:")], "reachability": reach, "warnings": warnings}
+
+
+_PASS = {"success", "skipped", "neutral"}
+
+
+def _fetch_pr(repo: str, number: int, token: str) -> dict:
+    try:
+        return pr_ball.fetch_pr(repo, number, token)
+    except pr_ball.FetchError as e:
+        if "(HTTP 404)" not in str(e):
+            raise
+    state, events, closed_at = check_waits.fetch(repo, number, token)
+    return {"state": state, "events": events, "closed_at": closed_at, "is_issue": True}
+
+
+def _fetch_extra(repo: str, number: int, token: str) -> dict:
+    base = f"repos/{sync_github.ORG}/{repo}"
+    p = pr_ball.gh_json(f"{base}/pulls/{number}", token)
+    sha = p["head"]["sha"]
+    commit = pr_ball.gh_json(f"{base}/commits/{sha}", token)
+    runs = pr_ball.gh_json(f"{base}/commits/{sha}/check-runs", token).get("check_runs", [])
+    checks = {"pass": 0, "fail": 0, "pending": 0}
+    for r in runs:
+        c = r.get("conclusion")
+        checks["pending" if c is None else "pass" if c in _PASS else "fail"] += 1
+    return {"last_commit": commit["commit"]["committer"]["date"], "checks": checks,
+            "closed_at": p.get("merged_at") or p.get("closed_at")}
+
+
+def _connect(ip: str, port: int, timeout: float) -> bool:
+    try:
+        with socket.create_connection((ip, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _read(path: "str | None") -> "str | None":
+    try:
+        return Path(path).read_text(encoding="utf-8") if path else None
+    except OSError:
+        return None
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--todo", type=Path, default=Path.home() / "memo/todo.md")
+    ap.add_argument("--commander-dir", type=Path, default=Path.home() / "memo/commander")
+    ap.add_argument("--memo-dir", type=Path,
+                    default=Path.home() / ".claude/skills/agent-memory/memories/work-in-progress")
+    a = ap.parse_args(argv)
+    now = datetime.now(JST)
+    pre: "list[str]" = []
+    hits = collect._find_handoffs(pre)
+    collected = collect.collect(a.todo, hits, a.commander_dir, now.date(), collect._tmux_sessions())
+    collected["warnings"] = pre + collected["warnings"]
+    files = collected["files"]
+    commander_text = _read(files["today"]) if files["today_exists"] else _read(files["previous"])
+    sync_github.ensure_gh_path()
+    token, me = sync_github.get_token(), pr_ball.get_me()
+
+    def facts(ref: str, since: "str | None", last_check: datetime) -> dict:
+        if not token:
+            return {"ref": ref, "state": None, "error": "gh のトークンを取れない"}
+        return github_facts(ref, lambda r, n: _fetch_pr(r, n, token), lambda r, n: _fetch_extra(r, n, token),
+                            me, last_check, datetime.fromisoformat(since) if since else None)
+
+    out = build(collected, commander_text, tmux_sessions.list_sessions(tmux_sessions.run_cmd, os.environ.get("TMUX_PANE"), now),
+                a.memo_dir, facts, lambda p: _read(p) or "", _connect, now)
+    for w in out["warnings"]:
+        print(f"warn: {w}", file=sys.stderr)
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

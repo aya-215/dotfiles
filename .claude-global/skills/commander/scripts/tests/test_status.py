@@ -6,7 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from status import changed_handoffs, closed_sessions, probe, read_last_check, wait_ips  # noqa: E402
+from status import build, changed_handoffs, closed_sessions, github_facts, probe, read_last_check, wait_ips  # noqa: E402
 
 TODAY = date(2026, 11, 24)
 MIDNIGHT = datetime.fromisoformat("2026-11-24T00:00:00+09:00")
@@ -47,6 +47,13 @@ class ChangedHandoffsTest(unittest.TestCase):
         self.assertEqual([(h["status"], h["summary"]) for h in got], [("resolved", "本番配置")])
         self.assertEqual(got[0]["last_heading"], "2026-11-24 本番 eBASE 側の作業（完了）")
 
+    def test_last_heading_skips_boilerplate(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "handoff-20261124-1042-x.md"
+            p.write_text("---\nstatus: blocked\n---\n## 待っているもの\n## 今の状態\n## 次にやること\n## 関連\n## 元のセッション\n- id\n", encoding="utf-8")
+            got = changed_handoffs(Path(d), MIDNIGHT)
+        self.assertEqual(got[0]["last_heading"], "")
+
 
 class WaitIpsTest(unittest.TestCase):
     def test_only_wait_section(self):
@@ -78,6 +85,84 @@ class ClosedSessionsTest(unittest.TestCase):
     def test_unknown_live(self):
         self.assertEqual(closed_sessions(self.T, None), [])
         self.assertEqual(closed_sessions(None, ["a"]), [])
+
+
+LAST = datetime.fromisoformat("2026-11-24T12:00:00+09:00")
+ME = {"eBASE-Mori"}
+NO_EXTRA = {"last_commit": None, "checks": None, "closed_at": None}
+
+
+class GithubFactsTest(unittest.TestCase):
+    def test_pr(self):
+        pr = {"state": "open", "author": "nakatani0324", "reviewers": [], "events": [
+            {"user": "ebase-iyanaga", "ts": "2026-11-24T01:00:00Z", "kind": "review", "state": "COMMENTED"},
+            {"user": "ebase-iyanaga", "ts": "2026-11-24T05:32:24Z", "kind": "review", "state": "APPROVED"},
+            {"user": "eBASE-Mori", "ts": "2026-11-24T05:40:00Z", "kind": "comment", "state": None}]}
+        extra = {"last_commit": "2026-11-24T05:26:00Z", "checks": {"pass": 5, "fail": 0, "pending": 0}, "closed_at": None}
+        got = github_facts("epc#1313", lambda r, n: pr, lambda r, n: extra, ME, LAST, None)
+        self.assertEqual(got["state"], "open")
+        self.assertEqual(got["reviews"], {"ebase-iyanaga": "APPROVED"})
+        self.assertEqual(got["last_commit"], "2026-11-24T05:26:00Z")
+        self.assertEqual(got["checks"], {"pass": 5, "fail": 0, "pending": 0})
+        self.assertEqual([e["ts"] for e in got["activity"]], ["2026-11-24T05:32:24Z"])
+        self.assertIsNone(got["returned"])
+
+    def test_returned_with_since(self):
+        pr = {"state": "merged", "author": "x", "reviewers": [], "events": []}
+        got = github_facts("epc#1312", lambda r, n: pr, lambda r, n: NO_EXTRA, ME, LAST,
+                           datetime.fromisoformat("2026-11-20T13:42:00+09:00"))
+        self.assertTrue(got["returned"])
+
+    def test_issue_skips_extra(self):
+        issue = {"state": "open", "events": [], "is_issue": True, "closed_at": None}
+
+        def extra(r, n):
+            raise AssertionError("issue では呼ばない")
+
+        got = github_facts("epc#1222", lambda r, n: issue, extra, ME, LAST, None)
+        self.assertIsNone(got["checks"])
+
+    def test_fetch_error_is_reported(self):
+        def boom(r, n):
+            raise RuntimeError("gh 失敗")
+
+        got = github_facts("epc#1", boom, boom, ME, LAST, None)
+        self.assertIsNone(got["state"])
+        self.assertIn("gh 失敗", got["error"])
+
+
+class BuildTest(unittest.TestCase):
+    def test_dedups_refs_and_splits_gitbucket(self):
+        collected = {
+            "today": "2026-11-24",
+            "todo": [{"ref": "epc#1316"}, {"ref": "gb:ebase-web#102"}, {"ref": "title:何か"}, {"ref": "rc:abc"}],
+            "handoffs": [{"path": "/m/h1.md", "refs": ["epc#1316", "gb:ebase-web#102"], "wait_refs": ["epc#1316"],
+                          "since": "2026-11-20T17:42:00+09:00", "summary": "s"}],
+            "warnings": [],
+        }
+        seen = []
+
+        def facts(ref, since, last_check):
+            seen.append((ref, since, last_check.isoformat()))
+            return {"ref": ref}
+
+        with tempfile.TemporaryDirectory() as d:
+            out = build(collected, commander_text=None, sessions=[], memo_dir=Path(d), facts=facts,
+                        memo_text=lambda p: "## 待っているもの\n- 192.168.160.92 の起動\n",
+                        connect=lambda ip, port, t: port == 80, now=LAST)
+        self.assertEqual(seen, [("epc#1316", "2026-11-20T17:42:00+09:00", "2026-11-24T00:00:00+09:00")])
+        self.assertEqual(out["gitbucket_refs"], ["gb:ebase-web#102"])
+        self.assertEqual(out["reachability"], [{"ip": "192.168.160.92", "open": [80], "memo": "/m/h1.md"}])
+        self.assertEqual(out["last_check"], "2026-11-24T00:00:00+09:00")
+
+    def test_includes_refs_in_commander_file(self):
+        collected = {"today": "2026-11-24", "todo": [{"ref": "epc#1302"}], "handoffs": [], "warnings": []}
+        text = "# 司令塔\n## 引き継ぐ欄\n### メモ\n- epc#1308 はマージ判断待ち。epc#1302 と組\n"
+        with tempfile.TemporaryDirectory() as d:
+            out = build(collected, commander_text=text, sessions=None, memo_dir=Path(d),
+                        facts=lambda ref, since, lc: {"ref": ref}, memo_text=lambda p: "",
+                        connect=lambda ip, port, t: False, now=LAST)
+        self.assertEqual([g["ref"] for g in out["github"]], ["epc#1302", "epc#1308"])
 
 
 if __name__ == "__main__":
