@@ -14,7 +14,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # deno 2.9.7 は zeno.zsh が使う @db/sqlite の FFI 読み込みでセグフォするため、2.9.2 の rev に固定する
+    # deno 2.9.7〜2.9.8 は zeno.zsh が使う @db/sqlite の FFI 読み込みでセグフォするため、2.9.2 の rev に固定する
+    # 外せるかは scripts/update-all/deno-sqlite-check.sh で確かめる
     nixpkgs-deno.url = "github:NixOS/nixpkgs/18b9261cb3294b6d2a06d03f96872827b8fe2698";
   };
 
