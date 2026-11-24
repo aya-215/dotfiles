@@ -2,7 +2,7 @@ return {
   'mrjones2014/smart-splits.nvim',
   lazy = false,
   opts = {
-    at_edge = 'stop',
+    move = { at_edge = 'stop' },
   },
   config = function(_, opts)
     require('smart-splits').setup(opts)
