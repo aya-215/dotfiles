@@ -5,6 +5,7 @@ import json
 import os
 import re
 import socket
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, time, timedelta, timezone
@@ -84,6 +85,46 @@ def rc_rooms(texts: "list[str | None]") -> "list[dict]":
         for kind, room in _RC_ROOM.findall(text or ""):
             seen.setdefault((kind, unquote(room)), {"kind": kind, "room": unquote(room)})
     return list(seen.values())
+
+
+_RC_MSG = re.compile(r"^  (\d\d):(\d\d) ([^\s:]+)(.*)$")
+_RC_PARENT = re.compile(r"\[↳(\d\d):(\d\d) ")
+
+
+def _jst_hm(h: str, m: str) -> str:
+    return f"{(int(h) + 9) % 24:02d}:{m}"
+
+
+def rc_digest(text: str, last_check: datetime, today: date, me: str) -> str:
+    """rocketchat.sh の出力（時刻は UTC）を JST に直し、last_check 以降に相手の発言があるルームだけ残す。"""
+    # 時刻しか出ないので、前日以前からの確認では時刻で絞れない
+    same_day = last_check.astimezone(JST).date() == today
+    since = last_check.astimezone(JST).strftime("%H:%M")
+    out: "list[str]" = []
+    head: "str | None" = None
+    kept: "list[str]" = []
+
+    def flush():
+        if head is not None and kept:
+            out.extend([head] + kept)
+
+    for line in text.splitlines():
+        if line.startswith("===== "):
+            flush()
+            head, kept = line, []
+            continue
+        m = _RC_MSG.match(line)
+        if not m:
+            if head is None and line.strip():
+                out.append(line)
+            continue
+        hm = _jst_hm(m.group(1), m.group(2))
+        if m.group(3) == me or (same_day and hm < since):
+            continue
+        rest = _RC_PARENT.sub(lambda p: f"[↳{_jst_hm(p.group(1), p.group(2))} ", m.group(4))
+        kept.append(f"  {hm} {m.group(3)}{rest}")
+    flush()
+    return "\n".join(out) if len(out) > 1 or (out and not out[0].startswith("（表示名")) else ""
 
 
 def _ts(s: str) -> datetime:
@@ -196,6 +237,20 @@ def _read(path: "str | None") -> "str | None":
         return None
 
 
+LIB = Path.home() / ".dotfiles/scripts/lib"
+RC_ME = "mori.a"
+
+
+def _run_lib(script: str, args: "list[str]") -> "tuple[str, str | None]":
+    try:
+        r = subprocess.run(["bash", str(LIB / script), *args], capture_output=True, text=True, timeout=180)
+    except (OSError, subprocess.SubprocessError) as e:
+        return "", f"{script}: {e}"
+    if r.returncode != 0:
+        return "", f"{script}: 終了コード {r.returncode}: {r.stderr.strip()[:200]}"
+    return r.stdout, None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--todo", type=Path, default=Path.home() / "memo/todo.md")
@@ -210,6 +265,11 @@ def main(argv=None) -> int:
     collected["warnings"] = pre + collected["warnings"]
     files = collected["files"]
     commander_text = _read(files["today"]) if files["today_exists"] else _read(files["previous"])
+    since_day = read_last_check(commander_text, now.date(), []).date().isoformat()
+    span = ["--from", since_day, "--to", now.date().isoformat()]
+    pool = ThreadPoolExecutor(2)
+    mail_job = pool.submit(_run_lib, "thunderbird.sh", span + ["--no-body", "--budget", "4000"])
+    rc_job = pool.submit(_run_lib, "rocketchat.sh", span + ["--include-dm", "--with-ids", "--budget", "12000"])
     sync_github.ensure_gh_path()
     token, me = sync_github.get_token(), pr_ball.get_me()
 
@@ -221,6 +281,12 @@ def main(argv=None) -> int:
 
     out = build(collected, commander_text, tmux_sessions.list_sessions(tmux_sessions.run_cmd, os.environ.get("TMUX_PANE"), now),
                 a.memo_dir, facts, lambda p: _read(p) or "", _connect, now)
+    mail, mail_err = mail_job.result()
+    rc, rc_err = rc_job.result()
+    pool.shutdown()
+    out["warnings"] += [e for e in (mail_err, rc_err) if e]
+    out["mail"] = mail.strip()
+    out["rocketchat"] = rc_digest(rc, datetime.fromisoformat(out["last_check"]), now.date(), RC_ME)
     for w in out["warnings"]:
         print(f"warn: {w}", file=sys.stderr)
     print(json.dumps(out, ensure_ascii=False, indent=1))

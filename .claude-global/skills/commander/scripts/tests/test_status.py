@@ -6,7 +6,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from status import build, changed_handoffs, rc_rooms, closed_sessions, github_facts, probe, read_last_check, wait_ips  # noqa: E402
+from status import build, changed_handoffs, rc_digest, rc_rooms, closed_sessions, github_facts, probe, read_last_check, wait_ips  # noqa: E402
 
 TODAY = date(2026, 11, 24)
 MIDNIGHT = datetime.fromisoformat("2026-11-24T00:00:00+09:00")
@@ -182,6 +182,39 @@ class RcRoomsTest(unittest.TestCase):
         self.assertEqual(rc_rooms(texts), [{"kind": "direct", "room": "i9o3NbG"},
                                            {"kind": "group", "room": "パイロット"},
                                            {"kind": "channel", "room": "general"}])
+
+
+
+RC_TEXT = """（表示名: matsumoto.h=松本久方）
+===== AI開発 [発言3] 7/13件 ===== {rid:R t:p link:L}
+  01:58 matsumoto.h: 古い {id:a}
+  06:10 matsumoto.h [↳01:58 mori.a]: 新しい {id:b}
+===== DM:kawai [発言0] 1/1件 ===== {rid:D t:d link:L2}
+  02:00 kawai: 古いDM {id:c}
+===== mori.a-times [発言1] 1/1件 =====
+  07:00 mori.a: 自分だけ {id:d}
+===== 夜 [発言0] 1/1件 =====
+  15:30 kawai: 日付が変わってすぐ {id:e}
+"""
+
+
+class RcDigestTest(unittest.TestCase):
+    def test_keeps_new_messages_from_others_in_jst(self):
+        got = rc_digest(RC_TEXT, datetime.fromisoformat("2026-11-24T12:00:00+09:00"), TODAY, "mori.a")
+        self.assertEqual(got.splitlines(), [
+            "（表示名: matsumoto.h=松本久方）",
+            "===== AI開発 [発言3] 7/13件 ===== {rid:R t:p link:L}",
+            "  15:10 matsumoto.h [↳10:58 mori.a]: 新しい {id:b}",
+        ])
+
+    def test_previous_day_last_check_keeps_all_but_converts(self):
+        got = rc_digest(RC_TEXT, datetime.fromisoformat("2026-11-23T18:00:00+09:00"), TODAY, "mori.a")
+        self.assertIn("  10:58 matsumoto.h: 古い {id:a}", got)
+        self.assertIn("  00:30 kawai: 日付が変わってすぐ {id:e}", got)
+        self.assertNotIn("自分だけ", got)
+
+    def test_empty(self):
+        self.assertEqual(rc_digest("", MIDNIGHT, TODAY, "mori.a"), "")
 
 
 if __name__ == "__main__":

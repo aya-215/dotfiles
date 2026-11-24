@@ -20,14 +20,14 @@ S=~/.claude/skills/commander/scripts
 python3 -I $S/collect.py                       # 材料（todo・引き継ぎメモ・祝日・ファイルの場所・tmux）
 python3 -I $S/carry.py --prev <前の日のファイル>  # 引き継ぐ欄を写して掃除
 echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/check_waits.py   # GitHub の返ってきた判定
-python3 -I $S/status.py                        # 状況確認の材料を1回で（30秒ほど）
+python3 -I $S/status.py                        # 状況確認の材料を1回で（1分ほど）
 python3 -I $S/sessions.py                      # tmux の各セッションの状態だけ
 ```
 
 - `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`（分からなければ `null`）・`refs`（本文の参照ぜんぶ）・`wait_refs`（`## 待っているもの` に出てくる参照だけ）・`location`（実在する作業場所だけ）・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
 - `carry.py` の出力: `section`（そのまま貼る `## 引き継ぐ欄`）・`removed_tmux`・`removed_done`・`done_still_in_todo`・`unparsed_done`
 - `check_waits.py` には各引き継ぎメモの `wait_refs` を、そのメモの `since` と組にして渡す（`refs` を渡すと本文で触れただけの PR まで判定してしまう）。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
-- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`）・`self`（この司令塔））・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`warnings`
+- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`）・`self`（この司令塔））・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に相手の発言があるルームだけ残したもの。自分の発言は除く）・`warnings`
 - `sessions.py` は Claude のペインを探して読む。tmux-agent-sidebar のペインがあるので、`tmux capture-pane -t <セッション名>` で直接読まない
 - `warn:` は stderr。出たらユーザーに一言伝える
 
@@ -98,12 +98,12 @@ python3 -I $S/sessions.py                      # tmux の各セッションの�
 全部調べ → 司令塔ファイルを更新 → 表示、の順。調べ終わるまで表示しない。
 
 1. `status.py` を流す（今日のファイルが無ければ先に「開いたとき」の 1〜2 で作る）
-2. MCP でしか見られないものを見る。どれも `last_check` 以降だけ:
+2. 残りを見る。どれも `last_check` 以降だけ:
    - GitBucket: `gitbucket_refs` を `mcp__gitbucket__gitbucket_get_pr`・`mcp__gitbucket__gitbucket_list_comments` で（状態・相手のコメント）
-   - Rocket Chat: `rocketchat_rooms` を `mcp__rocketchat__get_channel_history`（`oldest=<last_check>`）で。`direct` は `room` が room_id、`group`・`channel` は `mcp__rocketchat__list_channels`（`filter=<room>`）で room_id を引く。部屋を横断した自分宛てメンションは MCP で取れないので、知っている部屋だけ見る
-   - メール: `mcp__thunderbird__search_messages` を `after=<last_check の日付>` で。GitHub の通知（`notifications@github.com`）は外す
+   - Rocket Chat: `rocketchat` を読む（自分が発言・メンションされたルームと DM。日報と同じ取り方）。そこに無い部屋で相手の返事を待っているときだけ、`rocketchat_rooms` の部屋を `mcp__rocketchat__get_channel_history`（`oldest=<last_check>`）で見る。`direct` は `room` が room_id、`group`・`channel` は `mcp__rocketchat__list_channels`（`filter=<room>`）で room_id を引く
+   - メール: `mail` を読む（日報と同じ除外をかけたもの）。日付単位なので、`last_check` より前のスレッドは「変わった」に入れない
    - 要約だけ出す。履歴を丸ごと出したりファイルに書いたりしない。秘密（API キー・パスワード・トークン）は値を書かず「API キーが届いた（値は書かない）」とする。引き継ぐ欄は毎日写されるので、一度入ると消えない
-   - MCP がつながらなければ「Rocket Chat は見られなかった（`/mcp` でつなぎ直せる）」と出して続ける
+   - `warnings` に `thunderbird.sh`・`rocketchat.sh` が出たら「メール（Rocket Chat）は見られなかった」と出して続ける
    - 課題DB で返事が来る待ちは「どこを見ればよいか」だけ出す
 3. 引き継ぎメモ: `handoffs_changed` で `resolved` になったものは済んだことへ。待ちが済んだ（`returned: true` でマージ・クローズ）のに `blocked` のままのものは `resolved` にしてよいか聞く
 4. 司令塔ファイルを更新する: 済んだこと・作業中の tmux セッション（`closed_sessions` は外す、`sessions` の新しいものは足す）・メモ・一覧・`最終確認:`（`now`）
