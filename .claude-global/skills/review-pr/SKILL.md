@@ -312,6 +312,8 @@ ebase-portal-chat・ebase-middleware-mcp・eb-api-extended の PR は review-aie
 
 MCP のツールは最初は deferred なので、ToolSearch（`select:mcp__gitbucket__gitbucket_get_pr,mcp__gitbucket__gitbucket_list_comments`）で読み込んでから呼ぶ。GitBucket の PR にはレビュー状態（Approve / Request Changes）が無く、コメントだけになる。
 
+`gitbucket_list_comments` は `{"comments", "inline_comments", "inline_error"}` を返す。指摘は通常コメントとインラインコメントの両方を数える。`inline_comments` が `null` ならインラインを読めていない（0件ではない）ので、`inline_error` を伝えてブラウザで確かめてもらう。
+
 ## gh CLI Reference
 
 ```bash

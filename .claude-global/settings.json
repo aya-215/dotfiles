@@ -61,7 +61,9 @@
       "mcp__gitbucket__gitbucket_add_comment",
       "mcp__gitbucket__gitbucket_create_issue",
       "mcp__gitbucket__gitbucket_create_pr",
-      "mcp__gitbucket__gitbucket_update_pr"
+      "mcp__gitbucket__gitbucket_update_pr",
+      "mcp__gitbucket__gitbucket_merge_pr",
+      "mcp__gitbucket__gitbucket_delete_branch"
     ],
     "defaultMode": "auto",
     "blockReadsOutsideWorkingDirectories": false

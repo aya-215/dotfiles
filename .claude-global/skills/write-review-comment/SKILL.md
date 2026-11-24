@@ -64,7 +64,7 @@ while read -r repo num; do
 done | head -200
 ```
 
-GitBucket では、`mcp__gitbucket__gitbucket_list_prs` で同じリポジトリの最近の PR を出し、`mcp__gitbucket__gitbucket_list_comments` で author がユーザー本人（GitBucket のログイン名。`mori.a`）のコメントだけを読む。付録（`---` より下）は読み飛ばし、本文の長さと言い回しだけを見る。
+GitBucket では、`mcp__gitbucket__gitbucket_list_prs` で同じリポジトリの最近の PR を出し、`mcp__gitbucket__gitbucket_list_comments` の `comments` から author がユーザー本人（GitBucket のログイン名。`mori.a`）のコメントだけを読む。付録（`---` より下）は読み飛ばし、本文の長さと言い回しだけを見る。
 
 取得できない（認証エラー・0件）ときは references/style-examples.md の例文だけで進める。
 

@@ -8,7 +8,7 @@
 外部アクションの例:
 
 - PRコメント・レビューコメントの投稿（`gh pr comment` / `gh pr review` / `mcp__gitbucket__gitbucket_add_comment`）
-- Issue・PRの作成・更新・クローズ
+- Issue・PRの作成・更新・クローズ・マージ、ブランチの削除（`mcp__gitbucket__gitbucket_merge_pr` / `mcp__gitbucket__gitbucket_delete_branch` を含む）
 - Rocket Chat等へのメッセージ送信
 - Artifactの公開、メール送信
 

@@ -42,7 +42,7 @@ grep -rn "foo" /path/to/app --include='*.ts'
 | リモートURL | 使うツール |
 |---|---|
 | `github.com` | `gh` コマンド（GitHub CLI） |
-| 社内GitBucket URL | `mcp__gitbucket__*` ツール |
+| 社内GitBucket URL | `mcp__gitbucket__*` ツール。`gitbucket_api.py`（ebase-infra:gitbucket-api）は Bash で直接実行しない。MCP に無い読み取りは `gitbucket_api_get`、無い書き込みはツールを足すか相談する |
 
 ## Git ワークフロー
 

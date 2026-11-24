@@ -15,7 +15,7 @@ tamaki-ai-training の提出PRについて、**形式はスクリプトで、内
    - `gitbucket_get_issue` を**PR番号で**呼ぶ → `labels` と最新の `body`。`get_pr` の body は古いことがあるので使わない
    - `gitbucket_get_pr` → `head` / `base`
    - 本文の `closes #N` の Issue を**すべて** `gitbucket_get_issue` → `labels` / `body`
-   - `gitbucket_list_comments` をPR番号で呼ぶ → メンターのコメントに**依頼**があり、そのコメントより後に head へコミットが積まれていれば**再レビュー**（下の「再レビュー」）。「明日返します」「確認しました」のような依頼の無いコメントは数えない
+   - `gitbucket_list_comments` をPR番号で呼ぶ（`comments` と `inline_comments` の両方を見る。`inline_comments` が `null` なら読めていない） → メンターのコメントに**依頼**があり、そのコメントより後に head へコミットが積まれていれば**再レビュー**（下の「再レビュー」）。「明日返します」「確認しました」のような依頼の無いコメントは数えない
 3. **レビューするPRの head ブランチに切り替える**（ユーザーがエディタで提出物を開けるように）
    - 先に `git -C <clone> status --short` を見る。未コミットの変更があれば切り替えずに止め、ユーザーに伝える
    - `git -C <clone> fetch origin` のあと、`git -C <clone> switch <head>`。ローカルに無ければ `git -C <clone> switch -c <head> --track origin/<head>`

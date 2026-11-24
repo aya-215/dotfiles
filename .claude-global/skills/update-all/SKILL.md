@@ -42,7 +42,7 @@ Nix → Neovim → 残りの順にする（Nix で Neovim 本体や tree-sitter 
 | nvim | `nvim --headless "+Lazy! sync" +qa` → `nvim --headless "+lua require('lazy').load({plugins={'nvim-treesitter'}})" "+TSUpdateSync" +qa` → `nvim --headless -c "luafile ~/.dotfiles/scripts/update-all/mason-update.lua"` | 起動時メッセージが空か（下の「起動確認」）。警告が出たら下の「設定名の変更」 | 設定項目の改名は警告だけで、古い設定は**黙って無視される**（smart-splits の `at_edge` → `move.at_edge` で端の動作が変わっていた） |
 | zeno | `git -C ~/src/github.com/yuki-yano/zeno.zsh pull --ff-only`（前の HEAD を控える） | 使い捨て tmux で略語展開・Enter・Tab（下の「zsh のテスト」） | 壊れていたら控えた HEAD に `checkout` |
 | sidebar | agent-memory の `tmux/agent-sidebar-update.md` の手順（`local-patches` を rebase → `cargo build --release` → `bin/` にコピー） | `bin/tmux-agent-sidebar version` | 一覧で PR #159/#167 が `MERGED` ならパッチを捨てて main に戻せる。動いているサイドバーは作り直さない（新しいウィンドウから順に替わる） |
-| python | `更新あり` の行がある `scripts/*/` だけ、`uv lock --upgrade` → `uv sync`。`固定` の行しか無いなら触らない | gitbucket-mcp: `uv run python -m unittest -q test_server` と、MCP の tools/list で **11個** 返るか（下の「MCP のテスト」） | `uv lock --upgrade` は表に出ない間接依存も上げる。`mcp` は v2 で `FastMCP` が `MCPServer` に改名され起動しないので `<2` に固定済み。v2 移行は「gitbucket-mcp への一本化」（agent-memory work-in-progress/gitbucket-mcp-consolidation.md）の中でやる |
+| python | `更新あり` の行がある `scripts/*/` だけ、`uv lock --upgrade` → `uv sync`。`固定` の行しか無いなら触らない | gitbucket-mcp: `uv run python -m unittest` と、`bash smoke.sh \| wc -l` が **16**（下の「MCP のテスト」） | `uv lock --upgrade` は表に出ない間接依存も上げる。gitbucket-mcp は `mcp>=2,<3`。v2 はツール内の `RuntimeError` の文を隠すので、エラーは `GitBucketError`（`ToolError` の派生）で投げる |
 | tools | 選ばれた行だけ: uv → `uv self update`、`uv tool: <名前>` → `uv tool upgrade <名前>`、coderabbit → `coderabbit update` | `--version` と `--help` が動くか | dotenvx は下の「dotenvx の入れ替え」 |
 | plugins | 第三者のものは先に下の「第三者プラグイン」で差分を見る → `claude plugin update <id> -y`（一括更新コマンドは無い） | 反映は次のセッションか `/reload-plugins` と伝える | 公式（`claude-plugins-official`）と `ebase-claude-marketplace` 以外が第三者 |
 | archify | 下の「archify の入れ替え」 | `SKILL.md` の差分を見せ、`node bin/archify.mjs --help` が動くか | |
@@ -118,13 +118,10 @@ T kill-server
 
 ### MCP のテスト
 
-stdin をすぐ閉じると、mcp 1.30 は返事をする前に終わる。`sleep` で開けておく。
+`smoke.sh` が stdio でサーバを起動し、tools/list のツール名を1行ずつ出す（stdin をすぐ閉じると返事の前に終わるので、中で `sleep` している）。
 
 ```bash
-cd ~/.dotfiles/scripts/gitbucket-mcp
-(printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"0"}}}' \
-  '{"jsonrpc":"2.0","method":"notifications/initialized"}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'; sleep 4) \
-  | timeout 30 uv run server.py 2>/dev/null | jq -r 'select(.id==2) | .result.tools | length'
+bash ~/.dotfiles/scripts/gitbucket-mcp/smoke.sh | wc -l   # 16
 ```
 
 ### dotenvx の入れ替え
