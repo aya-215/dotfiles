@@ -1,7 +1,7 @@
 ---
 name: worktree
 description: Git worktreeの作成・削除を対話的に行う
-allowed-tools: Bash(git:*), Bash(gh pr list:*), Bash(gh repo view:*), Bash(npm install:*), Bash(pnpm install:*), Bash(yarn install:*), Bash(bun install:*), Bash(ls:*), Bash(pwd:*), Bash(head:*), Bash(cp:*), Bash(find:*), Bash(mkdir:*), Bash(python3 ~/.claude/skills/worktree/scripts/worktree_scan.py:*), AskUserQuestion
+allowed-tools: Bash(git:*), Bash(gh pr list:*), Bash(gh repo view:*), Bash(npm install:*), Bash(pnpm install:*), Bash(yarn install:*), Bash(bun install:*), Bash(ls:*), Bash(pwd:*), Bash(head:*), Bash(cp:*), Bash(find:*), Bash(mkdir:*), Bash(python3 ~/.claude/skills/worktree/scripts/worktree_scan.py:*), Bash(python3 -I ~/.dotfiles/scripts/claude-worktree/worktree_hook.py:*), AskUserQuestion
 version: 1.1.0
 ---
 
@@ -87,72 +87,37 @@ python3 ~/.claude/skills/worktree/scripts/worktree_scan.py --json   # 削除手�
 4. `git worktree list` - 既存のworktree一覧
 5. `ls package.json pnpm-lock.yaml yarn.lock bun.lockb 2>/dev/null` - パッケージマネージャー判定用
 
-### 3. ディレクトリ名の生成
+### 3. 置き場所とブランチ名
 
-リポジトリ名から略称を生成する。コマンドは使わず、以下の規則に従って略称を決定:
+置き場所とブランチ名は `~/.dotfiles/scripts/claude-worktree/worktree_hook.py` が決める（Claude Code の `claude -w` のフックと同じ決まり。詳細は `docs/superpowers/specs/2026-11-24-claude-worktree-hooks-design.md`）。Claude は決め直さない。
 
-**規則**: リポジトリ名をハイフン `-` で分割し、各単語の頭文字を連結する
-
-| リポジトリ名 | 略称 |
-|-------------|------|
-| `claude-code` | `cc` |
-| `ebase-portal-chat` | `epc` |
-| `my-awesome-app` | `maa` |
-| `api` | `a` |
-
-worktreeディレクトリは `../<略称>-<ブランチ名>` の形式にする。
-**ブランチ名に `/` が含まれる場合は `-` に置換する。**
-
-例:
-- `feature-auth` → `../epc-feature-auth`
-- `feat/41-implementation-page-layout` → `../epc-feat-41-implementation-page-layout`
-- `fix/bug-123` → `../epc-fix-bug-123`
+- 置き場所: `<本体>/.claude/worktrees/<スラッグ>`。本体が `/mnt/` の下なら `~/worktrees/<本体のフォルダ名>-<スラッグ>`（スラッグはブランチ名の `/` を `-` にしたもの）
+- ブランチ: 既にあれば開く／`feat/`・`fix/` 等で始まればそのまま／個人リポジトリならそのまま／それ以外は `feat/<名前>`
+- 名前は英数字・`.`・`_`・`-`・`/` だけ。日本語のブランチ名が決まりのリポジトリ（hankyu・pilot の GitBucket）は英数字で作り、push 前に `git -C <worktree> branch -m <決まりの名前>` で直す
 
 ### 5. 操作の実行
 
 #### add (作成) の場合:
 
-1. ブランチが既に存在するか確認:
+1. 作る:
    ```bash
-   git show-ref --verify --quiet refs/heads/<branch-name>
+   python3 -I ~/.dotfiles/scripts/claude-worktree/worktree_hook.py create --name <ブランチ名> --cwd <本体>
    ```
+   - stdout の最後の行が worktree のパス。`.env.local`・`.env.keys` のコピーと、npm なら node_modules のハードリンクまで済んでいる（stderr に出る）
+   - 失敗したら stderr の理由をそのまま伝える（例: そのブランチが別の場所で使用中）
 
-2. ブランチの存在に応じて実行:
-   - **存在する場合**: `git worktree add ../<略称>-<ブランチ名> <ブランチ名>`
-   - **存在しない場合**: ベースブランチを決定してから作成
-     - `origin/main` が存在すれば使用、なければ `origin/master` を使用
-     - `git worktree add ../<略称>-<ブランチ名> -b <ブランチ名> <ベースブランチ>`
+2. 依存関係のインストール（スクリプトはしない）:
+   - 本体に `package.json` があればロックファイルでパッケージマネージャーを決め、worktree にインストール:
+     - `pnpm-lock.yaml` → `pnpm install --prefix <worktree-path>`
+     - `yarn.lock` → `yarn install --cwd <worktree-path>`
+     - `bun.lockb` → `bun install --cwd <worktree-path>`
+     - それ以外（npm） → `npm install --prefix <worktree-path>`（node_modules はハードリンク済みなので差分だけ入る。`npm ci` は node_modules を丸ごと消すので使わない）
 
-3. worktree作成成功後、依存関係のインストール:
-   - 現在のディレクトリに `package.json` が存在するか確認: `ls package.json`
-   - 存在する場合、現在のディレクトリのロックファイルを確認: `ls pnpm-lock.yaml yarn.lock bun.lockb 2>/dev/null | head -1`
-   - パッケージマネージャーを決定し、`--prefix` などで worktree にインストール:
-     - `pnpm-lock.yaml` があれば → `pnpm install --prefix <worktree-path>`
-     - `yarn.lock` があれば → `yarn install --cwd <worktree-path>`
-     - `bun.lockb` があれば → `bun install --cwd <worktree-path>`
-     - それ以外（npm） → 下記のハードリンク事前コピーをしてから `npm install --prefix <worktree-path>`
-   - npm の場合、install の前に現在のディレクトリの node_modules をハードリンクで worktree に複製する（1本あたり約1GB の重複を防ぐ。差分だけ npm install が置き換える）:
-     - 対象を列挙: `find . -maxdepth 3 -name node_modules -type d -prune`
-     - 各 `<dir>/node_modules` について、worktree 側に `<dir>` が存在するときだけ `cp -al <dir>/node_modules <worktree-path>/<dir>/node_modules`
-     - `cp -al` が失敗したら（別ファイルシステム等）その node_modules を `rm -rf` で消して通常の install に任せる
-     - `npm ci` は node_modules を丸ごと消してリンクが無駄になるため使わない
-     - symlink で借りない。Next.js の Turbopack はプロジェクト外を指す node_modules の symlink を拒否する
-
-4. 環境設定ファイルのコピー（モノレポ対応）:
-   - リポジトリ内の `.env.local` と `.env.keys` ファイルを検索: `find . \( -name '.env.local' -o -name '.env.keys' \) -type f 2>/dev/null`
-   - 見つかった各ファイルについて、同じ相対パスで新しいworktreeにコピー:
-     - 相対パスからディレクトリ部分を抽出し、worktree内に同じディレクトリ構造を作成
-     - 例: `./apps/portal-ui/.env.local` → `<worktree-path>/apps/portal-ui/.env.local`
-     - 例: `./.env.keys` → `<worktree-path>/.env.keys`
-     - コマンド例: `cp --parents ./apps/portal-ui/.env.local <worktree-path>/` または `mkdir -p` + `cp`
-   - コピーした場合は、コピーしたファイルの相対パスをユーザーに通知
-
-5. 成功メッセージと次のステップを表示:
-   - 作成したworktreeのパス
-   - `cd` コマンドの例
-   - 削除方法の案内
+3. 成功メッセージ: 作成した worktree のパス、`cd` の例、消し方（`/worktree rm`）
 
 #### rm (削除) の場合:
+
+対象には `claude -w` が作った `<本体>/.claude/worktrees/*` と `~/worktrees/*`（`/mnt/` の本体の分）、前の置き場所 `../<略称>-<ブランチ>` が全部入る（`git worktree list` で拾う）。
 
 対象ごとの `repo`（本体リポジトリのパス）・`path`・`branch` はスクリプトの `--json` 出力から取る。git 操作はすべて `git -C <repo>` で行い、カレントディレクトリに依存しない。本体が `/mnt/` 配下（Tomcat が直接読む eb-api-extended・hankyu 等）でも、worktree の削除とブランチ削除は本体の作業ツリーに触れない。本体側で checkout・pull はしない。
 
