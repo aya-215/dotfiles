@@ -43,7 +43,7 @@ class ExtractTest(unittest.TestCase):
 
     def test_stray_lines_go_to_memo(self):
         c = extract("## 引き継ぐ欄\n- 見出しの外の行\n### 知らない見出し\n- b\n### メモ\n- a\n")
-        self.assertEqual(c.memo, ["- 見出しの外の行", "- b", "- a"])
+        self.assertEqual(c.memo, ["- 見出しの外の行", "### 知らない見出し", "- b", "- a"])
 
     def test_render_roundtrip(self):
         c = extract(SAMPLE)
@@ -74,6 +74,20 @@ class PruneTest(unittest.TestCase):
         c, info = prune(extract("## 引き継ぐ欄\n### 済んだこと\n- 2026-11-24 ref なし\n"), [], set())
         self.assertEqual(c.done, ["- 2026-11-24 ref なし"])
         self.assertEqual(info["unparsed_done"], ["- 2026-11-24 ref なし"])
+
+class ReviewFixesTest(unittest.TestCase):
+    CHECKLIST = ("## 引き継ぐ欄\n### メモ\n### 火曜までに main に入れるもの\n- [ ] #1308\n\n"
+                 "### 本番 eBASE\n- [ ] RDP\n\n## 一覧\n")
+
+    def test_pasted_checklist_headings_survive_two_days(self):
+        once = extract(render(extract(self.CHECKLIST)))
+        self.assertEqual(once.memo, ["### 火曜までに main に入れるもの", "- [ ] #1308", "", "### 本番 eBASE", "- [ ] RDP"])
+        self.assertEqual(extract(render(once)), once)
+
+    def test_tmux_name_rewritten_by_tmux_is_kept(self):
+        c, info = prune(extract("## 引き継ぐ欄\n### 作業中の tmux セッション\n- .dotfiles-109: x\n"), ["_dotfiles-109"], set())
+        self.assertEqual(c.tmux, ["- .dotfiles-109: x"])
+        self.assertEqual(info["removed_tmux"], [])
 
 
 class CliTest(unittest.TestCase):

@@ -45,7 +45,7 @@ class CheckTest(unittest.TestCase):
         def fetch(repo, number, token):
             if number == 1:
                 raise check_waits.pr_ball.FetchError("TLS handshake timeout")
-            return "merged", []
+            return "merged", [], "2026-11-21T00:00:00Z"
         out = check([{"ref": "epc#1", "since": SINCE.isoformat()}, {"ref": "epc#2", "since": SINCE.isoformat()}],
                     ME, fetch_fn=fetch, token="t")
         self.assertIsNone(out[0]["returned"])
@@ -53,7 +53,7 @@ class CheckTest(unittest.TestCase):
         self.assertTrue(out[1]["returned"])
 
     def test_no_token(self):
-        out = check([{"ref": "epc#1", "since": SINCE.isoformat()}], ME, fetch_fn=lambda *a: ("merged", []), token=None)
+        out = check([{"ref": "epc#1", "since": SINCE.isoformat()}], ME, fetch_fn=lambda *a: ("merged", [], None), token=None)
         self.assertIsNone(out[0]["returned"])
 
 
@@ -70,7 +70,7 @@ class FetchTest(unittest.TestCase):
             return [{"user": bot, "created_at": "2026-11-21T00:00:00Z"},
                     {"user": human, "created_at": "2026-11-21T01:00:00Z"}]
         with mock.patch.object(check_waits.pr_ball, "gh_json", side_effect=fake):
-            state, events = check_waits.fetch("ebase-portal-chat", 1, "t")
+            state, events, closed_at = check_waits.fetch("ebase-portal-chat", 1, "t")
         self.assertEqual(state, "open")
         self.assertEqual([e["user"] for e in events], ["ebase-sato"])
 
@@ -79,10 +79,37 @@ class FetchTest(unittest.TestCase):
             if "/pulls/" in path:
                 raise check_waits.pr_ball.FetchError(f"{path}: gh api 失敗: gh: Not Found (HTTP 404)")
             if path.endswith("/issues/5"):
-                return {"state": "closed"}
+                return {"state": "closed", "closed_at": "2026-11-22T00:00:00Z"}
             return []
         with mock.patch.object(check_waits.pr_ball, "gh_json", side_effect=fake):
-            self.assertEqual(check_waits.fetch("ebase-portal-chat", 5, "t"), ("closed", []))
+            self.assertEqual(check_waits.fetch("ebase-portal-chat", 5, "t"), ("closed", [], "2026-11-22T00:00:00Z"))
+
+
+class ReviewFixesTest(unittest.TestCase):
+    def test_merged_before_since_is_not_returned(self):
+        r = returned("merged", [], ME, SINCE, "2026-11-18T00:00:00Z")
+        self.assertFalse(r["returned"])
+
+    def test_merged_after_since_is_returned(self):
+        self.assertTrue(returned("merged", [], ME, SINCE, "2026-11-21T00:00:00Z")["returned"])
+
+    def test_my_reply_after_partner_clears_return(self):
+        ev = [{"user": "ebase-sato", "ts": "2026-11-20T09:50:00Z", "kind": "comment"},
+              {"user": "eBASE-Mori", "ts": "2026-11-20T10:00:00Z", "kind": "comment"}]
+        self.assertFalse(returned("open", ev, ME, SINCE)["returned"])
+
+    def test_404_in_path_number_is_not_not_found(self):
+        def fake(path, token, paginate=False):
+            raise check_waits.pr_ball.FetchError(f"{path}: TLS handshake timeout")
+        with mock.patch.object(check_waits.pr_ball, "gh_json", side_effect=fake) as gh:
+            with self.assertRaises(check_waits.pr_ball.FetchError):
+                check_waits.fetch("ebase-portal-chat", 1404, "t")
+        self.assertEqual(gh.call_count, 1)
+
+    def test_since_null_is_unknown(self):
+        out = check([{"ref": "epc#1", "since": None}], ME, fetch_fn=lambda *a: ("open", [], None), token="t")
+        self.assertIsNone(out[0]["returned"])
+        self.assertIn("日時", out[0]["reason"])
 
 
 if __name__ == "__main__":

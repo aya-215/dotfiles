@@ -36,12 +36,19 @@ def extract(text: str) -> Carry:
             continue
         if not inside:
             continue
-        if line.startswith("### "):
-            # 知らない小見出しの下の行は落とさずメモへ
-            current = names.get(line.strip(), "memo")
+        if line.strip() in names:
+            current = names[line.strip()]
             continue
-        if line.strip():
+        if line.startswith("### "):
+            # 貼られたチェックリストの小見出しは見出しごとメモに残す
+            current = "memo"
+            c.memo.append(line)
+        elif line.strip() or current == "memo":
             getattr(c, current).append(line)
+    while c.memo and not c.memo[-1].strip():
+        c.memo.pop()
+    while c.memo and not c.memo[0].strip():
+        c.memo.pop(0)
     return c
 
 
@@ -50,7 +57,8 @@ def prune(c: Carry, live_sessions: "list[str] | None", open_refs: "set[str] | No
     tmux = []
     for line in c.tmux:
         m = _TMUX.match(line)
-        if live_sessions is not None and m and m.group(1) not in live_sessions:
+        # tmux はセッション名の「.」「:」を「_」に置き換える
+        if live_sessions is not None and m and re.sub(r"[.:]", "_", m.group(1)) not in live_sessions:
             info["removed_tmux"].append(line)
         else:
             tmux.append(line)

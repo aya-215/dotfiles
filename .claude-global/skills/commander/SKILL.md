@@ -22,9 +22,9 @@ python3 -I $S/carry.py --prev <前の日のファイル>  # 引き継ぐ欄を�
 echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/check_waits.py   # GitHub の返ってきた判定
 ```
 
-- `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`・`refs`・`location`・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
+- `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`（分からなければ `null`）・`refs`（本文の参照ぜんぶ）・`wait_refs`（`## 待っているもの` に出てくる参照だけ）・`location`（実在する作業場所だけ）・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
 - `carry.py` の出力: `section`（そのまま貼る `## 引き継ぐ欄`）・`removed_tmux`・`removed_done`・`done_still_in_todo`・`unparsed_done`
-- `check_waits.py` には各引き継ぎメモの `refs` を、そのメモの `since` と組にして渡す。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
+- `check_waits.py` には各引き継ぎメモの `wait_refs` を、そのメモの `since` と組にして渡す（`refs` を渡すと本文で触れただけの PR まで判定してしまう）。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
 - `warn:` は stderr。出たらユーザーに一言伝える
 
 ## 司令塔ファイルの書式
@@ -57,7 +57,8 @@ echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/
 
 - `## 引き継ぐ欄` は `carry.py` が次の日へ写す。ここにしか無い情報（その日の判断・作業中の tmux セッション・貼られたチェックリスト・決めることの経緯）は必ずこの欄に書く。ほかの章は毎日作り直す
 - 済んだことの行は `- <YYYY-MM-DD> <内容> [ref:<todo の ref>]`。ref は collect の `todo[].ref`（キーが無い行は `title:<タイトル>`）。todo に無いものは ref を付けない
-- tmux の行は `- <セッション名>: <内容>`
+- tmux の行は `- <セッション名>: <内容>`。セッション名は `tmux ls` に出る名前で書く
+- 引き継ぐ欄の中では `## ` の見出しを使わない（そこで欄が終わり、以降が次の日へ写らない）。貼られたチェックリストの小見出しは `### ` のままでよい（メモにそのまま残る）
 
 ## 手順
 
@@ -92,7 +93,7 @@ echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/
 1. 「開いたとき」の照合（GitHub・GitBucket）をやり直す
 2. Rocket Chat: 引き継ぎメモ・todo の部屋リンク（DM は `/direct/<rid>`）から部屋を特定し、`mcp__rocketchat__get_channel_history` を `oldest=<since>` で取る。部屋が分からなければ相手のユーザー名で `mcp__rocketchat__list_channels`（表示名では見つからないことがある）
 3. メール: `mcp__thunderbird__search_messages` を差出人（相手）と `after=<since の日付>` で絞る。GitHub の通知メール（`notifications@github.com`）は外す
-4. 取るのは `since` 以降の相手の発言だけ。要約して出す。履歴を丸ごと出したりファイルに書いたりしない（DM に API キー等が貼られていることがある）
+4. 取るのは `since` 以降の相手の発言だけ。要約して出す。履歴を丸ごと出したりファイルに書いたりしない（DM に API キー等が貼られていることがある）。相手の発言に秘密（API キー・パスワード・トークン）があれば、要約にも引き継ぐ欄にも値を書かず「API キーが届いた（値は書かない）」とする。引き継ぐ欄は毎日写されるので、一度入ると消えない
 5. 課題DB で返事が来る待ちは「どこを見ればよいか」だけ出す
 6. MCP がつながらなければ「Rocket Chat は見られなかった（`/mcp` でつなぎ直せる）」と出して続ける
 7. 返ってきたものを、再開のプロンプト付きで出す

@@ -29,12 +29,18 @@ status: blocked
 tags: [handoff, ebase-portal-chat]
 ---
 
+## 待っているもの
+- PR #1316 のレビュー。
+
+## 今の状態
+- 関連の #1277 はマージ済み https://github.com/ebase-dev/ebase-portal-chat/pull/1277
+
 ## 関連
 - PR: https://github.com/ebase-dev/ebase-portal-chat/pull/1316
 - issue: https://github.com/ebase-dev/ebase-portal-chat/issues/1296
 
 ## 元のセッション
-- 作業場所: /x/epc-feat-1296（ブランチ feat/1296）
+- 作業場所: WORKDIR（ブランチ feat/1296）
 """
 
 
@@ -47,7 +53,9 @@ class CollectTest(unittest.TestCase):
         self.cdir = self.tmp / "commander"
         self.cdir.mkdir()
         self.memo = self.tmp / "handoff-20261120-1742-mensapo.md"
-        self.memo.write_text(MEMO, encoding="utf-8")
+        self.workdir = self.tmp / "epc-feat-1296"
+        self.workdir.mkdir()
+        self.memo.write_text(MEMO.replace("WORKDIR", str(self.workdir)), encoding="utf-8")
         self.hit = {"path": str(self.memo), "summary": "メンサポリンク", "created": "2026-11-20", "status": "blocked"}
 
     def tearDown(self):
@@ -59,8 +67,9 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(row["handoffs"], [str(self.memo)])
         h = out["handoffs"][0]
         self.assertEqual(h["todo_refs"], ["epc#1296"])
-        self.assertEqual(h["refs"], ["epc#1296", "epc#1316"])
-        self.assertEqual(h["location"], "/x/epc-feat-1296")
+        self.assertEqual(h["refs"], ["epc#1277", "epc#1296", "epc#1316"])
+        self.assertEqual(h["wait_refs"], ["epc#1316"])
+        self.assertEqual(h["location"], str(self.workdir))
         self.assertEqual(h["since"], "2026-11-20T17:42:00+09:00")
         self.assertEqual(out["tmux_sessions"], ["pilot-p11"])
 
@@ -110,6 +119,28 @@ class CollectTest(unittest.TestCase):
         self.assertIsNone(h["location"])
         self.assertEqual(h["refs"], [])
         self.assertEqual(h["since"], "2026-11-18T00:00:00+09:00")
+
+    def test_wait_refs_fall_back_without_section(self):
+        old = self.tmp / "old.md"
+        old.write_text("---\ncreated: 2026-11-18\n---\nhttps://github.com/ebase-dev/ebase-portal-chat/pull/9\n", encoding="utf-8")
+        out = collect(self.todo, [{"path": str(old), "summary": "", "created": "2026-11-18", "status": "blocked"}],
+                      self.cdir, date(2026, 11, 24), [])
+        self.assertEqual(out["handoffs"][0]["wait_refs"], ["epc#9"])
+
+    def test_empty_created_does_not_crash(self):
+        odd = self.tmp / "odd-name.md"
+        odd.write_text("本文", encoding="utf-8")
+        out = collect(self.todo, [{"path": str(odd), "summary": "", "created": "", "status": "blocked"}],
+                      self.cdir, date(2026, 11, 24), [])
+        self.assertIsNone(out["handoffs"][0]["since"])
+        self.assertTrue(any("odd-name" in w for w in out["warnings"]))
+
+    def test_missing_workdir_falls_back(self):
+        self.memo.write_text(MEMO.replace("WORKDIR", str(self.tmp / "deleted")), encoding="utf-8")
+        out = collect(self.todo, [self.hit], self.cdir, date(2026, 11, 24), [])
+        h = out["handoffs"][0]
+        self.assertNotEqual(h["location"], str(self.tmp / "deleted"))
+        self.assertTrue(any("deleted" in w for w in out["warnings"]))
 
 
 if __name__ == "__main__":

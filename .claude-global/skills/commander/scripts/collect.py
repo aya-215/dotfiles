@@ -20,15 +20,33 @@ RANGE_DAYS = 14
 FIND_HANDOFF = Path.home() / ".claude/skills/pickup/scripts/find_handoff.py"
 _STAMP = re.compile(r"handoff-(\d{8})-(\d{4})")
 _DAY_FILE = re.compile(r"\d{4}-\d{2}-\d{2}\.md\Z")
+_WAIT = re.compile(r"^## 待っているもの\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
+_NUM = re.compile(r"(?:#|No\.?|/|PR\s*)0*(\d+)")
 
 
-def _since(path: Path, created: str) -> str:
+def _since(path: Path, created: str, warnings: "list[str]") -> "str | None":
     m = _STAMP.search(path.name)
-    if m:
-        dt = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M")
-    else:
-        dt = datetime.fromisoformat(created)
+    try:
+        if m:
+            dt = datetime.strptime(m.group(1) + m.group(2), "%Y%m%d%H%M")
+        else:
+            dt = datetime.fromisoformat(created)
+    except ValueError:
+        warnings.append(f"待ちに入った日時が分からない: {path.name}")
+        return None
     return dt.replace(tzinfo=JST).isoformat()
+
+
+def _wait_refs(text: str, refs: "list[str]") -> "list[str]":
+    m = _WAIT.search(text)
+    if not m:
+        return list(refs)
+    nums = {n.lstrip("0") for n in _NUM.findall(m.group(1))}
+    return [r for r in refs if re.split(r"#|No", r)[-1].lstrip("0") in nums]
+
+
+def _existing(loc: "str | None") -> "str | None":
+    return loc if loc and Path(loc).is_dir() else None
 
 
 def _todo_rows(todo_path: Path, warnings: "list[str]") -> "tuple[list[dict], list[str]]":
@@ -44,7 +62,7 @@ def _todo_rows(todo_path: Path, warnings: "list[str]") -> "tuple[list[dict], lis
                 continue
             rows.append({
                 "section": section, "ref": it.ref, "title": it.title, "url": it.url, "next": it.next,
-                "location": location_for(it.key) if it.key else None, "handoffs": [],
+                "location": _existing(location_for(it.key)) if it.key else None, "handoffs": [],
             })
     return rows, list(doc.confirm)
 
@@ -58,10 +76,13 @@ def _handoff(hit: dict, warnings: "list[str]") -> dict:
         text = ""
     refs = sorted(refs_in_text(text))
     location = workdir_in_memo(text)
+    if location and not _existing(location):
+        warnings.append(f"作業場所が無い: {location}（{path.name}）")
+        location = None
     if location is None:
-        location = next((loc for loc in map(location_for, refs) if loc), None)
-    return {"path": str(path), "summary": hit.get("summary", ""), "since": _since(path, hit.get("created", "1970-01-01")),
-            "refs": refs, "location": location, "todo_refs": []}
+        location = next((loc for loc in (_existing(location_for(r)) for r in refs) if loc), None)
+    return {"path": str(path), "summary": hit.get("summary", ""), "since": _since(path, hit.get("created") or "", warnings),
+            "refs": refs, "wait_refs": _wait_refs(text, refs), "location": location, "todo_refs": []}
 
 
 def _files(commander_dir: Path, today: date) -> dict:

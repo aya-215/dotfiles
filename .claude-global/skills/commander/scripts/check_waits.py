@@ -14,10 +14,17 @@ def _ts(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def returned(state: str, events: "list[dict]", me: "set[str]", since: datetime) -> dict:
+def returned(state: str, events: "list[dict]", me: "set[str]", since: datetime,
+             closed_at: "str | None" = None) -> dict:
     if state in ("merged", "closed"):
-        return {"returned": True, "reason": "マージ済み" if state == "merged" else "クローズ済み", "events": []}
-    theirs = sorted((e for e in events if e["user"] not in me and _ts(e["ts"]) > since), key=lambda e: e["ts"])
+        label = "マージ済み" if state == "merged" else "クローズ済み"
+        if closed_at and _ts(closed_at) <= since:
+            return {"returned": False, "reason": f"待ちに入る前に{label}", "events": []}
+        return {"returned": True, "reason": label, "events": []}
+    mine = [_ts(e["ts"]) for e in events if e["user"] in me]
+    # 相手の発言に自分が返したあとは、もうこっちが待つ側ではない
+    after = max([since] + mine)
+    theirs = sorted((e for e in events if e["user"] not in me and _ts(e["ts"]) > after), key=lambda e: e["ts"])
     if theirs:
         last = theirs[-1]
         return {"returned": True, "reason": f"{last['user']} が {last['ts']} に発言", "events": theirs}
@@ -32,21 +39,21 @@ def _events(items, kind: str, ts_key: str) -> "list[dict]":
     return out
 
 
-def fetch(repo: str, number: int, token: str) -> "tuple[str, list[dict]]":
+def fetch(repo: str, number: int, token: str) -> "tuple[str, list[dict], str | None]":
     base = f"repos/{sync_github.ORG}/{repo}"
     try:
         p = pr_ball.gh_json(f"{base}/pulls/{number}", token)
     except pr_ball.FetchError as e:
-        if "404" not in str(e):
+        if "(HTTP 404)" not in str(e):
             raise
         issue = pr_ball.gh_json(f"{base}/issues/{number}", token)
         comments = pr_ball.gh_json(f"{base}/issues/{number}/comments", token, True)
-        return issue.get("state", "open"), _events(comments, "comment", "created_at")
+        return issue.get("state", "open"), _events(comments, "comment", "created_at"), issue.get("closed_at")
     state = "merged" if p.get("merged") else p.get("state", "open")
     events = _events(pr_ball.gh_json(f"{base}/pulls/{number}/reviews", token, True), "review", "submitted_at")
     events += _events(pr_ball.gh_json(f"{base}/issues/{number}/comments", token, True), "comment", "created_at")
     events += _events(pr_ball.gh_json(f"{base}/pulls/{number}/comments", token, True), "comment", "created_at")
-    return state, events
+    return state, events, p.get("merged_at") or p.get("closed_at")
 
 
 def check(items: "list[dict]", me: "set[str]", fetch_fn, token: "str | None") -> "list[dict]":
@@ -63,9 +70,13 @@ def check(items: "list[dict]", me: "set[str]", fetch_fn, token: "str | None") ->
         if not token:
             out.append({"ref": ref, "kind": "github", "returned": None, "reason": "gh のトークンを取れない", "events": []})
             continue
+        if not it.get("since"):
+            out.append({"ref": ref, "kind": "github", "returned": None, "reason": "待ちに入った日時が分からない", "events": []})
+            continue
         try:
-            state, events = fetch_fn(sync_github.REPOS[abbr], int(num), token)
-            out.append({"ref": ref, "kind": "github", **returned(state, events, me, datetime.fromisoformat(it["since"]))})
+            state, events, closed_at = fetch_fn(sync_github.REPOS[abbr], int(num), token)
+            out.append({"ref": ref, "kind": "github",
+                        **returned(state, events, me, datetime.fromisoformat(it["since"]), closed_at)})
         except Exception as e:  # 1件の失敗で残りの判定を止めない
             out.append({"ref": ref, "kind": "github", "returned": None, "reason": f"取得失敗: {e}", "events": []})
     return out
