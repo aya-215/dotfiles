@@ -107,13 +107,39 @@ def _registered(root: Path, path: Path) -> bool:
     return any(Path(w["worktree"]) == path for w in _worktrees(root))
 
 
-def gh_pr_head(root: Path, number: int) -> "str | None":
+def _gh_accounts(run: Callable = subprocess.run) -> "list[str]":
     try:
-        r = subprocess.run(["gh", "pr", "view", str(number), "--json", "headRefName", "-q", ".headRefName"],
-                           cwd=root, capture_output=True, text=True, timeout=30)
+        r = run(["gh", "auth", "status", "--hostname", "github.com"], capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.SubprocessError):
-        return None
-    return r.stdout.strip() or None if r.returncode == 0 else None
+        return []
+    return re.findall(r"account (\S+)", r.stdout + r.stderr)
+
+
+def gh_pr_head(root: Path, number: int, run: Callable = subprocess.run,
+               accounts: "list[str] | None" = None) -> "str | None":
+    """PR の head ブランチ名。今のアカウントで取れなければ、ログイン済みの別アカウントでも試す。"""
+    cmd = ["gh", "pr", "view", str(number), "--json", "headRefName", "-q", ".headRefName"]
+
+    def view(env: "dict | None") -> "str | None":
+        try:
+            r = run(cmd, cwd=root, capture_output=True, text=True, timeout=30, env=env)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return r.stdout.strip() or None if r.returncode == 0 else None
+
+    head = view(None)
+    if head:
+        return head
+    for acct in _gh_accounts(run) if accounts is None else accounts:
+        try:
+            t = run(["gh", "auth", "token", "--user", acct], capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if t.returncode == 0 and t.stdout.strip():
+            head = view({**os.environ, "GH_TOKEN": t.stdout.strip()})
+            if head:
+                return head
+    return None
 
 
 def _base(root: Path) -> str:
@@ -152,6 +178,8 @@ def create(name: str, cwd: Path, home: Path = Path.home(),
         else:
             # fork からの PR やマージ後に消えた head は origin に無いので、PR の head そのものを取る
             refspec = f"refs/pull/{m.group(1)}/head:refs/heads/{name}"
+            print(f"warn: PR #{m.group(1)} のブランチを取れなかったので {name} で開きます。"
+                  f"ここで push しても PR は更新されません（gh auth status を確かめてください）", file=sys.stderr)
             if not _has_local(root, name):
                 _must(root, "fetch", "-q", "origin", refspec, timeout=FETCH_TIMEOUT)
             elif _run(root, "fetch", "-q", "origin", refspec, timeout=FETCH_TIMEOUT).returncode != 0:
