@@ -50,7 +50,9 @@
       "Edit(package-lock.json)",
       "Edit(yarn.lock)",
       "Edit(bun.lockb)",
-      "Skill(ebase-infra:gitbucket-api)"
+      "Skill(ebase-infra:gitbucket-api)",
+      "Bash(*gitbucket_api.py*)",
+      "Read(~/.claude/gitbucket/*)"
     ],
     "ask": [
       "Bash(gh pr comment:*)",
@@ -63,7 +65,8 @@
       "mcp__gitbucket__gitbucket_create_pr",
       "mcp__gitbucket__gitbucket_update_pr",
       "mcp__gitbucket__gitbucket_merge_pr",
-      "mcp__gitbucket__gitbucket_delete_branch"
+      "mcp__gitbucket__gitbucket_delete_branch",
+      "Bash(*gitbucket_client*)"
     ],
     "defaultMode": "auto",
     "blockReadsOutsideWorkingDirectories": false
