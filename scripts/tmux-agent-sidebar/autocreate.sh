@@ -2,6 +2,7 @@
 # tmux-agent-sidebar の自動作成と、tmux-resurrect 復元時のサイドバー復元。
 #
 #   autocreate.sh window <window_id>   after-new-window / session-created から呼ぶ
+#   autocreate.sh resized <window_id>  window-resized・拡大表示の解除から呼ぶ
 #   autocreate.sh pre-restore          @resurrect-hook-pre-restore-all
 #   autocreate.sh pre-processes        @resurrect-hook-pre-restore-pane-processes
 #   autocreate.sh post-restore         @resurrect-hook-post-restore-all
@@ -25,6 +26,8 @@ set -euo pipefail
 RESTORING_OPT=@sidebar_restoring
 # 復元が途中で落ちてフラグが残っても、自動作成が永久に止まらないようにする
 RESTORING_TTL=120
+# 拡大表示中に幅が変わり、サイドバーを直しそびれたウィンドウの印。tmux.nix の window-layout-changed が見る
+FIT_PENDING_OPT=@sidebar_fit_pending
 
 # プラグインが tmux に登録したサイドバー本体のパスを返す
 sidebar_bin() {
@@ -46,6 +49,33 @@ create_in_window() {
   bin=$(sidebar_bin)
   [[ -n "$bin" && -x "$bin" ]] || return 0
   "$bin" toggle --create-only "$1" "$HOME" || true
+}
+
+# 指定ウィンドウのサイドバーを @sidebar_width に戻す。
+# tmux はウィンドウの幅が変わると増減分を比率どおりに配らないため（80→272 で 12→108、
+# 272→160 で 40→1）、裏で作ったセッションへの切り替えや端末の幅の変更でサイドバーが崩れる。
+# 拡大表示中は resize-pane が拡大表示を解いてしまうので印だけ付け、解除時に直す
+fit_sidebar_width() {
+  local setting window_width zoomed target pane width role
+  setting=$(tmux show -gv @sidebar_width 2>/dev/null || true)
+  [[ "$setting" =~ ^[0-9]+%?$ ]] || return 0
+  IFS=$'\t' read -r window_width zoomed < <(tmux display -p -t "$1" \
+    '#{window_width}	#{window_zoomed_flag}' 2>/dev/null) || return 0
+  if [[ "$zoomed" != 0 ]]; then
+    tmux set -w -t "$1" "$FIT_PENDING_OPT" 1 || true
+    return 0
+  fi
+  tmux set -wu -t "$1" "$FIT_PENDING_OPT" 2>/dev/null || true
+  if [[ "$setting" == *% ]]; then
+    target=$(( window_width * ${setting%\%} / 100 ))
+  else
+    target=$setting
+  fi
+  tmux list-panes -t "$1" -F '#{pane_id}	#{pane_width}	#{@pane_role}' 2>/dev/null |
+    while IFS=$'\t' read -r pane width role; do
+      [[ "$role" == sidebar && "$width" != "$target" ]] || continue
+      tmux resize-pane -t "$pane" -x "$target" || true
+    done
 }
 
 # 復元元の保存ファイルのパスを返す。resurrect の helpers.sh と同じ規則で決める
@@ -95,6 +125,11 @@ case "${1:-}" in
     [[ -n "${2:-}" ]] || exit 0
     is_restoring && exit 0
     create_in_window "$2"
+    ;;
+  resized)
+    [[ -n "${2:-}" ]] || exit 0
+    is_restoring && exit 0
+    fit_sidebar_width "$2"
     ;;
   pre-restore)
     tmux set -g "$RESTORING_OPT" "$(date +%s)"
