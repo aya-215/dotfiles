@@ -2,11 +2,11 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from status import build, changed_handoffs, rc_digest, rc_rooms, closed_sessions, github_facts, probe, read_last_check, wait_ips  # noqa: E402
+from status import build, changed_handoffs, ended_sessions, rc_digest, rc_rooms, closed_sessions, github_facts, probe, read_last_check, wait_ips  # noqa: E402
 
 TODAY = date(2026, 11, 24)
 MIDNIGHT = datetime.fromisoformat("2026-11-24T00:00:00+09:00")
@@ -247,6 +247,127 @@ class RcDigestTest(unittest.TestCase):
     def test_empty(self):
         self.assertEqual(rc_digest("", MIDNIGHT, TODAY, "mori.a"), "")
         self.assertEqual(rc_digest("（表示名: kawai=河合）\n", MIDNIGHT, TODAY, "mori.a"), "")
+
+
+LC = datetime.fromisoformat("2026-11-25T10:00:00+09:00")
+SID = "3a140506-0ad4-4073-9e6a-d421b10d8415"
+SID2 = "862adf99-0000-4000-8000-000000000000"
+PORTAL = "/home/aya/src/github.com/ebase-dev/ebase-portal-chat"
+
+
+def _row(*cols):
+    return "\t".join(cols)
+
+
+def _summary(root, day, name, sid, end, conclusion="本番 00002 は0件。\n\n残りはリリースのみ。", cwd=PORTAL,
+             mtime=None, with_end=True):
+    p = Path(root) / day / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    front = [f"project: {Path(cwd).name}", f"session_id: {sid}", "start: 2026-11-25T01:33:37.982Z"]
+    if with_end:
+        front.append(f"end: {end}")
+    front.append(f"cwd: {cwd}")
+    body = "## 意図\n確認する。\n\n"
+    if conclusion is not None:
+        body += f"## 結論\n{conclusion}\n\n"
+    body += "## 編集/作成ファイル\n- なし\n"
+    p.write_text("---\n" + "\n".join(front) + "\n---\n\n" + body, encoding="utf-8")
+    if mtime is not None:
+        os.utime(p, (mtime.timestamp(), mtime.timestamp()))
+    return p
+
+
+class EndedSessionsTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = self.tmp.name
+        self.w = []
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_picks_summary_written_after_last_check(self):
+        p = _summary(self.d, "2026-11-25", "ebase-portal-chat-1047-3a140506.md", SID, "2026-11-25T01:47:14.527Z")
+        pane_map = "\n".join([_row("shifton-00002-check", "1", "2", PORTAL, SID),
+                              _row("END", "shifton-00002-check", "1", "2", PORTAL, SID)]) + "\n"
+        out = ended_sessions(Path(self.d), pane_map, LC, [{"name": "shifton-00002-check", "self": False}], self.w)
+        self.assertEqual(out, [{"tmux": "shifton-00002-check", "project": "ebase-portal-chat",
+                                "end": "2026-11-25T10:47:14.527000+09:00", "alive": True,
+                                "conclusion": "本番 00002 は0件。\n残りはリリースのみ。", "path": str(p)}])
+        self.assertEqual(self.w, [])
+
+    def test_late_summary_is_picked_next_time(self):
+        _summary(self.d, "2026-11-25", "a-0955-3a140506.md", SID, "2026-11-25T00:55:00Z")
+        out = ended_sessions(Path(self.d), None, LC, [], self.w)
+        self.assertEqual(len(out), 1)
+
+    def test_old_mtime_is_skipped(self):
+        _summary(self.d, "2026-11-25", "a-0955-3a140506.md", SID, "2026-11-25T00:55:00Z",
+                 mtime=LC - timedelta(minutes=1))
+        self.assertEqual(ended_sessions(Path(self.d), None, LC, [], self.w), [])
+
+    def test_picks_session_closed_days_after_last_message(self):
+        # 金曜に最後の発言、月曜に閉じた会話は end の日付のフォルダに今日書かれる
+        _summary(self.d, "2026-11-21", "a-1500-3a140506.md", SID, "2026-11-21T06:00:00Z")
+        out = ended_sessions(Path(self.d), None, LC, [], self.w)
+        self.assertEqual(len(out), 1)
+
+    def test_end_guard_skips_regenerated_old_summary(self):
+        # フォルダは窓の中でも end が下限より古ければはじく（一括再生成で更新時刻だけ新しくなる）
+        _summary(self.d, "2026-11-24", "a-1200-3a140506.md", SID, "2026-11-01T03:00:00Z")
+        self.assertEqual(ended_sessions(Path(self.d), None, LC, [], self.w), [])
+
+    def test_folder_window_skips_old_folders(self):
+        _summary(self.d, "2026-11-01", "a-1200-3a140506.md", SID, "2026-11-24T03:00:00Z")
+        self.assertEqual(ended_sessions(Path(self.d), None, LC, [], self.w), [])
+
+    def test_scans_previous_day_folder(self):
+        lc = datetime.fromisoformat("2026-11-25T09:00:00+09:00")
+        _summary(self.d, "2026-11-24", "a-2358-3a140506.md", SID, "2026-11-24T14:58:00Z")
+        out = ended_sessions(Path(self.d), None, lc, [], self.w)
+        self.assertEqual([x["end"] for x in out], ["2026-11-24T23:58:00+09:00"])
+
+    def test_uses_last_live_row_for_tmux_name(self):
+        _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z")
+        pane_map = "\n".join([_row("_dotfiles", "1", "1", PORTAL, SID), _row("hankyu-102", "1", "2", PORTAL, SID),
+                              _row("END", "hankyu-102", "1", "2", PORTAL, SID)]) + "\n"
+        out = ended_sessions(Path(self.d), pane_map, LC, [], self.w)
+        self.assertEqual(out[0]["tmux"], "hankyu-102")
+
+    def test_falls_back_to_cwd_name(self):
+        _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z")
+        out = ended_sessions(Path(self.d), None, LC, [], self.w)
+        self.assertEqual(out[0]["tmux"], "ebase-portal-chat")
+
+    def test_excludes_commander_self(self):
+        _summary(self.d, "2026-11-25", "memo-1100-3a140506.md", SID, "2026-11-25T02:00:00Z")
+        pane_map = _row("commander", "1", "1", "/home/aya/memo", SID) + "\n"
+        out = ended_sessions(Path(self.d), pane_map, LC, [{"name": "commander", "self": True}], self.w)
+        self.assertEqual(out, [])
+
+    def test_sessions_unknown(self):
+        _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z")
+        out = ended_sessions(Path(self.d), None, LC, None, self.w)
+        self.assertIsNone(out[0]["alive"])
+
+    def test_no_conclusion_heading(self):
+        _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z", conclusion=None)
+        out = ended_sessions(Path(self.d), None, LC, [], self.w)
+        self.assertEqual(out[0]["conclusion"], "")
+
+    def test_bad_end_is_warned_and_skipped(self):
+        _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "", with_end=False)
+        _summary(self.d, "2026-11-25", "b-1100-862adf99.md", SID2, "2026-11-25T02:00:00Z")
+        out = ended_sessions(Path(self.d), None, LC, [], self.w)
+        self.assertEqual(len(out), 1)
+        self.assertEqual(len(self.w), 1)
+        self.assertIn("終わった会話の要約を読めない", self.w[0])
+
+    def test_sorted_by_end(self):
+        _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z")
+        _summary(self.d, "2026-11-25", "b-1030-862adf99.md", SID2, "2026-11-25T01:30:00Z")
+        out = ended_sessions(Path(self.d), None, LC, [], self.w)
+        self.assertEqual([x["end"][11:16] for x in out], ["10:30", "11:00"])
 
 
 if __name__ == "__main__":

@@ -83,6 +83,55 @@ def closed_sessions(commander_text: "str | None", live: "list[str] | None") -> "
     return info["removed_tmux"]
 
 
+_CONCLUSION = re.compile(r"^## 結論\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
+_DAY_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# 要約は最後の発言の日のフォルダに入るので、金曜に置いて連休明けに閉じた会話まで届く幅にする
+ENDED_WINDOW = timedelta(days=14)
+
+
+def _tmux_names(pane_map: "str | None") -> "dict[str, str]":
+    names: "dict[str, str]" = {}
+    for line in (pane_map or "").splitlines():
+        cols = line.split("\t")
+        if len(cols) == 5 and cols[0] != "END":
+            names[cols[4]] = cols[0]
+    return names
+
+
+def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datetime,
+                   live: "list[dict] | None", warnings: "list[str]") -> "list[dict]":
+    """last_check 以降に書かれた要約（~/.nb/claude/sessions/<日付>/*.md）の結論を tmux 名つきで返す。"""
+    first_day = (last_check.astimezone(JST) - ENDED_WINDOW).date().isoformat()
+    names = _tmux_names(pane_map)
+    live_names = None if live is None else {s["name"] for s in live}
+    self_names = {s["name"] for s in live or [] if s.get("self")}
+    out = []
+    days = sorted(p for p in sessions_dir.glob("*") if _DAY_DIR.match(p.name) and p.name >= first_day)
+    for p in (f for day in days for f in sorted(day.glob("*.md"))):
+        try:
+            # SessionEnd の後に Haiku が書くので、終わった時刻ではなく書かれた時刻で前回の確認と比べる
+            if p.stat().st_mtime <= last_check.timestamp():
+                continue
+            text = p.read_text(encoding="utf-8")
+            end = _ts(_front(text, "end")).astimezone(JST)
+        except (OSError, UnicodeDecodeError, ValueError) as e:
+            warnings.append(f"終わった会話の要約を読めない: {p.name}: {e}")
+            continue
+        # 一括再生成すると古い要約の更新時刻だけ新しくなる
+        if end <= last_check - ENDED_WINDOW:
+            continue
+        cwd = _front(text, "cwd")
+        tmux = names.get(_front(text, "session_id")) or (Path(cwd).name if cwd else _front(text, "project"))
+        if tmux in self_names:
+            continue
+        m = _CONCLUSION.search(text)
+        conclusion = "\n".join(s for s in (m.group(1).splitlines() if m else []) if s.strip())
+        out.append({"tmux": tmux, "project": _front(text, "project"), "end": end.isoformat(),
+                    "alive": None if live_names is None else tmux in live_names,
+                    "conclusion": conclusion, "path": str(p)})
+    return sorted(out, key=lambda x: x["end"])
+
+
 def rc_rooms(texts: "list[str | None]") -> "list[dict]":
     seen: "dict[tuple[str, str], dict]" = {}
     for text in texts:
@@ -276,6 +325,8 @@ def main(argv=None) -> int:
     ap.add_argument("--commander-dir", type=Path, default=Path.home() / "memo/commander")
     ap.add_argument("--memo-dir", type=Path,
                     default=Path.home() / ".claude/skills/agent-memory/memories/work-in-progress")
+    ap.add_argument("--sessions-dir", type=Path, default=Path.home() / ".nb/claude/sessions")
+    ap.add_argument("--pane-map", type=Path, default=Path.home() / ".local/share/claude-pane-session/map.tsv")
     a = ap.parse_args(argv)
     now = datetime.now(JST)
     pre: "list[str]" = []
@@ -300,6 +351,8 @@ def main(argv=None) -> int:
 
     out = build(collected, commander_text, tmux_sessions.list_sessions(tmux_sessions.run_cmd, os.environ.get("TMUX_PANE"), now),
                 a.memo_dir, facts, lambda p: _read(p) or "", _connect, now)
+    out["ended_sessions"] = ended_sessions(a.sessions_dir, _read(str(a.pane_map)),
+                                           datetime.fromisoformat(out["last_check"]), out["sessions"], out["warnings"])
     mail, mail_err = mail_job.result()
     rc, rc_err = rc_job.result()
     pool.shutdown()

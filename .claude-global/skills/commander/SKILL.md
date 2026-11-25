@@ -28,7 +28,7 @@ python3 -I $S/launch.py --name <セッション名> --dir <場所> --prompt '<�
 - `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`（分からなければ `null`）・`refs`（本文の参照ぜんぶ）・`wait_refs`（`## 待っているもの` に出てくる参照だけ）・`location`（実在する作業場所だけ）・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
 - `carry.py` の出力: `section`（そのまま貼る `## 引き継ぐ欄`）・`removed_tmux`・`removed_done`・`done_still_in_todo`・`unparsed_done`
 - `check_waits.py` には各引き継ぎメモの `wait_refs` を、そのメモの `since` と組にして渡す（`refs` を渡すと本文で触れただけの PR まで判定してしまう）。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
-- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`／`self`＝この司令塔。表示しない）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`。`ahead: null` は upstream が無い＝未 push の可能性）・`self`）・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に発言があるルームだけ残したもの。自分の発言は `自分(mori.a)` の印付きで相手の発言と時刻順に並ぶ。容量制限で省いたルームは末尾の `（※ 容量制限のため N ルームを省略: …）` に出る）・`warnings`
+- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`／`self`＝この司令塔。表示しない）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`。`ahead: null` は upstream が無い＝未 push の可能性）・`self`）・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`ended_sessions`（`last_check` 以降に終わった会話の要約（`~/.nb/claude/sessions/`）ごとに `tmux`・`project`・`end`・`alive`（その tmux がまだあるか）・`conclusion`（`## 結論` の全文）・`path`。司令塔自身の会話は除く）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に発言があるルームだけ残したもの。自分の発言は `自分(mori.a)` の印付きで相手の発言と時刻順に並ぶ。容量制限で省いたルームは末尾の `（※ 容量制限のため N ルームを省略: …）` に出る）・`warnings`
 - `launch.py` の出力: `status`（`sent`＝送った／`trust`＝フォルダの信頼確認で止まっている／`timeout`＝入力欄が出なかった／`exists`＝同名のセッションがある。`sent` 以外はプロンプトを送っていない）・`ready_seconds`・`pane`・`tail`
 - `sessions.py` は Claude のペインを探して読む。tmux-agent-sidebar のペインがあるので、`tmux capture-pane -t <セッション名>` で直接読まない
 - `warn:` は stderr。出たらユーザーに一言伝える
@@ -107,6 +107,7 @@ python3 -I $S/launch.py --name <セッション名> --dir <場所> --prompt '<�
    - 要約だけ出す。履歴を丸ごと出したりファイルに書いたりしない。秘密（API キー・パスワード・トークン）は値を書かず「API キーが届いた（値は書かない）」とする。引き継ぐ欄は毎日写されるので、一度入ると消えない
    - `warnings` に `thunderbird.sh`・`rocketchat.sh` が出たら「メール（Rocket Chat）は見られなかった」と出して続ける
    - 課題DB で返事が来る待ちは「どこを見ればよいか」だけ出す
+   - 終わった会話: `ended_sessions` の `conclusion` を1行に縮めて「変わった」段に出す。一覧・引き継ぐ欄と食い違っていても判定はせず、並べるだけにする（直すのはユーザーが「〇〇終わった」と言ったとき）
 3. 引き継ぎメモ: `handoffs_changed` で `resolved` になったものは済んだことへ。待ちが済んだ（`returned: true` でマージ・クローズ）のに `blocked` のままのものは `resolved` にしてよいか聞く
 4. 司令塔ファイルを更新する: 済んだこと・作業中の tmux セッション（`closed_sessions` は外す、`sessions` の新しいものは足す）・メモ・一覧・`最終確認:`（`now`）
 5. 下の形で表示する
@@ -117,6 +118,9 @@ python3 -I $S/launch.py --name <セッション名> --dir <場所> --prompt '<�
 
 ```
 変わった  epc#1316・epc#1313 マージ ・ RDP 作業完了 ・ epc-1316 は閉じた
+  終わった会話
+          shifton-00002-check  本番 00002 の該当項目は0件。残りはリリースと eae#142 のマージ
+          pilot-p11            P.11 の課題DB への返信案を作った
 
 あなた    epc-1308   #1308 をマージする？（佐藤さんの確認を待つか）   25分  11/25  ← #1321・リリースが止まる
           hankyu-102 #102 のコメント投稿とマージは誰がやる？           4時間
@@ -134,6 +138,7 @@ Claude    epc-1321   #1321 レビュー中
 ```
 
 - 段: 変わった（`last_check` 以降の変化）／あなた／Claude／相手／新着（Rocket Chat・メールの自分宛て）。空の段は省く
+- 変わった: 段の下に、終わった会話を1件1行で（tmux 名を左にそろえ、縮めた結論）
 - あなた: 上にセッションが返事を待っているもの（`state: idle`。セッション名と `idle_minutes`）、1行空けて自分から始めるもの（`—`）、最後に期限なしを「低 ほかN件」とまとめる（聞かれたら開く）
 - Claude: `state: working` のセッション
 - 相手: 相手の名前ごとに1行。待ち始めた日と、関わる期限
