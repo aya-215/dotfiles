@@ -34,10 +34,10 @@ SessionEnd の要約（`~/.nb/claude/sessions/<日付>/*.md`）はすでにあ�
 
 `ended_sessions` を出力に足す。要素は `tmux`・`project`・`end`（JST）・`alive`・`conclusion`・`path` で、`end` の昇順に並べる。
 
-- 見るフォルダ: `~/.nb/claude/sessions/` の `last_check` の前日から今日まで
+- 見るフォルダ: `~/.nb/claude/sessions/` の `last_check` の14日前から今日まで。要約は最後の発言の日のフォルダに入るので、金曜に置いて連休明けに閉じた会話まで届く幅にする
 - 拾う条件:
   - ファイルの更新時刻が `last_check` より後。SessionEnd の後に Haiku がバックグラウンドで書くため、確認の後に出来た要約も次の確認で拾える
-  - frontmatter の `end:` が `last_check` の1日前より後。backfill で古い要約が書き直されたものをはじく
+  - frontmatter の `end:` が `last_check` の14日前より後。一括再生成で更新時刻だけ新しくなった古い要約をはじく
 - tmux 名: frontmatter の `session_id` で `~/.local/share/claude-pane-session/map.tsv` を引き、`END` 以外の行のうち最後のもののセッション名を使う。`/resume` で別のペインに移ると名前が複数になるので、最後を使う。引けなければ `cwd` のフォルダ名を使う
 - `alive`: その tmux 名が `sessions` に今あるか
 - `conclusion`: `## 結論` の本文を全文入れる（空行を詰める）。見出しが無ければ空文字

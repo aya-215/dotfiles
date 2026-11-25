@@ -293,8 +293,19 @@ class EndedSessionsTest(unittest.TestCase):
                  mtime=LC - timedelta(minutes=1))
         self.assertEqual(ended_sessions(Path(self.d), None, LC, [], self.w), [])
 
-    def test_backfilled_old_summary_is_skipped(self):
-        _summary(self.d, "2026-11-23", "a-1200-3a140506.md", SID, "2026-11-23T03:00:00Z")
+    def test_picks_session_closed_days_after_last_message(self):
+        # 金曜に最後の発言、月曜に閉じた会話は end の日付のフォルダに今日書かれる
+        _summary(self.d, "2026-11-21", "a-1500-3a140506.md", SID, "2026-11-21T06:00:00Z")
+        out = ended_sessions(Path(self.d), None, LC, [], self.w)
+        self.assertEqual(len(out), 1)
+
+    def test_end_guard_skips_regenerated_old_summary(self):
+        # フォルダは窓の中でも end が下限より古ければはじく（一括再生成で更新時刻だけ新しくなる）
+        _summary(self.d, "2026-11-24", "a-1200-3a140506.md", SID, "2026-11-01T03:00:00Z")
+        self.assertEqual(ended_sessions(Path(self.d), None, LC, [], self.w), [])
+
+    def test_folder_window_skips_old_folders(self):
+        _summary(self.d, "2026-11-01", "a-1200-3a140506.md", SID, "2026-11-24T03:00:00Z")
         self.assertEqual(ended_sessions(Path(self.d), None, LC, [], self.w), [])
 
     def test_scans_previous_day_folder(self):

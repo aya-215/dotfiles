@@ -85,6 +85,8 @@ def closed_sessions(commander_text: "str | None", live: "list[str] | None") -> "
 
 _CONCLUSION = re.compile(r"^## 結論\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _DAY_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+# 要約は最後の発言の日のフォルダに入るので、金曜に置いて連休明けに閉じた会話まで届く幅にする
+ENDED_WINDOW = timedelta(days=14)
 
 
 def _tmux_names(pane_map: "str | None") -> "dict[str, str]":
@@ -99,7 +101,7 @@ def _tmux_names(pane_map: "str | None") -> "dict[str, str]":
 def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datetime,
                    live: "list[dict] | None", warnings: "list[str]") -> "list[dict]":
     """last_check 以降に書かれた要約（~/.nb/claude/sessions/<日付>/*.md）の結論を tmux 名つきで返す。"""
-    first_day = (last_check.astimezone(JST) - timedelta(days=1)).date().isoformat()
+    first_day = (last_check.astimezone(JST) - ENDED_WINDOW).date().isoformat()
     names = _tmux_names(pane_map)
     live_names = None if live is None else {s["name"] for s in live}
     self_names = {s["name"] for s in live or [] if s.get("self")}
@@ -115,8 +117,8 @@ def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datet
         except (OSError, UnicodeDecodeError, ValueError) as e:
             warnings.append(f"終わった会話の要約を読めない: {p.name}: {e}")
             continue
-        # backfill で書き直された古い要約は更新時刻だけ新しくなる
-        if end <= last_check - timedelta(days=1):
+        # 一括再生成すると古い要約の更新時刻だけ新しくなる
+        if end <= last_check - ENDED_WINDOW:
             continue
         cwd = _front(text, "cwd")
         tmux = names.get(_front(text, "session_id")) or (Path(cwd).name if cwd else _front(text, "project"))
