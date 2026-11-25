@@ -207,33 +207,46 @@ class RcRoomsTest(unittest.TestCase):
 RC_TEXT = """（表示名: matsumoto.h=松本久方）
 ===== AI開発 [発言3] 7/13件 ===== {rid:R t:p link:L}
   01:58 matsumoto.h: 古い {id:a}
-  06:10 matsumoto.h [↳01:58 mori.a]: 新しい {id:b}
+  02:30 mori.a: 古い自分 {id:f}
+  06:00 mori.a: 質問 {id:g}
+  06:10 matsumoto.h [↳06:00 mori.a]: 新しい {id:b}
 ===== DM:kawai [発言0] 1/1件 ===== {rid:D t:d link:L2}
   02:00 kawai: 古いDM {id:c}
 ===== mori.a-times [発言1] 1/1件 =====
-  07:00 mori.a: 自分だけ {id:d}
+  07:00 mori.a [↳期間外の親]: 自分だけ {id:d}
 ===== 夜 [発言0] 1/1件 =====
   15:30 kawai: 日付が変わってすぐ {id:e}
+（※ 容量制限のため 2 ルームを省略: 雑談,開発）
 """
 
 
 class RcDigestTest(unittest.TestCase):
-    def test_keeps_new_messages_from_others_in_jst(self):
+    def test_keeps_new_messages_with_own_marked_in_jst(self):
         got = rc_digest(RC_TEXT, datetime.fromisoformat("2026-11-24T12:00:00+09:00"), TODAY, "mori.a")
         self.assertEqual(got.splitlines(), [
             "（表示名: matsumoto.h=松本久方）",
             "===== AI開発 [発言3] 7/13件 ===== {rid:R t:p link:L}",
-            "  15:10 matsumoto.h [↳10:58 mori.a]: 新しい {id:b}",
+            "  15:00 自分(mori.a): 質問 {id:g}",
+            "  15:10 matsumoto.h [↳15:00 自分(mori.a)]: 新しい {id:b}",
+            "===== mori.a-times [発言1] 1/1件 =====",
+            "  16:00 自分(mori.a) [↳期間外の親]: 自分だけ {id:d}",
+            "（※ 容量制限のため 2 ルームを省略: 雑談,開発）",
         ])
 
     def test_previous_day_last_check_keeps_all_but_converts(self):
         got = rc_digest(RC_TEXT, datetime.fromisoformat("2026-11-23T18:00:00+09:00"), TODAY, "mori.a")
         self.assertIn("  10:58 matsumoto.h: 古い {id:a}", got)
+        self.assertIn("  11:30 自分(mori.a): 古い自分 {id:f}", got)
         self.assertIn("  00:30 kawai: 日付が変わってすぐ {id:e}", got)
-        self.assertNotIn("自分だけ", got)
+
+    def test_keeps_dropped_rooms_note_alone(self):
+        text = "（表示名: kawai=河合）\n===== 古い [発言1] 1/1件 =====\n  01:00 kawai: 古い\n（※ 容量制限のため 1 ルームを省略: 雑談）\n"
+        self.assertEqual(rc_digest(text, datetime.fromisoformat("2026-11-24T12:00:00+09:00"), TODAY, "mori.a"),
+                         "（※ 容量制限のため 1 ルームを省略: 雑談）")
 
     def test_empty(self):
         self.assertEqual(rc_digest("", MIDNIGHT, TODAY, "mori.a"), "")
+        self.assertEqual(rc_digest("（表示名: kawai=河合）\n", MIDNIGHT, TODAY, "mori.a"), "")
 
 
 if __name__ == "__main__":

@@ -92,7 +92,8 @@ def rc_rooms(texts: "list[str | None]") -> "list[dict]":
 
 
 _RC_MSG = re.compile(r"^  (\d\d):(\d\d) ([^\s:]+)(.*)$")
-_RC_PARENT = re.compile(r"\[↳(\d\d):(\d\d) ")
+_RC_PARENT = re.compile(r"\[↳(\d\d):(\d\d) ([^\]]+)\]")
+_RC_DROPPED = "（※ 容量制限"
 
 
 def _jst_hm(h: str, m: str) -> str:
@@ -100,13 +101,20 @@ def _jst_hm(h: str, m: str) -> str:
 
 
 def rc_digest(text: str, last_check: datetime, today: date, me: str) -> str:
-    """rocketchat.sh の出力（時刻は UTC）を JST に直し、last_check 以降に相手の発言があるルームだけ残す。"""
+    """rocketchat.sh の出力（時刻は UTC）を JST に直し、last_check 以降に発言があるルームだけ残す。
+
+    発言者や返信先（↳）が自分（me）なら「自分(me)」と書き換える。容量制限で省いたルームの行は末尾に残す。
+    """
     # 時刻しか出ないので、前日以前からの確認では時刻で絞れない
     same_day = last_check.astimezone(JST).date() == today
     since = last_check.astimezone(JST).strftime("%H:%M")
     out: "list[str]" = []
+    notes: "list[str]" = []
     head: "str | None" = None
     kept: "list[str]" = []
+
+    def mark(user: str) -> str:
+        return f"自分({me})" if user == me else user
 
     def flush():
         if head is not None and kept:
@@ -117,18 +125,23 @@ def rc_digest(text: str, last_check: datetime, today: date, me: str) -> str:
             flush()
             head, kept = line, []
             continue
+        if line.startswith(_RC_DROPPED):
+            notes.append(line)
+            continue
         m = _RC_MSG.match(line)
         if not m:
             if head is None and line.strip():
                 out.append(line)
             continue
         hm = _jst_hm(m.group(1), m.group(2))
-        if m.group(3) == me or (same_day and hm < since):
+        if same_day and hm < since:
             continue
-        rest = _RC_PARENT.sub(lambda p: f"[↳{_jst_hm(p.group(1), p.group(2))} ", m.group(4))
-        kept.append(f"  {hm} {m.group(3)}{rest}")
+        rest = _RC_PARENT.sub(lambda p: f"[↳{_jst_hm(p.group(1), p.group(2))} {mark(p.group(3))}]", m.group(4))
+        kept.append(f"  {hm} {mark(m.group(3))}{rest}")
     flush()
-    return "\n".join(out) if len(out) > 1 or (out and not out[0].startswith("（表示名")) else ""
+    if len(out) == 1 and out[0].startswith("（表示名"):
+        out = []
+    return "\n".join(out + notes)
 
 
 def _ts(s: str) -> datetime:
