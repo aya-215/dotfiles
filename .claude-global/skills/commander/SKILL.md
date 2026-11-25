@@ -22,12 +22,14 @@ python3 -I $S/carry.py --prev <前の日のファイル>  # 引き継ぐ欄を�
 echo '[{"ref":"epc#1308","since":"2026-11-20T18:22:00+09:00"}]' | python3 -I $S/check_waits.py   # GitHub の返ってきた判定
 python3 -I $S/status.py                        # 状況確認の材料を1回で（1分ほど）
 python3 -I $S/sessions.py                      # tmux の各セッションの状態だけ
+python3 -I $S/launch.py --name <セッション名> --dir <場所> --prompt '<プロンプト>' [--worktree <ブランチ名>]  # 起動して最初のプロンプトを送る
 ```
 
 - `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`（分からなければ `null`）・`refs`（本文の参照ぜんぶ）・`wait_refs`（`## 待っているもの` に出てくる参照だけ）・`location`（実在する作業場所だけ）・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
 - `carry.py` の出力: `section`（そのまま貼る `## 引き継ぐ欄`）・`removed_tmux`・`removed_done`・`done_still_in_todo`・`unparsed_done`
 - `check_waits.py` には各引き継ぎメモの `wait_refs` を、そのメモの `since` と組にして渡す（`refs` を渡すと本文で触れただけの PR まで判定してしまう）。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
 - `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`／`self`＝この司令塔。表示しない）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`。`ahead: null` は upstream が無い＝未 push の可能性）・`self`）・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に相手の発言があるルームだけ残したもの。自分の発言は除く）・`warnings`
+- `launch.py` の出力: `status`（`sent`＝送った／`trust`＝フォルダの信頼確認で止まっている／`timeout`＝入力欄が出なかった／`exists`＝同名のセッションがある。`sent` 以外はプロンプトを送っていない）・`ready_seconds`・`pane`・`tail`
 - `sessions.py` は Claude のペインを探して読む。tmux-agent-sidebar のペインがあるので、`tmux capture-pane -t <セッション名>` で直接読まない
 - `warn:` は stderr。出たらユーザーに一言伝える
 
@@ -147,21 +149,21 @@ Claude    epc-1321   #1321 レビュー中
 
 ### 5. 「〇〇のセッションを起動して」
 
-agent-memory `user-preferences/commander-launch-tmux-sessions.md` の手順と罠に従う。要点:
+`launch.py` で起動する。セッションを作り、`claude` だけを打ち、入力欄が出てから（2〜4秒）プロンプトを送る。プロンプトを `claude` の引数にしないのは、シェルの履歴を汚さないため。
 
 ```bash
-s=<場所-課題番号>; d=<起動する場所>; p="<プロンプト>"
-tmux new-session -d -s "$s" -c "$d"
-tmux send-keys -t "$s" -l "claude '$p'"; tmux send-keys -t "$s" Enter
+python3 -I $S/launch.py --name <場所-課題番号> --dir <起動する場所> --prompt '<プロンプト>'
 ```
 
-- プロンプトの起動の仕方:
-  - 新しい作業: 本体で `claude -w <ブランチ名> '<プロンプト>'`。ブランチ名はリポジトリの決まりで（例 `feat/1296-mensapo-links`）。PR の続きは `-w "#<番号>"`。置き場所とブランチは WorktreeCreate フックが決める（`rules/worktree.md`）
-  - 既にある worktree の続き（引き継ぎメモの作業場所）: その場所で `claude '<プロンプト>'`
-  - worktree が要らない作業（dotfiles の小さな直し・調べもの・本番作業の案内）: 本体で `claude '<プロンプト>'`
-- zsh では `"${s}:tmp"` と書く（`"$s:tmp"` は `:t` 修飾子で壊れる）
-- 起動後に `python3 -I $S/sessions.py` で確かめる（`tail` に画面の最後が出る）。「このフォルダを信頼しますか」で止まっていたら、Yes を選ぶようユーザーに伝える（既定の選択は「No, exit」。こっちから押さない）
-- 動いているセッション（ユーザーが触ったもの）を kill しない。置き場所を変えるときは move-window
+- 起動の仕方:
+  - 新しい作業: 本体で `--worktree <ブランチ名>`（`claude -w` になる）。ブランチ名はリポジトリの決まりで（例 `feat/1296-mensapo-links`）。PR の続きは `--worktree '#<番号>'`。置き場所とブランチは WorktreeCreate フックが決める（`rules/worktree.md`）
+  - 既にある worktree の続き（引き継ぎメモの作業場所）: `--dir` にその場所
+  - worktree が要らない作業（dotfiles の小さな直し・調べもの・本番作業の案内）: `--dir` に本体
+- セッション名に `.` `:` 空白は使えない。プロンプトは1行（改行を送るとその場で送信される）
+- `status` が `trust`: 「このフォルダを信頼しますか」で止まっている。Yes を選ぶようユーザーに伝える（既定の選択は「No, exit」。こっちから押さない）。選んでもらったら `tmux send-keys -t <pane> -l '<プロンプト>'; tmux send-keys -t <pane> Enter` で送る
+- `status` が `exists`: 既にあるセッションは触らない。名前を変えるかユーザーに聞く
+- 送ったあとの様子は `sessions.py` の `tail` で見る
+- 動いているセッション（ユーザーが触ったもの）を kill しない。置き場所を変えるときは move-window（zsh では `"${s}:tmp"` と書く。`"$s:tmp"` は `:t` 修飾子で壊れる）
 - 起動したら引き継ぐ欄の「作業中の tmux セッション」に足す
 
 ### 6. 「来週分も出して」
