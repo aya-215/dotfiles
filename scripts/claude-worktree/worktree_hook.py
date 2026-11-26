@@ -265,15 +265,35 @@ def link_node_modules(root: Path, wt: Path, cp: "Callable[[Path, Path], bool]" =
     return linked
 
 
+def unsafe_reasons(worktree_path: Path) -> "list[str]":
+    """消すと失われるもの（追跡ファイルの変更・追跡していないファイル・どのリモートにも無いコミット）を数えて返す。"""
+    status = (_out(worktree_path, "status", "--porcelain") or "").splitlines()
+    untracked = sum(1 for line in status if line.startswith("??"))
+    tracked = len(status) - untracked
+    local = _out(worktree_path, "rev-list", "--count", "HEAD", "--not", "--remotes")
+    out = []
+    if tracked:
+        out.append(f"追跡ファイルの変更 {tracked} 件")
+    if untracked:
+        out.append(f"追跡していないファイル {untracked} 件")
+    if local and local != "0":
+        out.append(f"どのリモートにも無いコミット {local} 件")
+    return out
+
+
 def remove(worktree_path: Path) -> int:
     if not worktree_path.exists():
         return 0
+    # Claude Code はフックが作った worktree の状態を確かめられず、何が消えるか見せないまま消させるため、ここで止める
+    reasons = unsafe_reasons(worktree_path)
+    if reasons:
+        print(f"{worktree_path} は消さずに残しました: {'・'.join(reasons)}。中身を見て消すなら /worktree rm", file=sys.stderr)
+        return 1
     branch = _out(worktree_path, "branch", "--show-current")
     common = _out(worktree_path, "rev-parse", "--path-format=absolute", "--git-common-dir")
     if common:
         root = Path(common).parent
-        # Claude Code は変更があれば消してよいか聞いてから呼ぶので、ここでは --force でよい
-        _run(root, "worktree", "remove", "--force", str(worktree_path))
+        _run(root, "worktree", "remove", str(worktree_path))
         if branch and not worktree_path.exists() and _run(root, "branch", "-d", branch).returncode != 0:
             print(f"ブランチ {branch} は手元にしか無いコミットがあるので残しました", file=sys.stderr)
     if worktree_path.exists():

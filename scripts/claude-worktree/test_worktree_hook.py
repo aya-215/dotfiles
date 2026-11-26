@@ -11,7 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from worktree_hook import (  # noqa: E402
     HookError, copy_env, create, gh_pr_head, is_personal, link_node_modules, main, new_branch_name, placement, remove,
-    slug,
+    slug, unsafe_reasons,
 )
 
 
@@ -262,18 +262,60 @@ class RemoveTest(unittest.TestCase):
         self.assertFalse(p.exists())
         self.assertFalse(branch_exists(self.repo, "feat/done"))
 
-    def test_remove_keeps_branch_with_local_only_commit(self):
+    def _remove_err(self, p):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = remove(p)
+        return rc, err.getvalue()
+
+    def test_remove_refuses_local_only_commit(self):
         p = create("feat/wip", self.repo, home=self.home, gh_head=no_gh)
         commit_in(p, "a.txt")
-        self.assertEqual(remove(p), 0)
-        self.assertFalse(p.exists())
+        rc, err = self._remove_err(p)
+        self.assertEqual(rc, 1)
+        self.assertTrue(p.exists())
         self.assertTrue(branch_exists(self.repo, "feat/wip"))
+        self.assertIn("どのリモートにも無いコミット 1 件", err)
 
-    def test_remove_with_uncommitted_changes(self):
+    def test_remove_refuses_untracked_file(self):
         p = create("feat/dirty", self.repo, home=self.home, gh_head=no_gh)
         (p / "u.txt").write_text("x")
+        rc, err = self._remove_err(p)
+        self.assertEqual(rc, 1)
+        self.assertTrue(p.exists())
+        self.assertIn("追跡していないファイル 1 件", err)
+
+    def test_remove_refuses_tracked_change(self):
+        p = create("feat/edit", self.repo, home=self.home, gh_head=no_gh)
+        commit_in(p, "a.txt")
+        git(p, "push", "-q", "-u", "origin", "HEAD")
+        (p / "a.txt").write_text("changed")
+        rc, err = self._remove_err(p)
+        self.assertEqual(rc, 1)
+        self.assertTrue(p.exists())
+        self.assertIn("追跡ファイルの変更 1 件", err)
+
+    def test_remove_allows_ignored_files(self):
+        p = create("feat/ign", self.repo, home=self.home, gh_head=no_gh)
+        (self.repo / ".git" / "info" / "exclude").write_text("ignored/\n")
+        (p / "ignored").mkdir()
+        (p / "ignored" / "x").write_text("x")
         self.assertEqual(remove(p), 0)
         self.assertFalse(p.exists())
+
+    def test_remove_pushed_commits_are_ok(self):
+        p = create("feat/pushed", self.repo, home=self.home, gh_head=no_gh)
+        commit_in(p, "a.txt")
+        git(p, "push", "-q", "-u", "origin", "HEAD")
+        self.assertEqual(remove(p), 0)
+        self.assertFalse(p.exists())
+        self.assertFalse(branch_exists(self.repo, "feat/pushed"))
+
+    def test_unsafe_reasons_lists_all(self):
+        p = create("feat/both", self.repo, home=self.home, gh_head=no_gh)
+        commit_in(p, "a.txt")
+        (p / "u.txt").write_text("x")
+        self.assertEqual(unsafe_reasons(p), ["追跡していないファイル 1 件", "どのリモートにも無いコミット 1 件"])
 
     def test_remove_missing_path_is_ok(self):
         self.assertEqual(remove(self.tmp / "gone"), 0)
