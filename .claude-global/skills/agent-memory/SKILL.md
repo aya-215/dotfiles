@@ -29,6 +29,17 @@ Organize memories when needed:
 - Remove outdated or superseded information
 - Update status field when work completes, gets blocked, or is abandoned
 
+## ネイティブ MEMORY.md との関係（入口）
+
+ハーネスが自動注入するネイティブの「Memory」機構（プロジェクト配下の `MEMORY.md` 等）は、実体ではなく **agent-memory への入口** としてのみ使う。
+
+- プロジェクトの `MEMORY.md` にメモリ本体を書かない
+- 常時効かせたい少数の重要ルールだけ summary を転記し、末尾に必ず次の参照を置く:
+
+> メモリの実体は agent-memory にある。関連作業の前に必ず
+> `rg "^summary:" ~/.claude/skills/agent-memory/memories/ --no-ignore --hidden`
+> で既存メモリを検索し、該当すれば本体を読むこと。
+
 ## Folder Structure
 
 When possible, organize memories into category folders. No predefined structure - create categories that make sense for the content.
@@ -102,6 +113,8 @@ scope: global            # global | <プロジェクト名>（普遍/固有の�
 **How to apply:** いつ・どこで適用すべきか
 **出現記録:** 2026-06-25 (ebase-web), 2026-07-01 (dotfiles)
 ```
+
+feedbackメモリは `/retrospective` の学習機構が依存するため、カウント frontmatter（pain_count 等）を壊さない。移動・形式変更もしない。
 
 カウント更新・昇格提案は `/retrospective` スキルが行う（閾値: count >= 3 で `rules/learned-rules.md` へ昇格提案、reinforce_count >= 3 でスキル化候補）。手動編集も可。
 

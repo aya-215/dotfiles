@@ -84,9 +84,9 @@ dotfiles/
 
 ## Git操作
 
-### コミット後の動作
-- コミット作業が完了したら、必ず `git push` でリモートリポジトリにプッシュすること
-- 複数の変更をまとめてコミットする場合は、すべてのコミットが完了した最後にプッシュすること
+### リモート
+- remote は `git@github-aya215:aya-215/dotfiles.git` に設定すること（aya-215 用の SSH エイリアス）
+- push に失敗したら `git remote set-url origin git@github-aya215:aya-215/dotfiles.git` で直すこと
 
 ### コミットメッセージスタイル
 このリポジトリでは以下のプレフィックスを使用：

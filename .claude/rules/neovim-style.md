@@ -1,7 +1,7 @@
 ---
 paths:
   - "config/nvim/**/*"
-  - "**/*.lua"
+  - "nvim/**/*"
 ---
 
 # Neovim設定スタイルガイド

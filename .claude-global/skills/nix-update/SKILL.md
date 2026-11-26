@@ -182,7 +182,7 @@ git push
 
 ### index.lock エラー
 
-各 git 呼び出しの前に `rm -f .git/index.lock` を挟む（CLAUDE.md「index.lock 対処」に従う）。
+各 git 呼び出しの前に `rm -f .git/index.lock` を挟む（`git-index-lock` スキルに従う）。
 
 ---
 
