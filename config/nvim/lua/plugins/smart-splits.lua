@@ -1,7 +1,13 @@
 return {
-  'mrjones2014/smart-splits.nvim',
+  'smart-splits-nvim/smart-splits.nvim',
+  version = '^3',
   lazy = false,
+  -- v3 から tmux 連携は別プラグイン。tmux.nix の M-hjkl が見る @pane-is-vim はこれが立てる
+  dependencies = {
+    { 'smart-splits-nvim/backend-tmux', main = 'smart-splits-backend-tmux' },
+  },
   opts = {
+    mux = { backend = 'smart-splits-backend-tmux' },
     move = { at_edge = 'stop' },
   },
   config = function(_, opts)
