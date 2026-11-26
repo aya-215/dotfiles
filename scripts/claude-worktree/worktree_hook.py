@@ -294,8 +294,9 @@ def remove(worktree_path: Path) -> int:
     if common:
         root = Path(common).parent
         _run(root, "worktree", "remove", str(worktree_path))
-        if branch and not worktree_path.exists() and _run(root, "branch", "-d", branch).returncode != 0:
-            print(f"ブランチ {branch} は手元にしか無いコミットがあるので残しました", file=sys.stderr)
+        # unsafe_reasons を通った時点で全コミットがどこかのリモートにある。-d は upstream が無いと本体の HEAD 基準で断るので -D
+        if branch and not worktree_path.exists() and _run(root, "branch", "-D", branch).returncode != 0:
+            print(f"ブランチ {branch} を消せませんでした", file=sys.stderr)
     if worktree_path.exists():
         print(f"{worktree_path} を消せませんでした", file=sys.stderr)
         return 1

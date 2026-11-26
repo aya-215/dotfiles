@@ -311,6 +311,16 @@ class RemoveTest(unittest.TestCase):
         self.assertFalse(p.exists())
         self.assertFalse(branch_exists(self.repo, "feat/pushed"))
 
+    def test_remove_deletes_branch_pushed_without_upstream(self):
+        p = create("feat/noup", self.repo, home=self.home, gh_head=no_gh)
+        commit_in(p, "a.txt")
+        git(p, "push", "-q", "origin", "feat/noup")
+        rc, err = self._remove_err(p)
+        self.assertEqual(rc, 0)
+        self.assertFalse(p.exists())
+        self.assertFalse(branch_exists(self.repo, "feat/noup"))
+        self.assertNotIn("手元にしか無い", err)
+
     def test_unsafe_reasons_lists_all(self):
         p = create("feat/both", self.repo, home=self.home, gh_head=no_gh)
         commit_in(p, "a.txt")
