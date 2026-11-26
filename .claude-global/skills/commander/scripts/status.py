@@ -89,28 +89,71 @@ _DAY_DIR = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 ENDED_WINDOW = timedelta(days=14)
 
 
-def _tmux_names(pane_map: "str | None") -> "dict[str, str]":
-    names: "dict[str, str]" = {}
+_INTENT = re.compile(r"^## 意図\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
+_BARE_REF = re.compile(r"(?<![\w#:/])#(\d+)")
+# 要約の end は最後の user/assistant の時刻。transcript にそれより明らかに新しい発言があれば会話はまだ続いている
+STILL_RUNNING = timedelta(minutes=5)
+TRANSCRIPT_TAIL = 512 * 1024
+
+
+def _pane_rows(pane_map: "str | None") -> "dict[str, tuple[str, str, str]]":
+    rows: "dict[str, tuple[str, str, str]]" = {}
     for line in (pane_map or "").splitlines():
         cols = line.split("\t")
         if len(cols) == 5 and cols[0] != "END":
-            names[cols[4]] = cols[0]
-    return names
+            rows[cols[4]] = (cols[0], cols[1], cols[2])
+    return rows
 
 
-def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datetime,
-                   live: "list[dict] | None", warnings: "list[str]") -> "list[dict]":
-    """last_check 以降に書かれた要約（~/.nb/claude/sessions/<日付>/*.md）の結論を tmux 名つきで返す。"""
+def last_message_at(path: Path) -> "datetime | None":
+    """transcript（jsonl）の末尾から、最後の user/assistant の記録の時刻を返す。"""
+    try:
+        with path.open("rb") as f:
+            f.seek(max(0, f.seek(0, 2) - TRANSCRIPT_TAIL))
+            tail = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return None
+    last = None
+    for line in tail.splitlines():
+        try:
+            d = json.loads(line)
+            if d.get("type") in ("user", "assistant") and d.get("timestamp"):
+                last = max(last, _ts(d["timestamp"])) if last else _ts(d["timestamp"])
+        except (ValueError, AttributeError):
+            continue
+    return last
+
+
+def abbr_from_remote(url: str) -> "str | None":
+    name = url.rstrip("/").rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+    name = name[:-4] if name.endswith(".git") else name
+    return next((abbr for abbr, repo in sync_github.REPOS.items() if repo == name), None)
+
+
+def _refs(text: str, abbr: "str | None") -> "list[str]":
+    found = refs_in_text(text)
+    if abbr:
+        found |= {f"{abbr}#{n}" for n in _BARE_REF.findall(text)}
+    return sorted(found)
+
+
+def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datetime, now: datetime,
+                   self_pane: "tuple[str, str, str] | None", warnings: "list[str]",
+                   last_message, repo_of) -> "list[dict]":
+    """last_check より後・now 以前に書かれた要約（~/.nb/claude/sessions/<日付>/*.md）の結論を、作業の場所と番号つきで返す。
+
+    司令塔自身のペインの会話と、まだ続いている会話（last_message(session_id) が end より STILL_RUNNING 以上新しい）は除く。
+    repo_of(cwd) はリポジトリの略称（epc 等）を返し、裸の #番号 を補うのに使う。
+    """
     first_day = (last_check.astimezone(JST) - ENDED_WINDOW).date().isoformat()
-    names = _tmux_names(pane_map)
-    live_names = None if live is None else {s["name"] for s in live}
-    self_names = {s["name"] for s in live or [] if s.get("self")}
+    rows = _pane_rows(pane_map)
     out = []
     days = sorted(p for p in sessions_dir.glob("*") if _DAY_DIR.match(p.name) and p.name >= first_day)
     for p in (f for day in days for f in sorted(day.glob("*.md"))):
         try:
             # SessionEnd の後に Haiku が書くので、終わった時刻ではなく書かれた時刻で前回の確認と比べる
-            if p.stat().st_mtime <= last_check.timestamp():
+            mtime = p.stat().st_mtime
+            if mtime <= last_check.timestamp() or mtime > now.timestamp():
                 continue
             text = p.read_text(encoding="utf-8")
             end = _ts(_front(text, "end")).astimezone(JST)
@@ -120,15 +163,21 @@ def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datet
         # 一括再生成すると古い要約の更新時刻だけ新しくなる
         if end <= last_check - ENDED_WINDOW:
             continue
-        cwd = _front(text, "cwd")
-        tmux = names.get(_front(text, "session_id")) or (Path(cwd).name if cwd else _front(text, "project"))
-        if tmux in self_names:
+        sid = _front(text, "session_id")
+        row = rows.get(sid)
+        if self_pane is not None and row == tuple(self_pane):
             continue
-        m = _CONCLUSION.search(text)
+        last = last_message(sid)
+        if last is not None and last > end + STILL_RUNNING:
+            continue
+        cwd = _front(text, "cwd")
+        m, i = _CONCLUSION.search(text), _INTENT.search(text)
         conclusion = "\n".join(s for s in (m.group(1).splitlines() if m else []) if s.strip())
-        out.append({"tmux": tmux, "project": _front(text, "project"), "end": end.isoformat(),
-                    "alive": None if live_names is None else tmux in live_names,
-                    "conclusion": conclusion, "path": str(p)})
+        out.append({"session_id": sid,
+                    "tmux": row[0] if row else (Path(cwd).name if cwd else _front(text, "project")),
+                    "window": row[1] if row else None, "pane": row[2] if row else None, "cwd": cwd,
+                    "refs": _refs((i.group(1) if i else "") + "\n" + conclusion, repo_of(cwd) if cwd else None),
+                    "end": end.isoformat(), "conclusion": conclusion, "path": str(p)})
     return sorted(out, key=lambda x: x["end"])
 
 
@@ -319,6 +368,24 @@ def _run_lib(script: str, args: "list[str]") -> "tuple[str, str | None]":
     return r.stdout, None
 
 
+def _self_pane() -> "tuple[str, str, str] | None":
+    pane = os.environ.get("TMUX_PANE")
+    out = tmux_sessions.run_cmd(["tmux", "display-message", "-p", "-t", pane,
+                                 "#{session_name}\t#{window_index}\t#{pane_index}"]) if pane else None
+    cols = (out or "").strip().split("\t")
+    return (cols[0], cols[1], cols[2]) if len(cols) == 3 else None
+
+
+def _last_message(session_id: str) -> "datetime | None":
+    hit = next((Path.home() / ".claude/projects").glob(f"*/{session_id}.jsonl"), None) if session_id else None
+    return last_message_at(hit) if hit else None
+
+
+def _repo_abbr(cwd: str) -> "str | None":
+    url = tmux_sessions.run_cmd(["git", "-C", cwd, "remote", "get-url", "origin"])
+    return abbr_from_remote(url.strip()) if url else None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--todo", type=Path, default=Path.home() / "memo/todo.md")
@@ -352,7 +419,8 @@ def main(argv=None) -> int:
     out = build(collected, commander_text, tmux_sessions.list_sessions(tmux_sessions.run_cmd, os.environ.get("TMUX_PANE"), now),
                 a.memo_dir, facts, lambda p: _read(p) or "", _connect, now)
     out["ended_sessions"] = ended_sessions(a.sessions_dir, _read(str(a.pane_map)),
-                                           datetime.fromisoformat(out["last_check"]), out["sessions"], out["warnings"])
+                                           datetime.fromisoformat(out["last_check"]), now, _self_pane(),
+                                           out["warnings"], _last_message, _repo_abbr)
     mail, mail_err = mail_job.result()
     rc, rc_err = rc_job.result()
     pool.shutdown()
