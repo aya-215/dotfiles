@@ -41,7 +41,7 @@
 除外と重複の直し:
 
 - 司令塔自身の除外を、tmux 名からペインの座標に変える。`TMUX_PANE` の `session_name`・`window_index`・`pane_index` と、会話の `tmux`・`window`・`pane` が全部一致するものだけを除く。今は司令塔が共用の tmux（例: dotfiles-ebapi）で動くと、そこの別作業の会話が全部消える
-- まだ続いている会話を除く。その session_id の transcript（`~/.claude/projects/*/<session_id>.jsonl`）の更新時刻が、要約の `end` より5分以上新しければ、続いている（21時の backfill が開いたままの会話を要約した）とみなして出さない。会話が終われば SessionEnd が要約を作り直すので、そのときに出る。`wsl --shutdown` で落ちた会話は transcript が `end` のまま止まるので出る
+- まだ続いている会話を除く。その session_id の transcript（`~/.claude/projects/*/<session_id>.jsonl`）の最後の user/assistant の記録の時刻が、要約の `end` より5分以上新しければ、続いている（21時の backfill が開いたままの会話を要約した）とみなして出さない。ファイルの更新時刻は使わない（閉じたときに away_summary・cost-state 等が足されるため。実装時に判明）会話が終われば SessionEnd が要約を作り直すので、そのときに出る。`wsl --shutdown` で落ちた会話は transcript が `end` のまま止まるので出る
 - 確認の途中に書かれた要約が2回出ないよう、要約の更新時刻の上限を `now`（`last_check` になる値）にする
 
 ### SKILL.md（Claude の手順）
