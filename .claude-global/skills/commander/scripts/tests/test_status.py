@@ -297,7 +297,7 @@ class EndedSessionsTest(unittest.TestCase):
                               _row("END", "shifton-00002-check", "1", "2", PORTAL, SID)]) + "\n"
         self.assertEqual(self._ended(pane_map), [{
             "session_id": SID, "tmux": "shifton-00002-check", "window": "1", "pane": "2", "cwd": PORTAL, "refs": [],
-            "end": "2026-11-25T10:47:14.527000+09:00", "conclusion": "本番 00002 は0件。\n残りはリリースのみ。",
+            "guessed_refs": [], "stale": False, "end": "2026-11-25T10:47:14.527000+09:00", "conclusion": "本番 00002 は0件。\n残りはリリースのみ。",
             "path": str(p)}])
         self.assertEqual(self.w, [])
 
@@ -378,16 +378,49 @@ class EndedSessionsTest(unittest.TestCase):
         _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z")
         self.assertEqual(len(self._ended(last_message=lambda sid: None)), 1)
 
+    def test_keeps_earlier_conversation_in_commander_pane(self):
+        # 同じペインで前に終わった別の作業は消さず、今の司令塔の会話（その座標の最後の行）だけを除く
+        _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z")
+        pane_map = "\n".join([_row("dotfiles-ebapi", "1", "3", PORTAL, SID),
+                              _row("END", "dotfiles-ebapi", "1", "3", PORTAL, SID),
+                              _row("dotfiles-ebapi", "1", "3", "/home/aya/memo", SID2)]) + "\n"
+        out = self._ended(pane_map, self_pane=("dotfiles-ebapi", "1", "3"))
+        self.assertEqual([x["session_id"] for x in out], [SID])
+
+    def test_stale_summary_reported_after_quiet(self):
+        # backfill が開いた会話を要約し、そのあと続いて SessionEnd の要約が来なかった
+        _summary(self.d, "2026-11-25", "a-0900-3a140506.md", SID, "2026-11-25T00:00:00Z",
+                 mtime=LC - timedelta(minutes=30))
+        last = LC + timedelta(minutes=10)
+        out = self._ended(last_message=lambda sid: last)
+        self.assertEqual(len(out), 1)
+        self.assertTrue(out[0]["stale"])
+
+    def test_stale_summary_waits_while_active(self):
+        _summary(self.d, "2026-11-25", "a-0900-3a140506.md", SID, "2026-11-25T00:00:00Z",
+                 mtime=LC - timedelta(minutes=30))
+        last = NOW - timedelta(minutes=10)
+        self.assertEqual(self._ended(last_message=lambda sid: last), [])
+
+    def test_stale_summary_reported_only_once(self):
+        _summary(self.d, "2026-11-25", "a-0900-3a140506.md", SID, "2026-11-25T00:00:00Z",
+                 mtime=LC - timedelta(hours=3))
+        last = LC - timedelta(hours=2)
+        self.assertEqual(self._ended(last_message=lambda sid: last), [])
+
     def test_refs_with_bare_number(self):
         _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z",
                  intent="`/pickup` で #1254 の引き継ぎメモを読む", conclusion="eae#142 のマージのみ残る")
         out = self._ended(repo_of=lambda cwd: "epc")
-        self.assertEqual(out[0]["refs"], ["eae#142", "epc#1254"])
+        self.assertEqual(out[0]["refs"], ["eae#142"])
+        self.assertEqual(out[0]["guessed_refs"], ["epc#1254"])
 
     def test_bare_number_unresolved_is_dropped(self):
         _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z",
                  intent="`/pickup` で #1254 の引き継ぎメモを読む", conclusion="eae#142 のマージのみ残る")
-        self.assertEqual(self._ended(repo_of=lambda cwd: None)[0]["refs"], ["eae#142"])
+        out = self._ended(repo_of=lambda cwd: None)
+        self.assertEqual(out[0]["refs"], ["eae#142"])
+        self.assertEqual(out[0]["guessed_refs"], [])
 
     def test_no_conclusion_heading(self):
         _summary(self.d, "2026-11-25", "a-1100-3a140506.md", SID, "2026-11-25T02:00:00Z", conclusion=None)

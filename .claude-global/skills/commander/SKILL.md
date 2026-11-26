@@ -28,7 +28,7 @@ python3 -I $S/launch.py --name <セッション名> --dir <場所> --prompt '<�
 - `collect.py` の出力: `today`・`range_end`（14日先）・`holidays`・`files`（`today`・`today_exists`・`previous`）・`todo`（`section`・`ref`・`title`・`next`・`location`・`handoffs`）・`confirm_lines`・`handoffs`（`path`・`summary`・`since`（分からなければ `null`）・`refs`（本文の参照ぜんぶ）・`wait_refs`（`## 待っているもの` に出てくる参照だけ）・`location`（実在する作業場所だけ）・`todo_refs`）・`tmux_sessions`（`null` は tmux の一覧を取れなかった）・`warnings`
 - `carry.py` の出力: `section`（そのまま貼る `## 引き継ぐ欄`）・`removed_tmux`・`removed_done`・`done_still_in_todo`・`unparsed_done`
 - `check_waits.py` には各引き継ぎメモの `wait_refs` を、そのメモの `since` と組にして渡す（`refs` を渡すと本文で触れただけの PR まで判定してしまう）。`returned` が `true`（返ってきた）・`false`・`null`（`kind` が `gitbucket` なら MCP で、`other` なら手で確かめる）
-- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`／`self`＝この司令塔。表示しない）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`。`ahead: null` は upstream が無い＝未 push の可能性）・`self`）・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`ended_sessions`（`last_check` 以降に終わった会話の要約（`~/.nb/claude/sessions/`）ごとに `session_id`・`tmux`・`window`・`pane`（tmux の外なら `tmux` は作業フォルダ名、`window`・`pane` は null）・`cwd`（作業の場所）・`refs`（意図と結論に出てくる PR・issue。`#1254` はリポジトリを補う）・`end`・`conclusion`（`## 結論` の全文）・`path`。この司令塔のペインの会話と、まだ続いている会話は除く）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に発言があるルームだけ残したもの。自分の発言は `自分(mori.a)` の印付きで相手の発言と時刻順に並ぶ。容量制限で省いたルームは末尾の `（※ 容量制限のため N ルームを省略: …）` に出る）・`warnings`
+- `status.py` の出力: `now`・`last_check`（司令塔ファイルの `最終確認:`。無ければ 0 時）・`sessions`（`name`・`state`（`working`／`idle`＝返事待ち／`no_claude`／`self`＝この司令塔。表示しない）・`idle_since`・`idle_minutes`・`tail`（画面の最後の数行）・`git`（`branch`・`dirty`・`ahead`。`ahead: null` は upstream が無い＝未 push の可能性）・`self`）・`closed_sessions`（引き継ぐ欄にあるのに閉じた tmux 行）・`ended_sessions`（`last_check` 以降に終わった会話の要約（`~/.nb/claude/sessions/`）ごとに `session_id`・`tmux`・`window`・`pane`（tmux の外なら `tmux` は作業フォルダ名、`window`・`pane` は null）・`cwd`（作業の場所）・`refs`（意図と結論に出てくる PR・issue）・`guessed_refs`（裸の `#1254` を作業の場所のリポジトリで補った推定。別リポジトリの番号のことがある）・`stale`（true なら要約が会話の最後まで覆っていない。結論は途中まで）・`end`・`conclusion`（`## 結論` の全文）・`path`。今の司令塔の会話は除く。まだ続いている会話は、最後の発言から1時間動きが無くなってから `stale` で出る）・`handoffs_changed`（`last_check` 以降に書き換わった引き継ぎメモ。`status`・`summary`・`last_heading`（雛形以外で最後の見出し））・`github`（todo・待ち中の引き継ぎメモ・司令塔ファイルに出てくる GitHub の ref ごとに `state`・`reviews`（各人の最新）・`last_commit`・`checks`（`pass`・`fail`・`pending`）・`activity`（`last_check` 以降の相手の動き）・`returned`（待ちの ref だけ））・`gitbucket_refs`・`reachability`（待ちに書かれた IP ごとの開いているポート）・`rocketchat_rooms`（todo・メモ・司令塔ファイルに出てくる部屋）・`mail`（`scripts/lib/thunderbird.sh` の出力。`last_check` の日から今日まで。件名とスレッドだけ）・`rocketchat`（`scripts/lib/rocketchat.sh` の出力を JST に直し、`last_check` 以降に発言があるルームだけ残したもの。自分の発言は `自分(mori.a)` の印付きで相手の発言と時刻順に並ぶ。容量制限で省いたルームは末尾の `（※ 容量制限のため N ルームを省略: …）` に出る）・`warnings`
 - `launch.py` の出力: `status`（`sent`＝送った／`trust`＝フォルダの信頼確認で止まっている／`timeout`＝入力欄が出なかった／`exists`＝同名のセッションがある。`sent` 以外はプロンプトを送っていない）・`ready_seconds`・`pane`・`tail`
 - `sessions.py` は Claude のペインを探して読む。tmux-agent-sidebar のペインがあるので、`tmux capture-pane -t <セッション名>` で直接読まない
 - `warn:` は stderr。出たらユーザーに一言伝える
@@ -108,7 +108,7 @@ python3 -I $S/launch.py --name <セッション名> --dir <場所> --prompt '<�
    - `warnings` に `thunderbird.sh`・`rocketchat.sh` が出たら「メール（Rocket Chat）は見られなかった」と出して続ける
    - 課題DB で返事が来る待ちは「どこを見ればよいか」だけ出す
    - 終わった会話: `ended_sessions` の1件ごとに、必ず次のどちらかを決める。表示は人が読まない前提で、司令塔ファイルを最新に保つための材料として使う
-     - 反映した: 一覧・引き継ぐ欄のどの行をどう変えるか（済みにする・状態を書き換える・メモに足す）。手がかりは `refs`・`cwd`・結論の中身。番号が無くても中身で当てる（例: 結論「本番 00002 は0件」→ 一覧「本番 00002 の項目確認」を済み（0件）に）
+     - 反映した: 引き継ぐ欄・一覧のどの行をどう変えるか。済んだものは 4.「〇〇終わった」と同じく、引き継ぐ欄の「済んだこと」に `[ref:…]`（無ければ `title:`）付きで足して一覧から外す（一覧は毎日作り直すので、一覧の行だけ書き換えると翌朝戻る）。途中のものは状態を書き換えるかメモに足す。手がかりは `refs`・`cwd`・結論の中身で、`guessed_refs` は推定として扱う。番号が無くても中身で当てる（例: 結論「本番 00002 は0件」→ 済んだことに「本番 00002 の項目確認は0件」を足し、一覧の「本番 00002 の項目確認」を外す）。`stale` のものは結論が途中までなので、済みにせず状態かメモに留める
      - 関係なし: 一覧に無い作業や定型作業（worktree の作成・整理、週報・勤怠、動作確認など）
      - 確認を求めずに反映する。ユーザーが「〇〇まだ」と言えば戻す（4.「〇〇止まった」の流れ）
 3. 引き継ぎメモ: `handoffs_changed` で `resolved` になったものは済んだことへ。待ちが済んだ（`returned: true` でマージ・クローズ）のに `blocked` のままのものは `resolved` にしてよいか聞く
@@ -121,7 +121,7 @@ python3 -I $S/launch.py --name <セッション名> --dir <場所> --prompt '<�
 
 ```
 変わった  epc#1316・epc#1313 マージ ・ RDP 作業完了 ・ epc-1316 は閉じた
-          ebase-portal-chat  一覧「本番 00002 の項目確認」を済み（0件）にした
+          ebase-portal-chat  「本番 00002 の項目確認」を済んだことへ移した（0件）
           java-source        引き継ぐ欄のメモに「160.92 の送信確認は成功」を足した
           終わった会話 6件（反映 2・ほか 4）
 

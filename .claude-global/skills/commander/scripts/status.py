@@ -93,6 +93,8 @@ _INTENT = re.compile(r"^## 意図\s*\n(.*?)(?=^## |\Z)", re.S | re.M)
 _BARE_REF = re.compile(r"(?<![\w#:/])#(\d+)")
 # 要約の end は最後の user/assistant の時刻。transcript にそれより明らかに新しい発言があれば会話はまだ続いている
 STILL_RUNNING = timedelta(minutes=5)
+# 要約が最後まで覆っていない会話は、これだけ動きが無ければ終わったとみなす（作り直しの要約が来ない経路がある）
+QUIET = timedelta(hours=1)
 TRANSCRIPT_TAIL = 512 * 1024
 
 
@@ -130,11 +132,22 @@ def abbr_from_remote(url: str) -> "str | None":
     return next((abbr for abbr, repo in sync_github.REPOS.items() if repo == name), None)
 
 
-def _refs(text: str, abbr: "str | None") -> "list[str]":
+def _refs(text: str, abbr: "str | None") -> "tuple[list[str], list[str]]":
     found = refs_in_text(text)
-    if abbr:
-        found |= {f"{abbr}#{n}" for n in _BARE_REF.findall(text)}
-    return sorted(found)
+    guessed = {f"{abbr}#{n}" for n in _BARE_REF.findall(text)} - found if abbr else set()
+    return sorted(found), sorted(guessed)
+
+
+def _current_sid(pane_map: "str | None", self_pane: "tuple[str, str, str] | None") -> "str | None":
+    """self_pane の座標で最後に始まり、まだ END の無い会話（＝今の司令塔）の session_id。"""
+    current = None
+    for line in (pane_map or "").splitlines() if self_pane else []:
+        cols = line.split("\t")
+        if len(cols) == 5 and tuple(cols[:3]) == tuple(self_pane):
+            current = cols[4]
+        elif len(cols) == 6 and cols[0] == "END" and tuple(cols[1:4]) == tuple(self_pane) and cols[5] == current:
+            current = None
+    return current
 
 
 def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datetime, now: datetime,
@@ -142,18 +155,20 @@ def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datet
                    last_message, repo_of) -> "list[dict]":
     """last_check より後・now 以前に書かれた要約（~/.nb/claude/sessions/<日付>/*.md）の結論を、作業の場所と番号つきで返す。
 
-    司令塔自身のペインの会話と、まだ続いている会話（last_message(session_id) が end より STILL_RUNNING 以上新しい）は除く。
+    今の司令塔の会話は除く。要約が最後まで覆っていない会話（last_message(session_id) が end より STILL_RUNNING 以上新しい）は、
+    最後の発言から QUIET 経ったときに stale として出す。
     repo_of(cwd) はリポジトリの略称（epc 等）を返し、裸の #番号 を補うのに使う。
     """
     first_day = (last_check.astimezone(JST) - ENDED_WINDOW).date().isoformat()
     rows = _pane_rows(pane_map)
+    self_sid = _current_sid(pane_map, self_pane)
     out = []
     days = sorted(p for p in sessions_dir.glob("*") if _DAY_DIR.match(p.name) and p.name >= first_day)
     for p in (f for day in days for f in sorted(day.glob("*.md"))):
         try:
             # SessionEnd の後に Haiku が書くので、終わった時刻ではなく書かれた時刻で前回の確認と比べる
             mtime = p.stat().st_mtime
-            if mtime <= last_check.timestamp() or mtime > now.timestamp():
+            if mtime > now.timestamp():
                 continue
             text = p.read_text(encoding="utf-8")
             end = _ts(_front(text, "end")).astimezone(JST)
@@ -164,20 +179,22 @@ def ended_sessions(sessions_dir: Path, pane_map: "str | None", last_check: datet
         if end <= last_check - ENDED_WINDOW:
             continue
         sid = _front(text, "session_id")
-        row = rows.get(sid)
-        if self_pane is not None and row == tuple(self_pane):
+        if sid and sid == self_sid:
             continue
+        row = rows.get(sid)
         last = last_message(sid)
-        if last is not None and last > end + STILL_RUNNING:
+        stale = last is not None and last > end + STILL_RUNNING
+        due = (last + QUIET).timestamp() if stale else mtime
+        if not last_check.timestamp() < due <= now.timestamp():
             continue
         cwd = _front(text, "cwd")
         m, i = _CONCLUSION.search(text), _INTENT.search(text)
         conclusion = "\n".join(s for s in (m.group(1).splitlines() if m else []) if s.strip())
+        refs, guessed = _refs((i.group(1) if i else "") + "\n" + conclusion, repo_of(cwd) if cwd else None)
         out.append({"session_id": sid,
                     "tmux": row[0] if row else (Path(cwd).name if cwd else _front(text, "project")),
                     "window": row[1] if row else None, "pane": row[2] if row else None, "cwd": cwd,
-                    "refs": _refs((i.group(1) if i else "") + "\n" + conclusion, repo_of(cwd) if cwd else None),
-                    "end": end.isoformat(), "conclusion": conclusion, "path": str(p)})
+                    "refs": refs, "guessed_refs": guessed, "stale": stale, "end": end.isoformat(), "conclusion": conclusion, "path": str(p)})
     return sorted(out, key=lambda x: x["end"])
 
 
