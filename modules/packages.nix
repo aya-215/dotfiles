@@ -21,6 +21,7 @@
     gh         # GitHub CLI
     gcalcli    # Googleカレンダー
     sshfs      # リモートファイルシステムのマウント
+    sqlcmd     # SQL Server CLI（go-sqlcmd。eBASE 実DBの参照用）
 
     # ランタイム・バージョン管理
     fnm        # Node.jsバージョン管理
