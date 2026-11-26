@@ -1,6 +1,6 @@
 ---
 name: todo-edit
-description: ユーザーの指示で業務TODO（~/memo/todo.md）を直し、直した意図を記録して /todo の次の判断基準にする。「/todo-edit」「todo を直して」「資料の件は〜にして」「この行を消して」「〇〇は待ちに移して」「〇〇は完了じゃなくてまだやる」等で使用。対話専用（無人実行・他のスキルからは使わない）。
+description: ユーザーの指示で業務TODO（~/memo/todo.md）を直し、直した意図を記録して /todo の次の判断基準にする。「/todo-edit」「todo を直して」「資料の件は〜にして」「この行を消して」「〇〇は待ちに移して」「〇〇は完了じゃなくてまだやる」等で使用。対話専用（無人実行・/todo からは使わない。/commander が対話の中で起動するのはよい）。
 ---
 
 # /todo-edit
@@ -12,10 +12,12 @@ description: ユーザーの指示で業務TODO（~/memo/todo.md）を直し、�
 
 このスキルは **対話専用で、質問してよい唯一の todo 系スキル**。曖昧なら聞く、実行前に必ず OK をもらう。
 
+`/commander` から起動されたときは、引数に並んだ行と根拠をユーザーの指示として扱う。手順2の `intents` の確認と手順4の OK は省かない（commander は意図を見ずに案を出している）。
+
 ## やらないこと
 
 - 外部アクション（PR/Issue コメント、Rocket Chat 送信、Issue 作成、`mcp__gitbucket__` の書き込み系）
-- 他のスキル・無人実行から `--allow-user` を付けて apply.py を呼ぶ（`/todo` は source `ai` 固定。`TODO_AI_DENY_USER=1` なら apply が拒否する）
+- 他のスキル・無人実行が、このスキルを通さずに `--allow-user` を付けて apply.py を呼ぶ（`/todo` は source `ai` 固定。`TODO_AI_DENY_USER=1` なら apply が拒否する）
 - ユーザーが OK する前に apply.py を実行する
 - 指示に無い行・項目まで直す（指示の範囲だけ）
 
