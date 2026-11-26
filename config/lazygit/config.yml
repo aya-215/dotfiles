@@ -24,9 +24,9 @@ gui:
       - "#2d3b4d"
 # Git設定
 git:
-  pagers:
+  diffRenderers:
     - colorArg: always
-      pager: delta --dark --paging=never --line-numbers
+      command: delta --dark --paging=never --line-numbers
       useConfig: false
   # コミットメッセージの自動折り返し
   commit:
