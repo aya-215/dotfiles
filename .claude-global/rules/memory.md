@@ -5,4 +5,5 @@
 
 - 保存・検索・更新は必ず `agent-memory` スキルを起動して行う。ネイティブ `MEMORY.md` の書き方（入口としての使い方）もスキルに従う
 - 関連作業を始めるときは `rg "^summary:" ~/.claude/skills/agent-memory/memories/ --no-ignore --hidden` で既存メモリを確認する
-- 調査に時間がかかった発見・非自明なバグや回避策・アーキテクチャ決定・中断しうる作業は、指示がなくても保存を検討する
+- 調査に時間がかかった発見・非自明なバグや回避策・難しい問題の解決策・アーキテクチャ決定・中断しうる作業は、指示がなくても保存を検討する
+- feedback メモリ（`memories/feedback/`）は `/retrospective` が依存するため、カウント frontmatter（pain_count 等）を壊さず、移動・形式変更もしない
